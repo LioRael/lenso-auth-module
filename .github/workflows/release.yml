@@ -19,6 +19,10 @@ on:
         default: true
         type: boolean
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   publish:
     name: Publish
