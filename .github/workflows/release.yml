@@ -31,7 +31,9 @@ jobs:
           path: lenso-auth-module
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.94.0
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
 
       - name: Setup Node
         uses: actions/setup-node@v4
