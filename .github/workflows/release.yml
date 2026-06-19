@@ -84,5 +84,3 @@ jobs:
         if: ${{ inputs.publish_npm }}
         run: npm publish --access public --registry https://registry.npmjs.org/
         working-directory: lenso-auth-module/packages/auth-console
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
