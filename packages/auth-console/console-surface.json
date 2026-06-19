@@ -1,0 +1,57 @@
+{
+  "exportName": "authConsoleModule",
+  "id": "auth",
+  "packageName": "@lenso/auth-console",
+  "source": "runtime_bundle",
+  "surfaces": [
+    {
+      "area": "data",
+      "icon": "shield",
+      "label": "Sessions",
+      "navigation": {
+        "order": 50,
+        "workspace": {
+          "icon": "shield",
+          "id": "auth",
+          "label": "Auth"
+        }
+      },
+      "requiredCapabilities": ["auth.users.read"],
+      "route": "/data/auth",
+      "surfaceName": "auth"
+    },
+    {
+      "area": "data",
+      "icon": "shield",
+      "label": "Sessions",
+      "navigation": {
+        "order": 50,
+        "workspace": {
+          "icon": "shield",
+          "id": "auth",
+          "label": "Auth"
+        }
+      },
+      "requiredCapabilities": ["auth.users.read"],
+      "route": "/data/auth/sessions",
+      "surfaceName": "sessions"
+    },
+    {
+      "area": "data",
+      "icon": "shield",
+      "label": "Users",
+      "navigation": {
+        "order": 60,
+        "workspace": {
+          "icon": "shield",
+          "id": "auth",
+          "label": "Auth"
+        }
+      },
+      "requiredCapabilities": ["auth.users.read"],
+      "route": "/data/auth/users",
+      "surfaceName": "users"
+    }
+  ],
+  "version": "workspace"
+}

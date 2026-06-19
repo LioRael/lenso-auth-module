@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_auth_crate:
+        description: Publish lenso-module-auth to crates.io
+        required: true
+        default: true
+        type: boolean
+      publish_password_crate:
+        description: Publish lenso-module-auth-password to crates.io
+        required: true
+        default: true
+        type: boolean
+      publish_npm:
+        description: Publish @lenso/auth-console to npm
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Checkout auth module
+        uses: actions/checkout@v4
+        with:
+          path: lenso-auth-module
+
+      - name: Checkout runtime console API
+        uses: actions/checkout@v4
+        with:
+          repository: LioRael/lenso-runtime-console
+          path: lenso-runtime-console
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.94.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+          cache-dependency-path: lenso-auth-module/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: lenso-auth-module
+
+      - name: Verify
+        run: |
+          cargo fmt --all --check
+          cargo test --locked -p lenso-module-auth -p lenso-module-auth-password
+          pnpm check
+        working-directory: lenso-auth-module
+
+      - name: Verify npm package
+        run: npm pack --dry-run --registry https://registry.npmjs.org/
+        working-directory: lenso-auth-module/packages/auth-console
+
+      - name: Publish auth crate
+        if: ${{ inputs.publish_auth_crate }}
+        run: cargo publish -p lenso-module-auth --token "$CRATES_IO_TOKEN"
+        working-directory: lenso-auth-module
+        env:
+          CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+      - name: Wait for auth crate index
+        if: ${{ inputs.publish_auth_crate && inputs.publish_password_crate }}
+        run: sleep 90
+
+      - name: Publish password crate
+        if: ${{ inputs.publish_password_crate }}
+        run: cargo publish -p lenso-module-auth-password --token "$CRATES_IO_TOKEN"
+        working-directory: lenso-auth-module
+        env:
+          CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+      - name: Publish console package
+        if: ${{ inputs.publish_npm }}
+        run: npm publish --access public --registry https://registry.npmjs.org/
+        working-directory: lenso-auth-module/packages/auth-console
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

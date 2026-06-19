@@ -1,0 +1,40 @@
+{
+  "name": "@lenso/auth-console",
+  "version": "0.1.0",
+  "description": "Runtime Console surface for the Lenso auth module.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LioRael/lenso-auth-module.git",
+    "directory": "packages/auth-console"
+  },
+  "homepage": "https://github.com/LioRael/lenso-auth-module#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "src/index.tsx",
+    "src/manifest.ts",
+    "src/model.ts",
+    "src/page.tsx",
+    "console-surface.json",
+    "package.json"
+  ],
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "peerDependencies": {
+    "@lenso/runtime-console-api": "^0.1.0",
+    "react": "^19.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@lenso/runtime-console-api": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@lenso/runtime-console-api": "file:../../../lenso-runtime-console/packages/console-package-api",
+    "react": "^19.1.0"
+  }
+}
