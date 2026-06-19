@@ -10,7 +10,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "devDependencies": {
-    "@lenso/runtime-console-api": "file:packages/runtime-console-api-shim",
+    "@lenso/runtime-console-api": "^0.1.0",
     "@types/node": "^25.9.2",
     "@types/react": "^19.1.0",
     "react": "^19.1.0",
