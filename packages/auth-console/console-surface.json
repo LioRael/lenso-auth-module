@@ -1,6 +1,10 @@
 {
   "exportName": "authConsoleModule",
   "id": "auth",
+  "bundle": {
+    "hostApi": "1",
+    "path": "dist/auth-console.js"
+  },
   "packageName": "@lenso/auth-console",
   "source": "runtime_bundle",
   "surfaces": [
@@ -22,7 +26,7 @@
     },
     {
       "area": "data",
-      "icon": "shield",
+      "icon": "key-round",
       "label": "Sessions",
       "navigation": {
         "order": 50,
@@ -38,7 +42,7 @@
     },
     {
       "area": "data",
-      "icon": "shield",
+      "icon": "users",
       "label": "Users",
       "navigation": {
         "order": 60,

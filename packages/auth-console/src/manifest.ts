@@ -26,7 +26,7 @@ const consoleSurfaceContract = consoleSurface as unknown as {
     },
     {
       readonly area: "data";
-      readonly icon: "shield";
+      readonly icon: "key-round";
       readonly label: "Sessions";
       readonly navigation: {
         readonly order: 50;
@@ -42,7 +42,7 @@ const consoleSurfaceContract = consoleSurface as unknown as {
     },
     {
       readonly area: "data";
-      readonly icon: "shield";
+      readonly icon: "users";
       readonly label: "Users";
       readonly navigation: {
         readonly order: 60;

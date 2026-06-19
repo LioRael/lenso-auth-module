@@ -15,16 +15,19 @@ describe("auth console package", () => {
       source: "runtime_bundle",
       surfaces: [
         {
+          icon: "shield",
           label: "Sessions",
           route: "/data/auth",
           surfaceName: "auth",
         },
         {
+          icon: "key-round",
           label: "Sessions",
           route: "/data/auth/sessions",
           surfaceName: "sessions",
         },
         {
+          icon: "users",
           label: "Users",
           route: "/data/auth/users",
           surfaceName: "users",

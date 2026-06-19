@@ -41,6 +41,13 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
+      - name: Setup pnpm
+        run: corepack enable
+
+      - name: Install npm dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: lenso-auth-module
+
       - name: Verify
         run: |
           cargo fmt --all --check
