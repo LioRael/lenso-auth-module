@@ -1,2 +1,4 @@
 packages:
   - "packages/*"
+minimumReleaseAgeExclude:
+  - '@lenso/runtime-console-api@0.1.0'

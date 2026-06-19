@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "pnpm test && pnpm typecheck",
+    "build": "pnpm --dir packages/auth-console build",
+    "check": "pnpm test && pnpm typecheck && pnpm build",
     "test": "vitest run packages/auth-console/src",
     "typecheck": "tsc -b --pretty false"
   },
   "devDependencies": {
-    "@lenso/runtime-console-api": "file:../lenso-runtime-console/packages/console-package-api",
+    "@lenso/runtime-console-api": "^0.1.0",
     "@types/node": "^25.9.2",
     "@types/react": "^19.1.0",
     "react": "^19.1.0",

@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@lenso/runtime-console-api':
-        specifier: file:../lenso-runtime-console/packages/console-package-api
-        version: file:../lenso-runtime-console/packages/console-package-api
+        specifier: ^0.1.0
+        version: 0.1.0(react@19.2.7)
       '@types/node':
         specifier: ^25.9.2
         version: 25.9.3
@@ -31,10 +31,10 @@ importers:
         version: 4.1.9(@types/node@25.9.3)(vite@8.0.16(@types/node@25.9.3))
 
   packages/auth-console:
-    devDependencies:
+    dependencies:
       '@lenso/runtime-console-api':
-        specifier: file:../../../lenso-runtime-console/packages/console-package-api
-        version: file:../lenso-runtime-console/packages/console-package-api
+        specifier: ^0.1.0
+        version: 0.1.0(react@19.2.7)
       react:
         specifier: ^19.1.0
         version: 19.2.7
@@ -53,8 +53,10 @@ packages:
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
 
-  '@lenso/runtime-console-api@file:../lenso-runtime-console/packages/console-package-api':
-    resolution: {directory: ../lenso-runtime-console/packages/console-package-api, type: directory}
+  '@lenso/runtime-console-api@0.1.0':
+    resolution: {integrity: sha512-JctCly0aUbSSboikcCJBuf4WXaA2XKVKIEFG7hBYI2PKP9URtKCQ3hMeedyyWwFgCLYteJ+YlEcgAzayRiSYXg==}
+    peerDependencies:
+      react: ^19.1.0
 
   '@napi-rs/wasm-runtime@1.1.5':
     resolution: {integrity: sha512-AWPoBRJ9tsnVhor4sjO7rkni+7p+2IAEFj6cx06UgP10jkQHqay/36uRV/bFkgrh18D9vb4cr8Q0Pthskgzy+Q==}
@@ -512,7 +514,9 @@ snapshots:
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
-  '@lenso/runtime-console-api@file:../lenso-runtime-console/packages/console-package-api': {}
+  '@lenso/runtime-console-api@0.1.0(react@19.2.7)':
+    dependencies:
+      react: 19.2.7
 
   '@napi-rs/wasm-runtime@1.1.5(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
