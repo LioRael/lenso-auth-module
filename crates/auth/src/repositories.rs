@@ -1,7 +1,8 @@
 use crate::models::{AuthSession, AuthSessionRecord, AuthUser, AuthUserId};
-use crate::resolver::session_token_hash;
+use crate::resolver::{SessionCache, session_token_hash};
 use chrono::{DateTime, Utc};
 use platform_core::{AppError, AppResult, DbPool, ErrorCode};
+use std::sync::Arc;
 
 #[async_trait::async_trait]
 pub trait AuthUserRepository: std::fmt::Debug + Send + Sync {
@@ -31,12 +32,27 @@ pub trait AuthUserRepository: std::fmt::Debug + Send + Sync {
 #[derive(Debug, Clone)]
 pub struct PostgresAuthUserRepository {
     pool: DbPool,
+    session_cache: Option<Arc<dyn SessionCache>>,
 }
 
 impl PostgresAuthUserRepository {
     #[must_use]
     pub fn new(pool: DbPool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            session_cache: None,
+        }
+    }
+
+    #[must_use]
+    pub fn new_with_session_cache(
+        pool: DbPool,
+        session_cache: Option<Arc<dyn SessionCache>>,
+    ) -> Self {
+        Self {
+            pool,
+            session_cache,
+        }
     }
 
     pub async fn create_dev_session(
@@ -111,21 +127,36 @@ impl PostgresAuthUserRepository {
         token: &str,
         revoked_at: DateTime<Utc>,
     ) -> AppResult<bool> {
-        let result = sqlx::query(
+        let token_hash = session_token_hash(token);
+        let revoked_token_hash = sqlx::query_scalar::<_, String>(
             r#"
             update auth.sessions
             set revoked_at = $2
             where token_hash = $1
               and revoked_at is null
+            returning token_hash
             "#,
         )
-        .bind(session_token_hash(token))
+        .bind(&token_hash)
         .bind(revoked_at)
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await
         .map_err(map_sql_error)?;
 
-        Ok(result.rows_affected() > 0)
+        if revoked_token_hash.is_some() {
+            self.delete_cached_token_hash(&token_hash).await;
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    async fn delete_cached_token_hash(&self, token_hash: &str) {
+        if let Some(cache) = &self.session_cache {
+            if let Err(error) = cache.delete(token_hash).await {
+                tracing::warn!(error = ?error, "failed to delete auth session cache");
+            }
+        }
     }
 }
 
@@ -281,21 +312,27 @@ impl AuthUserRepository for PostgresAuthUserRepository {
         session_id: &str,
         revoked_at: DateTime<Utc>,
     ) -> AppResult<bool> {
-        let result = sqlx::query(
+        let revoked_token_hash = sqlx::query_scalar::<_, String>(
             r#"
             update auth.sessions
             set revoked_at = $2
             where id = $1
               and revoked_at is null
+            returning token_hash
             "#,
         )
         .bind(session_id)
         .bind(revoked_at)
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await
         .map_err(map_sql_error)?;
 
-        Ok(result.rows_affected() > 0)
+        if let Some(token_hash) = revoked_token_hash {
+            self.delete_cached_token_hash(&token_hash).await;
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     async fn set_user_disabled_at(
@@ -322,7 +359,28 @@ impl AuthUserRepository for PostgresAuthUserRepository {
         .await
         .map_err(map_sql_error)?;
 
-        Ok(result.rows_affected() > 0)
+        let changed = result.rows_affected() > 0;
+        if changed && disabled_at.is_some() {
+            let token_hashes = sqlx::query_scalar::<_, String>(
+                r#"
+                select token_hash
+                from auth.sessions
+                where user_id = $1
+                  and revoked_at is null
+                  and expires_at > now()
+                "#,
+            )
+            .bind(&user_id.0)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_sql_error)?;
+
+            for token_hash in token_hashes {
+                self.delete_cached_token_hash(&token_hash).await;
+            }
+        }
+
+        Ok(changed)
     }
 }
 

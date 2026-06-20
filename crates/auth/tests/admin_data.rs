@@ -1,12 +1,16 @@
 use auth::admin::AuthAdminData;
 use auth::models::{AuthUser, AuthUserId};
 use auth::repositories::{AuthUserRepository, PostgresAuthUserRepository};
+use auth::resolver::{CachedSession, SessionCache, session_token_hash};
 use chrono::{Duration, Utc};
+use platform_core::AppResult;
 use platform_core::{PLATFORM_MIGRATIONS, apply_migrations};
 use platform_module::{AdminActionSource, AdminDataSource, AdminListQuery};
 use platform_runtime::RUNTIME_MIGRATIONS;
 use platform_testing::TestDatabase;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 async fn seed(repo: &PostgresAuthUserRepository, id: &str) {
     repo.insert(&AuthUser {
@@ -158,6 +162,60 @@ async fn admin_action_revokes_auth_session() {
 }
 
 #[tokio::test]
+async fn admin_action_revoking_session_deletes_cached_token() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    let migrations = PLATFORM_MIGRATIONS
+        .iter()
+        .chain(RUNTIME_MIGRATIONS)
+        .chain(auth::migrations::AUTH_MIGRATIONS)
+        .copied()
+        .collect::<Vec<_>>();
+    apply_migrations(&db.pool, &migrations)
+        .await
+        .expect("migrations apply");
+
+    let cache = Arc::new(FakeSessionCache::default());
+    let repo =
+        PostgresAuthUserRepository::new_with_session_cache(db.pool.clone(), Some(cache.clone()));
+    let now = Utc::now();
+    repo.create_dev_session(
+        AuthUserId("usr_cached_revoke".to_owned()),
+        "sess_cached_revoke".to_owned(),
+        "token_cached_revoke".to_owned(),
+        now,
+        now + Duration::hours(1),
+    )
+    .await
+    .expect("session should be created");
+    let token_hash = session_token_hash("token_cached_revoke");
+    cache
+        .put(
+            &token_hash,
+            CachedSession {
+                user_id: "usr_cached_revoke".to_owned(),
+                expires_at: now + Duration::hours(1),
+            },
+        )
+        .await
+        .expect("cache seed");
+
+    let admin = AuthAdminData::new(Arc::new(repo));
+    admin
+        .invoke(
+            "revoke_session",
+            serde_json::json!({"session_id": "sess_cached_revoke"}),
+        )
+        .await
+        .expect("revoke session");
+
+    assert!(cache.get(&token_hash).await.expect("cache get").is_none());
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
 async fn admin_action_disables_and_enables_auth_user() {
     let Some(db) = TestDatabase::create().await else {
         return;
@@ -218,6 +276,31 @@ async fn admin_action_disables_and_enables_auth_user() {
     assert!(one["disabled_until"].is_null());
 
     db.cleanup().await;
+}
+
+#[derive(Debug, Default)]
+struct FakeSessionCache {
+    values: Mutex<HashMap<String, CachedSession>>,
+}
+
+#[async_trait::async_trait]
+impl SessionCache for FakeSessionCache {
+    async fn get(&self, token_hash: &str) -> AppResult<Option<CachedSession>> {
+        Ok(self.values.lock().expect("values").get(token_hash).cloned())
+    }
+
+    async fn put(&self, token_hash: &str, session: CachedSession) -> AppResult<()> {
+        self.values
+            .lock()
+            .expect("values")
+            .insert(token_hash.to_owned(), session);
+        Ok(())
+    }
+
+    async fn delete(&self, token_hash: &str) -> AppResult<()> {
+        self.values.lock().expect("values").remove(token_hash);
+        Ok(())
+    }
 }
 
 #[tokio::test]

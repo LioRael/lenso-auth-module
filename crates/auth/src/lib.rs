@@ -1,9 +1,12 @@
 pub mod admin;
+pub mod config;
 pub mod dto;
 pub mod migrations;
 pub mod models;
 pub mod module;
 pub mod public;
+#[cfg(feature = "redis")]
+pub mod redis_cache;
 pub mod repositories;
 pub mod resolver;
 pub mod routes;

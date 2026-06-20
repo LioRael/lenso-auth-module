@@ -1,6 +1,6 @@
 [package]
 name = "lenso-module-auth"
-version = "0.1.2"
+version = "0.1.3"
 edition.workspace = true
 license = "MIT"
 description = "First-party auth anchor module for the Lenso backend framework."
@@ -15,6 +15,10 @@ rust-version.workspace = true
 name = "auth"
 path = "src/lib.rs"
 
+[features]
+default = []
+redis = ["dep:redis"]
+
 [dependencies]
 async-trait.workspace = true
 axum.workspace = true
@@ -28,6 +32,7 @@ sha2.workspace = true
 sqlx.workspace = true
 tracing.workspace = true
 utoipa.workspace = true
+redis = { workspace = true, optional = true }
 
 [dev-dependencies]
 platform-testing.workspace = true
