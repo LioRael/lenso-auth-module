@@ -12,6 +12,27 @@ First-party Lenso auth modules and Runtime Console surface.
 - Rust: `lenso-module-auth-password`
 - npm: `@lenso/auth-console`
 
+## Redis Session Cache
+
+`lenso-module-auth` resolves session tokens from Postgres by default. Hosts that
+want Redis-backed session lookup should:
+
+1. Depend on `lenso-module-auth` with `features = ["redis"]`.
+2. Set `REDIS_URL` for the host process.
+3. Set runtime config `auth.session_cache` to `redis`.
+
+The runtime config key is module-owned and defaults to `database`. When it is
+set to `redis`, the host must provide a Redis connection; otherwise Lenso fails
+startup validation with a clear configuration error. Cached session keys use the
+`auth:sessions:` prefix and expire at the lower of the session expiry and the
+host's cache TTL.
+
+Generated Lenso hosts can apply the matching descriptor profile with:
+
+```sh
+lenso module install auth --profile redis-session-cache
+```
+
 ## Development
 
 ```sh
