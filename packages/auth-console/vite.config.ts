@@ -9,6 +9,10 @@ const hostImports = {
   react: "/console/extensions/host/react.js",
   "react/jsx-runtime": "/console/extensions/host/react-jsx-runtime.js",
 };
+const runtimeConsoleApiTheme = resolve(
+  import.meta.dirname,
+  "../../../lenso-runtime-console/packages/console-package-api/theme.css"
+);
 
 export default defineConfig({
   build: {
@@ -24,6 +28,11 @@ export default defineConfig({
       output: {
         paths: hostImports,
       },
+    },
+  },
+  resolve: {
+    alias: {
+      "@lenso/runtime-console-api/theme.css": runtimeConsoleApiTheme,
     },
   },
   plugins: [tailwindcss()],
