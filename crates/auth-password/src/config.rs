@@ -91,7 +91,10 @@ impl Default for AuthPasswordConfig {
 
 impl AuthPasswordConfig {
     pub fn from_context(ctx: &AppContext) -> AppResult<Self> {
-        Self::from_snapshot(&ctx.runtime_config.snapshot())
+        let mut config = Self::from_snapshot(&ctx.runtime_config.snapshot())?;
+        let local_config = ctx.config.module_local_config(CONFIG_PREFIX)?;
+        config.apply_module_local_config(&local_config);
+        Ok(config)
     }
 
     pub fn from_snapshot(snapshot: &RuntimeConfigSnapshot) -> AppResult<Self> {
@@ -102,6 +105,14 @@ impl AuthPasswordConfig {
         match self.hash_algorithm {
             HashAlgorithm::Argon2id => argon2::Algorithm::Argon2id,
             HashAlgorithm::Argon2i => argon2::Algorithm::Argon2i,
+        }
+    }
+
+    fn apply_module_local_config(&mut self, local_config: &AuthPasswordLocalConfig) {
+        if let Some(secret) = local_config.jwt_secret.as_deref().map(str::trim)
+            && !secret.is_empty()
+        {
+            self.jwt_secret = Some(secret.to_owned());
         }
     }
 
@@ -138,6 +149,12 @@ impl AuthPasswordConfig {
             ttl_hours: self.jwt_ttl_hours.unwrap_or(DEFAULT_JWT_TTL_HOURS),
         }))
     }
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+struct AuthPasswordLocalConfig {
+    #[serde(default)]
+    jwt_secret: Option<String>,
 }
 
 pub static RUNTIME_CONFIG_GROUPS: LazyLock<Vec<RuntimeConfigGroupDescriptor>> =
@@ -254,7 +271,7 @@ pub static RUNTIME_CONFIG: LazyLock<Vec<RuntimeConfigDescriptor>> = LazyLock::ne
             default: json!(null),
             editable: true,
             restart_only: true,
-            description: "HMAC-SHA256 secret for JWT signing. Required when token_strategy is jwt.",
+            description: "HMAC-SHA256 secret for JWT signing. Used when no local module jwt_secret is configured.",
         },
         RuntimeConfigDescriptor {
             key: "auth-password.jwt_issuer".to_owned(),
@@ -424,6 +441,19 @@ mod tests {
         assert_eq!(jwt_config.issuer, "custom-issuer");
         assert_eq!(jwt_config.audience, "custom-audience");
         assert_eq!(jwt_config.ttl_hours, 24);
+    }
+
+    #[test]
+    fn module_local_jwt_secret_overrides_runtime_config_secret() {
+        let mut config = AuthPasswordConfig {
+            jwt_secret: Some("runtime-secret".to_owned()),
+            ..AuthPasswordConfig::default()
+        };
+        config.apply_module_local_config(&AuthPasswordLocalConfig {
+            jwt_secret: Some("local-secret".to_owned()),
+        });
+
+        assert_eq!(config.jwt_secret.as_deref(), Some("local-secret"));
     }
 
     #[test]

@@ -33,6 +33,12 @@ Generated Lenso hosts can apply the matching descriptor profile with:
 lenso module install auth --profile redis-session-cache
 ```
 
+## JWT Secret
+
+`lenso-module-auth-password` prefers the host's module-local
+`LENSO_MODULE_AUTH_PASSWORD__JWT_SECRET` value for JWT signing. Runtime config
+`auth-password.jwt_secret` remains a fallback for existing installs.
+
 ## Development
 
 ```sh
