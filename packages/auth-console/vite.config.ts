@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 
 import tailwindcss from "@tailwindcss/vite";
@@ -9,10 +11,29 @@ const hostImports = {
   react: "/console/extensions/host/react.js",
   "react/jsx-runtime": "/console/extensions/host/react-jsx-runtime.js",
 };
-const runtimeConsoleApiTheme = resolve(
+const require = createRequire(import.meta.url);
+const siblingRuntimeConsoleApiTheme = resolve(
   import.meta.dirname,
   "../../../lenso-runtime-console/packages/console-package-api/theme.css"
 );
+const fallbackRuntimeConsoleApiTheme = resolve(
+  import.meta.dirname,
+  "src/runtime-console-theme.css"
+);
+const runtimeConsoleApiTheme =
+  optionalResolve("@lenso/runtime-console-api/theme.css") ??
+  (existsSync(siblingRuntimeConsoleApiTheme)
+    ? siblingRuntimeConsoleApiTheme
+    : fallbackRuntimeConsoleApiTheme);
+
+function optionalResolve(specifier: string) {
+  try {
+    return require.resolve(specifier);
+  } catch {
+    // ponytail: fallback exists until the published API package includes theme.css.
+    return null;
+  }
+}
 
 export default defineConfig({
   build: {
