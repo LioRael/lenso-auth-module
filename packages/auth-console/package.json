@@ -1,6 +1,6 @@
 {
   "name": "@lenso/auth-console",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Runtime Console surface for the Lenso auth module.",
   "license": "MIT",
   "type": "module",
@@ -29,12 +29,14 @@
   "exports": {
     ".": "./src/index.tsx",
     "./bundle": "./dist/auth-console.js",
+    "./style": "./dist/auth-console.css",
     "./console-surface": "./console-surface.json"
   },
   "lenso": {
     "console": {
       "bundle": "./dist/auth-console.js",
       "hostApi": "1",
+      "styles": ["./dist/auth-console.css"],
       "surface": "./console-surface.json"
     }
   },

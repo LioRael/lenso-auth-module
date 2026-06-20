@@ -3,7 +3,8 @@
   "id": "auth",
   "bundle": {
     "hostApi": "1",
-    "path": "dist/auth-console.js"
+    "path": "dist/auth-console.js",
+    "styles": ["dist/auth-console.css"]
   },
   "packageName": "@lenso/auth-console",
   "source": "runtime_bundle",

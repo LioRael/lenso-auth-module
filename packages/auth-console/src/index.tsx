@@ -1,5 +1,6 @@
 import { defineConsoleModule } from "@lenso/runtime-console-api";
 
+import "./styles.css";
 import { authConsoleManifest } from "./manifest";
 import { AuthSessionsPage, AuthUsersPage } from "./page";
 
