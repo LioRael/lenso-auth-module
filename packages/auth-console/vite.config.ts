@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
 const hostImports = {
@@ -13,6 +14,7 @@ export default defineConfig({
   build: {
     emptyOutDir: true,
     lib: {
+      cssFileName: "auth-console",
       entry: resolve(import.meta.dirname, "src/index.tsx"),
       fileName: () => "auth-console.js",
       formats: ["es"],
@@ -24,4 +26,5 @@ export default defineConfig({
       },
     },
   },
+  plugins: [tailwindcss()],
 });

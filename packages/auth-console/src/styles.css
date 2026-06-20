@@ -1,0 +1,7 @@
+@reference "tailwindcss";
+
+@layer utilities;
+
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@source "./**/*.{ts,tsx}";
