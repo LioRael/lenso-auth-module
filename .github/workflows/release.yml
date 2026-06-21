@@ -64,23 +64,49 @@ jobs:
         run: npm pack --dry-run --registry https://registry.npmjs.org/
         working-directory: lenso-auth-module/packages/auth-console
 
-      - name: Publish auth crate
-        if: ${{ inputs.publish_auth_crate }}
-        run: cargo publish -p lenso-module-auth --token "$CRATES_IO_TOKEN"
+      - name: Publish Rust crates
+        if: ${{ inputs.publish_auth_crate || inputs.publish_password_crate }}
+        run: |
+          set -eu
+          test -n "$CARGO_REGISTRY_TOKEN" || { echo "CARGO_REGISTRY_TOKEN is required when publishing Rust crates" >&2; exit 1; }
+
+          crate_version() {
+            cargo pkgid -p "$1" | sed 's/.*#//' | sed 's/.*@//'
+          }
+
+          crate_version_exists() {
+            crate="$1"
+            version="$2"
+            curl -A 'lenso-auth-release-publish' -fsS \
+              "https://crates.io/api/v1/crates/$crate/$version" >/dev/null 2>&1
+          }
+
+          publish_crate() {
+            crate="$1"
+            version="$(crate_version "$crate")"
+            if crate_version_exists "$crate" "$version"; then
+              echo "$crate $version is already on crates.io; skipping."
+            else
+              cargo publish -p "$crate"
+            fi
+          }
+
+          if [ "$PUBLISH_AUTH_CRATE" = "true" ]; then
+            publish_crate lenso-module-auth
+          fi
+
+          if [ "$PUBLISH_AUTH_CRATE" = "true" ] && [ "$PUBLISH_PASSWORD_CRATE" = "true" ]; then
+            sleep 90
+          fi
+
+          if [ "$PUBLISH_PASSWORD_CRATE" = "true" ]; then
+            publish_crate lenso-module-auth-password
+          fi
         working-directory: lenso-auth-module
         env:
-          CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-
-      - name: Wait for auth crate index
-        if: ${{ inputs.publish_auth_crate && inputs.publish_password_crate }}
-        run: sleep 90
-
-      - name: Publish password crate
-        if: ${{ inputs.publish_password_crate }}
-        run: cargo publish -p lenso-module-auth-password --token "$CRATES_IO_TOKEN"
-        working-directory: lenso-auth-module
-        env:
-          CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          PUBLISH_AUTH_CRATE: ${{ inputs.publish_auth_crate }}
+          PUBLISH_PASSWORD_CRATE: ${{ inputs.publish_password_crate }}
 
       - name: Publish console package with token
         if: ${{ inputs.publish_npm && env.HAS_NPM_TOKEN == 'true' }}
