@@ -61,6 +61,8 @@ fn device_to_value(device: &AuthDevice) -> Value {
         "updated_at": device.updated_at,
         "trusted_at": device.trusted_at,
         "primary_at": device.primary_at,
+        "last_seen_ip": device.last_seen_ip,
+        "last_seen_user_agent": device.last_seen_user_agent,
     })
 }
 

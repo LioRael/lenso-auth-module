@@ -3,7 +3,9 @@ use auth_password::config::AuthPasswordConfig;
 use auth_password::migrations::AUTH_PASSWORD_MIGRATIONS;
 use auth_password::repositories::{PasswordAuthRepository, PasswordSessionOptions};
 use chrono::{Duration, Utc};
-use platform_core::{AppResult, ErrorCode, Migration, PLATFORM_MIGRATIONS, apply_migrations};
+use platform_core::{
+    AppResult, ClientRequestMetadata, ErrorCode, Migration, PLATFORM_MIGRATIONS, apply_migrations,
+};
 use platform_runtime::RUNTIME_MIGRATIONS;
 use platform_testing::TestDatabase;
 use std::sync::Arc;
@@ -41,6 +43,7 @@ async fn register_with_options_attaches_device_id_to_session_tokens() {
             &config,
             PasswordSessionOptions {
                 device_id: Some("device_password".to_owned()),
+                client: Default::default(),
             },
         )
         .await
@@ -78,6 +81,7 @@ async fn register_with_options_uses_the_injected_session_policy() {
             &config,
             PasswordSessionOptions {
                 device_id: Some("device_hint".to_owned()),
+                client: Default::default(),
             },
         )
         .await
@@ -167,6 +171,67 @@ async fn login_is_rate_limited_after_repeated_failures() {
         .await
         .expect_err("locked identifier should be rate limited");
     assert_eq!(error.code, ErrorCode::RateLimited);
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
+async fn failed_login_records_client_metadata() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+    let repo = PasswordAuthRepository::new(db.pool.clone());
+    let config = fast_config();
+    let now = Utc::now();
+    repo.register(
+        "metadata@example.com",
+        "correct-password",
+        "usr_failed_metadata".to_owned(),
+        "auth_identity_failed_metadata".to_owned(),
+        "sess_register_failed_metadata".to_owned(),
+        now,
+        now + Duration::hours(1),
+        &config,
+    )
+    .await
+    .expect("register");
+
+    let error = repo
+        .login_with_options(
+            "metadata@example.com",
+            "wrong-password",
+            "sess_failed_metadata".to_owned(),
+            now + Duration::seconds(1),
+            now + Duration::hours(1),
+            &config,
+            PasswordSessionOptions {
+                device_id: None,
+                client: ClientRequestMetadata {
+                    ip: Some("203.0.113.8".to_owned()),
+                    user_agent: Some("LensoTest/2.0".to_owned()),
+                },
+            },
+        )
+        .await
+        .expect_err("wrong password should fail");
+    assert_eq!(error.code, ErrorCode::Unauthorized);
+
+    let row = sqlx::query_as::<_, (Option<String>, Option<String>)>(
+        r#"
+        select last_failed_ip, last_failed_user_agent
+        from auth_password.login_failures
+        where identifier = $1
+        "#,
+    )
+    .bind("metadata@example.com")
+    .fetch_one(&db.pool)
+    .await
+    .expect("login failure row");
+    assert_eq!(row.0.as_deref(), Some("203.0.113.8"));
+    assert_eq!(row.1.as_deref(), Some("LensoTest/2.0"));
 
     db.cleanup().await;
 }

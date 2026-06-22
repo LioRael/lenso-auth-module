@@ -6,7 +6,7 @@ use crate::password::{
 use auth::public::{self, AuthSession, AuthUserId, SessionCreateOptions};
 use auth::session_policy::{AllowSessionPolicy, AuthSessionPolicy};
 use chrono::{DateTime, Duration, Utc};
-use platform_core::{AppError, AppResult, DbPool, ErrorCode};
+use platform_core::{AppError, AppResult, ClientRequestMetadata, DbPool, ErrorCode};
 
 const PASSWORD_PROVIDER: &str = "password";
 const MAX_FAILED_LOGINS: i32 = 5;
@@ -33,6 +33,7 @@ pub enum AuthToken {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PasswordSessionOptions {
     pub device_id: Option<String>,
+    pub client: ClientRequestMetadata,
 }
 
 impl PasswordAuthRepository {
@@ -129,6 +130,7 @@ impl PasswordAuthRepository {
                     expires_at,
                     SessionCreateOptions {
                         device_id: options.device_id,
+                        client: options.client,
                     },
                     self.session_policy.as_ref(),
                 )
@@ -219,7 +221,7 @@ impl PasswordAuthRepository {
             public::find_active_identity(&self.pool, PASSWORD_PROVIDER, &normalized_identifier)
                 .await?
         else {
-            self.record_failed_login(&normalized_identifier, now)
+            self.record_failed_login(&normalized_identifier, now, &options.client)
                 .await?;
             return Err(invalid_credentials());
         };
@@ -236,13 +238,13 @@ impl PasswordAuthRepository {
         .await
         .map_err(map_sql_error)?
         else {
-            self.record_failed_login(&normalized_identifier, now)
+            self.record_failed_login(&normalized_identifier, now, &options.client)
                 .await?;
             return Err(invalid_credentials());
         };
 
         if !verify_password(&password_hash, password)? {
-            self.record_failed_login(&normalized_identifier, now)
+            self.record_failed_login(&normalized_identifier, now, &options.client)
                 .await?;
             return Err(invalid_credentials());
         }
@@ -258,6 +260,7 @@ impl PasswordAuthRepository {
                     expires_at,
                     SessionCreateOptions {
                         device_id: options.device_id,
+                        client: options.client,
                     },
                     self.session_policy.as_ref(),
                 )
@@ -309,6 +312,7 @@ impl PasswordAuthRepository {
         &self,
         normalized_identifier: &str,
         now: DateTime<Utc>,
+        client: &ClientRequestMetadata,
     ) -> AppResult<()> {
         let mut tx = self.pool.begin().await.map_err(map_sql_error)?;
         let row = sqlx::query_as::<_, (i32, DateTime<Utc>)>(
@@ -332,7 +336,9 @@ impl PasswordAuthRepository {
                 set failed_count = $2,
                     window_started_at = $3,
                     last_failed_at = $4,
-                    locked_until = $5
+                    locked_until = $5,
+                    last_failed_ip = $6,
+                    last_failed_user_agent = $7
                 where identifier = $1
                 "#,
             )
@@ -341,6 +347,8 @@ impl PasswordAuthRepository {
             .bind(update.window_started_at)
             .bind(now)
             .bind(update.locked_until)
+            .bind(client.ip.as_deref())
+            .bind(client.user_agent.as_deref())
             .execute(&mut *tx)
             .await
             .map_err(map_sql_error)?;
@@ -348,12 +356,22 @@ impl PasswordAuthRepository {
             sqlx::query(
                 r#"
                 insert into auth_password.login_failures
-                    (identifier, failed_count, window_started_at, last_failed_at, locked_until)
-                values ($1, 1, $2, $2, null)
+                    (
+                        identifier,
+                        failed_count,
+                        window_started_at,
+                        last_failed_at,
+                        locked_until,
+                        last_failed_ip,
+                        last_failed_user_agent
+                    )
+                values ($1, 1, $2, $2, null, $3, $4)
                 "#,
             )
             .bind(normalized_identifier)
             .bind(now)
+            .bind(client.ip.as_deref())
+            .bind(client.user_agent.as_deref())
             .execute(&mut *tx)
             .await
             .map_err(map_sql_error)?;

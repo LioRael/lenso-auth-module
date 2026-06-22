@@ -88,6 +88,7 @@ async fn register(
         &password_config,
         PasswordSessionOptions {
             device_id: input.device_id,
+            client: request_ctx.client.clone(),
         },
     )
     .await
@@ -163,6 +164,7 @@ async fn login(
         &password_config,
         PasswordSessionOptions {
             device_id: input.device_id,
+            client: request_ctx.client.clone(),
         },
     )
     .await
@@ -227,6 +229,7 @@ mod tests {
                 proposed_device_id: Some("device_route".to_owned()),
                 created_at: now,
                 expires_at: now,
+                client: Default::default(),
             })
             .await
             .expect("policy should allow");

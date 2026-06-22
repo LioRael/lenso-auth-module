@@ -99,8 +99,18 @@ impl PostgresAuthUserRepository {
 
         sqlx::query(
             r#"
-            insert into auth.sessions (id, user_id, token_hash, device_id, created_at, expires_at, revoked_at)
-            values ($1, $2, $3, null, $4, $5, null)
+            insert into auth.sessions (
+                id,
+                user_id,
+                token_hash,
+                device_id,
+                client_ip,
+                user_agent,
+                created_at,
+                expires_at,
+                revoked_at
+            )
+            values ($1, $2, $3, null, null, null, $4, $5, null)
             "#,
         )
         .bind(&session_id)
@@ -256,7 +266,7 @@ impl AuthUserRepository for PostgresAuthUserRepository {
     async fn find_session_by_id(&self, session_id: &str) -> AppResult<Option<AuthSessionRecord>> {
         sqlx::query_as::<_, SessionRow>(
             r#"
-            select id, user_id, device_id, created_at, expires_at, revoked_at
+            select id, user_id, device_id, client_ip, user_agent, created_at, expires_at, revoked_at
             from auth.sessions
             where id = $1
             "#,
@@ -277,7 +287,7 @@ impl AuthUserRepository for PostgresAuthUserRepository {
             Some(after) => {
                 sqlx::query_as::<_, SessionRow>(
                     r#"
-                    select id, user_id, device_id, created_at, expires_at, revoked_at
+                    select id, user_id, device_id, client_ip, user_agent, created_at, expires_at, revoked_at
                     from auth.sessions
                     where id > $1
                     order by id asc
@@ -292,7 +302,7 @@ impl AuthUserRepository for PostgresAuthUserRepository {
             None => {
                 sqlx::query_as::<_, SessionRow>(
                     r#"
-                    select id, user_id, device_id, created_at, expires_at, revoked_at
+                    select id, user_id, device_id, client_ip, user_agent, created_at, expires_at, revoked_at
                     from auth.sessions
                     order by id asc
                     limit $1
@@ -396,6 +406,8 @@ type SessionRow = (
     String,
     String,
     Option<String>,
+    Option<String>,
+    Option<String>,
     DateTime<Utc>,
     DateTime<Utc>,
     Option<DateTime<Utc>>,
@@ -413,11 +425,13 @@ fn user_from_row(row: UserRow) -> AuthUser {
 }
 
 fn session_from_row(row: SessionRow) -> AuthSessionRecord {
-    let (id, user_id, device_id, created_at, expires_at, revoked_at) = row;
+    let (id, user_id, device_id, client_ip, user_agent, created_at, expires_at, revoked_at) = row;
     AuthSessionRecord {
         id,
         user_id: AuthUserId(user_id),
         device_id,
+        client_ip,
+        user_agent,
         created_at,
         expires_at,
         revoked_at,

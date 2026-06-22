@@ -31,7 +31,7 @@ impl AuthSessionPolicy for AuthDevicePolicy {
         };
         let device = self
             .repository
-            .upsert_seen_device(&input.user_id, device_id, input.created_at)
+            .upsert_seen_device(&input.user_id, device_id, input.created_at, &input.client)
             .await?;
         Ok(SessionCreateDecision {
             device_id: Some(device.id),

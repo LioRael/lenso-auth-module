@@ -1,11 +1,12 @@
 use crate::models::AuthUserId;
 use chrono::{DateTime, Utc};
-use platform_core::{AppContext, AppResult};
+use platform_core::{AppContext, AppResult, ClientRequestMetadata};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SessionCreateOptions {
     pub device_id: Option<String>,
+    pub client: ClientRequestMetadata,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +16,7 @@ pub struct SessionCreateInput {
     pub proposed_device_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
+    pub client: ClientRequestMetadata,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -161,6 +163,7 @@ mod tests {
                 proposed_device_id: Some("device".to_owned()),
                 created_at: now,
                 expires_at: now,
+                client: Default::default(),
             })
             .await
             .expect("policy chain should allow session");

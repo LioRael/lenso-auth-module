@@ -1,6 +1,6 @@
 [package]
 name = "lenso-module-auth-password"
-version = "0.1.5"
+version = "0.1.6"
 edition.workspace = true
 license = "MIT"
 description = "First-party password auth module for the Lenso backend framework."
