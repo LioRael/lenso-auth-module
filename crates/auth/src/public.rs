@@ -1,9 +1,11 @@
 use crate::resolver::session_token_hash;
+use crate::session_policy::{AllowSessionPolicy, AuthSessionPolicy, SessionCreateInput};
 use chrono::{DateTime, Utc};
 use platform_core::{AppError, AppResult, DbPool, ErrorCode};
 use sqlx::{Postgres, Transaction};
 
 pub use crate::models::{AuthSession, AuthUserId};
+pub use crate::session_policy::SessionCreateOptions;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthIdentity {
@@ -84,9 +86,34 @@ pub async fn create_session(
     created_at: DateTime<Utc>,
     expires_at: DateTime<Utc>,
 ) -> AppResult<AuthSession> {
+    create_session_with_policy(
+        pool,
+        user_id,
+        session_id,
+        token,
+        created_at,
+        expires_at,
+        SessionCreateOptions::default(),
+        &AllowSessionPolicy,
+    )
+    .await
+}
+
+pub async fn create_session_with_policy(
+    pool: &DbPool,
+    user_id: &AuthUserId,
+    session_id: String,
+    token: String,
+    created_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+    options: SessionCreateOptions,
+    policy: &dyn AuthSessionPolicy,
+) -> AppResult<AuthSession> {
     let mut tx = pool.begin().await.map_err(map_sql_error)?;
-    let session =
-        create_session_in_tx(&mut tx, user_id, session_id, token, created_at, expires_at).await?;
+    let session = create_session_in_tx_with_policy(
+        &mut tx, user_id, session_id, token, created_at, expires_at, options, policy,
+    )
+    .await?;
     tx.commit().await.map_err(map_sql_error)?;
     Ok(session)
 }
@@ -98,6 +125,29 @@ pub async fn create_session_in_tx(
     token: String,
     created_at: DateTime<Utc>,
     expires_at: DateTime<Utc>,
+) -> AppResult<AuthSession> {
+    create_session_in_tx_with_policy(
+        tx,
+        user_id,
+        session_id,
+        token,
+        created_at,
+        expires_at,
+        SessionCreateOptions::default(),
+        &AllowSessionPolicy,
+    )
+    .await
+}
+
+pub async fn create_session_in_tx_with_policy(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: &AuthUserId,
+    session_id: String,
+    token: String,
+    created_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+    options: SessionCreateOptions,
+    policy: &dyn AuthSessionPolicy,
 ) -> AppResult<AuthSession> {
     let active_user_exists = sqlx::query_scalar::<_, bool>(
         r#"
@@ -118,15 +168,26 @@ pub async fn create_session_in_tx(
         return Err(AppError::new(ErrorCode::Forbidden, "Auth user is disabled"));
     }
 
+    let decision = policy
+        .before_session_create(&SessionCreateInput {
+            user_id: user_id.clone(),
+            session_id: session_id.clone(),
+            proposed_device_id: options.device_id,
+            created_at,
+            expires_at,
+        })
+        .await?;
+
     sqlx::query(
         r#"
-        insert into auth.sessions (id, user_id, token_hash, created_at, expires_at, revoked_at)
-        values ($1, $2, $3, $4, $5, null)
+        insert into auth.sessions (id, user_id, token_hash, device_id, created_at, expires_at, revoked_at)
+        values ($1, $2, $3, $4, $5, $6, null)
         "#,
     )
     .bind(&session_id)
     .bind(&user_id.0)
     .bind(session_token_hash(&token))
+    .bind(decision.device_id.as_deref())
     .bind(created_at)
     .bind(expires_at)
     .execute(&mut **tx)
@@ -137,6 +198,7 @@ pub async fn create_session_in_tx(
         id: session_id,
         user_id: user_id.clone(),
         token,
+        device_id: decision.device_id,
         expires_at,
     })
 }

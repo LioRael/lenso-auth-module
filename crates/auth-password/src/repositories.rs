@@ -3,7 +3,8 @@ use crate::jwt;
 use crate::password::{
     hash_password, new_session_token, normalize_identifier, validate_password, verify_password,
 };
-use auth::public::{self, AuthSession, AuthUserId};
+use auth::public::{self, AuthSession, AuthUserId, SessionCreateOptions};
+use auth::session_policy::{AllowSessionPolicy, AuthSessionPolicy};
 use chrono::{DateTime, Duration, Utc};
 use platform_core::{AppError, AppResult, DbPool, ErrorCode};
 
@@ -15,6 +16,7 @@ const LOGIN_LOCKOUT_DURATION: Duration = Duration::minutes(15);
 #[derive(Debug, Clone)]
 pub struct PasswordAuthRepository {
     pool: DbPool,
+    session_policy: std::sync::Arc<dyn AuthSessionPolicy>,
 }
 
 /// Token returned by register/login, varying by strategy.
@@ -28,10 +30,26 @@ pub enum AuthToken {
     },
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PasswordSessionOptions {
+    pub device_id: Option<String>,
+}
+
 impl PasswordAuthRepository {
     #[must_use]
     pub fn new(pool: DbPool) -> Self {
-        Self { pool }
+        Self::new_with_session_policy(pool, std::sync::Arc::new(AllowSessionPolicy))
+    }
+
+    #[must_use]
+    pub fn new_with_session_policy(
+        pool: DbPool,
+        session_policy: std::sync::Arc<dyn AuthSessionPolicy>,
+    ) -> Self {
+        Self {
+            pool,
+            session_policy,
+        }
     }
 
     pub async fn register(
@@ -44,6 +62,32 @@ impl PasswordAuthRepository {
         now: DateTime<Utc>,
         expires_at: DateTime<Utc>,
         config: &AuthPasswordConfig,
+    ) -> AppResult<AuthToken> {
+        self.register_with_options(
+            identifier,
+            password,
+            user_id,
+            identity_id,
+            session_id,
+            now,
+            expires_at,
+            config,
+            PasswordSessionOptions::default(),
+        )
+        .await
+    }
+
+    pub async fn register_with_options(
+        &self,
+        identifier: &str,
+        password: &str,
+        user_id: String,
+        identity_id: String,
+        session_id: String,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+        config: &AuthPasswordConfig,
+        options: PasswordSessionOptions,
     ) -> AppResult<AuthToken> {
         let normalized_identifier = normalize_identifier(identifier)?;
         validate_password(password)?;
@@ -76,13 +120,17 @@ impl PasswordAuthRepository {
                 .await
                 .map_err(map_sql_error)?;
 
-                let session = public::create_session_in_tx(
+                let session = public::create_session_in_tx_with_policy(
                     &mut tx,
                     &identity.user_id,
                     session_id,
                     token,
                     now,
                     expires_at,
+                    SessionCreateOptions {
+                        device_id: options.device_id,
+                    },
+                    self.session_policy.as_ref(),
                 )
                 .await?;
 
@@ -140,6 +188,28 @@ impl PasswordAuthRepository {
         expires_at: DateTime<Utc>,
         config: &AuthPasswordConfig,
     ) -> AppResult<AuthToken> {
+        self.login_with_options(
+            identifier,
+            password,
+            session_id,
+            now,
+            expires_at,
+            config,
+            PasswordSessionOptions::default(),
+        )
+        .await
+    }
+
+    pub async fn login_with_options(
+        &self,
+        identifier: &str,
+        password: &str,
+        session_id: String,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+        config: &AuthPasswordConfig,
+        options: PasswordSessionOptions,
+    ) -> AppResult<AuthToken> {
         let normalized_identifier = normalize_identifier(identifier)?;
         validate_password(password)?;
         self.ensure_login_not_locked(&normalized_identifier, now)
@@ -179,13 +249,17 @@ impl PasswordAuthRepository {
 
         match config.token_strategy {
             TokenStrategy::Session => {
-                let session = public::create_session(
+                let session = public::create_session_with_policy(
                     &self.pool,
                     &identity.user_id,
                     session_id,
                     new_session_token(),
                     now,
                     expires_at,
+                    SessionCreateOptions {
+                        device_id: options.device_id,
+                    },
+                    self.session_policy.as_ref(),
                 )
                 .await?;
                 self.clear_login_failures(&normalized_identifier).await?;

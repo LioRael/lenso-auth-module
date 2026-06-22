@@ -6,12 +6,16 @@ use utoipa::ToSchema;
 pub struct PasswordRegisterRequest {
     pub identifier: String,
     pub password: String,
+    #[serde(default)]
+    pub device_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PasswordLoginRequest {
     pub identifier: String,
     pub password: String,
+    #[serde(default)]
+    pub device_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

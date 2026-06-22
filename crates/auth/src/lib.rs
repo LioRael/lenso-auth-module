@@ -10,3 +10,4 @@ pub mod redis_cache;
 pub mod repositories;
 pub mod resolver;
 pub mod routes;
+pub mod session_policy;
