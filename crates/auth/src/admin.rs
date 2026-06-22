@@ -204,6 +204,8 @@ fn session_to_value(session: &AuthSessionRecord) -> Value {
         "id": session.id,
         "user_id": session.user_id.0,
         "device_id": session.device_id,
+        "client_ip": session.client_ip,
+        "user_agent": session.user_agent,
         "created_at": session.created_at,
         "expires_at": session.expires_at,
         "revoked_at": session.revoked_at,
@@ -247,6 +249,8 @@ mod tests {
             id: "sess_1".to_owned(),
             user_id: AuthUserId("usr_1".to_owned()),
             device_id: Some("device_1".to_owned()),
+            client_ip: Some("203.0.113.7".to_owned()),
+            user_agent: Some("LensoTest/1.0".to_owned()),
             created_at: now,
             expires_at: now,
             revoked_at: None,
@@ -257,11 +261,13 @@ mod tests {
         assert_eq!(
             keys,
             vec![
+                "client_ip",
                 "created_at",
                 "device_id",
                 "expires_at",
                 "id",
                 "revoked_at",
+                "user_agent",
                 "user_id"
             ]
         );

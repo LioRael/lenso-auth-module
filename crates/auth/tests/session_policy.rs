@@ -35,6 +35,10 @@ async fn session_policy_can_attach_a_canonical_device_to_created_sessions() {
         now + Duration::hours(1),
         SessionCreateOptions {
             device_id: Some("browser_hint".to_owned()),
+            client: platform_core::ClientRequestMetadata {
+                ip: Some("203.0.113.7".to_owned()),
+                user_agent: Some("LensoTest/1.0".to_owned()),
+            },
         },
         &CanonicalDevicePolicy,
     )
@@ -49,6 +53,8 @@ async fn session_policy_can_attach_a_canonical_device_to_created_sessions() {
         .await
         .expect("list sessions");
     assert_eq!(page.records[0]["device_id"], "device_primary");
+    assert_eq!(page.records[0]["client_ip"], "203.0.113.7");
+    assert_eq!(page.records[0]["user_agent"], "LensoTest/1.0");
 
     db.cleanup().await;
 }
@@ -63,6 +69,7 @@ impl AuthSessionPolicy for CanonicalDevicePolicy {
         input: &SessionCreateInput,
     ) -> AppResult<SessionCreateDecision> {
         assert_eq!(input.proposed_device_id.as_deref(), Some("browser_hint"));
+        assert_eq!(input.client.ip.as_deref(), Some("203.0.113.7"));
         Ok(SessionCreateDecision {
             device_id: Some("device_primary".to_owned()),
         })

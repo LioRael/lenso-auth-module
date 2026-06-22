@@ -1,6 +1,6 @@
 use auth::models::AuthUserId;
 use chrono::{DateTime, Utc};
-use platform_core::{AppError, AppResult, DbPool, ErrorCode};
+use platform_core::{AppError, AppResult, ClientRequestMetadata, DbPool, ErrorCode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthDevice {
@@ -10,6 +10,8 @@ pub struct AuthDevice {
     pub updated_at: DateTime<Utc>,
     pub trusted_at: Option<DateTime<Utc>>,
     pub primary_at: Option<DateTime<Utc>>,
+    pub last_seen_ip: Option<String>,
+    pub last_seen_user_agent: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -28,20 +30,34 @@ impl PostgresAuthDeviceRepository {
         user_id: &AuthUserId,
         device_id: &str,
         seen_at: DateTime<Utc>,
+        client: &ClientRequestMetadata,
     ) -> AppResult<AuthDevice> {
         sqlx::query_as::<_, DeviceRow>(
             r#"
-            insert into auth_device.devices (id, user_id, created_at, updated_at, trusted_at, primary_at)
-            values ($1, $2, $3, $3, null, null)
+            insert into auth_device.devices (
+                id,
+                user_id,
+                created_at,
+                updated_at,
+                trusted_at,
+                primary_at,
+                last_seen_ip,
+                last_seen_user_agent
+            )
+            values ($1, $2, $3, $3, null, null, $4, $5)
             on conflict (id) do update
             set user_id = excluded.user_id,
-                updated_at = excluded.updated_at
-            returning id, user_id, created_at, updated_at, trusted_at, primary_at
+                updated_at = excluded.updated_at,
+                last_seen_ip = excluded.last_seen_ip,
+                last_seen_user_agent = excluded.last_seen_user_agent
+            returning id, user_id, created_at, updated_at, trusted_at, primary_at, last_seen_ip, last_seen_user_agent
             "#,
         )
         .bind(device_id)
         .bind(&user_id.0)
         .bind(seen_at)
+        .bind(client.ip.as_deref())
+        .bind(client.user_agent.as_deref())
         .fetch_one(&self.pool)
         .await
         .map(device_from_row)
@@ -53,7 +69,7 @@ impl PostgresAuthDeviceRepository {
             Some(after) => {
                 sqlx::query_as::<_, DeviceRow>(
                     r#"
-                    select id, user_id, created_at, updated_at, trusted_at, primary_at
+                    select id, user_id, created_at, updated_at, trusted_at, primary_at, last_seen_ip, last_seen_user_agent
                     from auth_device.devices
                     where id > $1
                     order by id asc
@@ -68,7 +84,7 @@ impl PostgresAuthDeviceRepository {
             None => {
                 sqlx::query_as::<_, DeviceRow>(
                     r#"
-                    select id, user_id, created_at, updated_at, trusted_at, primary_at
+                    select id, user_id, created_at, updated_at, trusted_at, primary_at, last_seen_ip, last_seen_user_agent
                     from auth_device.devices
                     order by id asc
                     limit $1
@@ -87,7 +103,7 @@ impl PostgresAuthDeviceRepository {
     pub async fn find_by_id(&self, device_id: &str) -> AppResult<Option<AuthDevice>> {
         sqlx::query_as::<_, DeviceRow>(
             r#"
-            select id, user_id, created_at, updated_at, trusted_at, primary_at
+            select id, user_id, created_at, updated_at, trusted_at, primary_at, last_seen_ip, last_seen_user_agent
             from auth_device.devices
             where id = $1
             "#,
@@ -107,10 +123,21 @@ type DeviceRow = (
     DateTime<Utc>,
     Option<DateTime<Utc>>,
     Option<DateTime<Utc>>,
+    Option<String>,
+    Option<String>,
 );
 
 fn device_from_row(row: DeviceRow) -> AuthDevice {
-    let (id, user_id, created_at, updated_at, trusted_at, primary_at) = row;
+    let (
+        id,
+        user_id,
+        created_at,
+        updated_at,
+        trusted_at,
+        primary_at,
+        last_seen_ip,
+        last_seen_user_agent,
+    ) = row;
     AuthDevice {
         id,
         user_id: AuthUserId(user_id),
@@ -118,6 +145,8 @@ fn device_from_row(row: DeviceRow) -> AuthDevice {
         updated_at,
         trusted_at,
         primary_at,
+        last_seen_ip,
+        last_seen_user_agent,
     }
 }
 

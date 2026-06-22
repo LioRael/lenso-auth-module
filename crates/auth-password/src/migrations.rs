@@ -13,4 +13,8 @@ pub const AUTH_PASSWORD_MIGRATIONS: &[Migration] = &[
         name: "auth-password/0003_create_login_failures",
         sql: include_str!("../migrations/0003_create_login_failures.sql"),
     },
+    Migration {
+        name: "auth-password/0004_add_login_failure_client_metadata",
+        sql: include_str!("../migrations/0004_add_login_failure_client_metadata.sql"),
+    },
 ];

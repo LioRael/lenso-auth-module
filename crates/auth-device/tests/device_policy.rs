@@ -61,6 +61,10 @@ async fn device_policy_registers_the_proposed_device_and_exposes_admin_data() {
             proposed_device_id: Some("device_browser".to_owned()),
             created_at: now,
             expires_at: now + Duration::hours(1),
+            client: platform_core::ClientRequestMetadata {
+                ip: Some("203.0.113.7".to_owned()),
+                user_agent: Some("LensoTest/1.0".to_owned()),
+            },
         })
         .await
         .expect("policy should allow known device");
@@ -75,6 +79,8 @@ async fn device_policy_registers_the_proposed_device_and_exposes_admin_data() {
     assert_eq!(page.records.len(), 1);
     assert_eq!(page.records[0]["id"], "device_browser");
     assert_eq!(page.records[0]["user_id"], "usr_device");
+    assert_eq!(page.records[0]["last_seen_ip"], "203.0.113.7");
+    assert_eq!(page.records[0]["last_seen_user_agent"], "LensoTest/1.0");
 
     db.cleanup().await;
 }

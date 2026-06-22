@@ -56,6 +56,18 @@ pub fn device_schema() -> AdminSchema {
                     field_type: FieldType::Timestamp,
                     nullable: true,
                 },
+                FieldSchema {
+                    name: "last_seen_ip".to_owned(),
+                    label: "Last IP".to_owned(),
+                    field_type: FieldType::String,
+                    nullable: true,
+                },
+                FieldSchema {
+                    name: "last_seen_user_agent".to_owned(),
+                    label: "Last user agent".to_owned(),
+                    field_type: FieldType::String,
+                    nullable: true,
+                },
             ],
         }],
     }

@@ -175,19 +175,32 @@ pub async fn create_session_in_tx_with_policy(
             proposed_device_id: options.device_id,
             created_at,
             expires_at,
+            client: options.client.clone(),
         })
         .await?;
 
     sqlx::query(
         r#"
-        insert into auth.sessions (id, user_id, token_hash, device_id, created_at, expires_at, revoked_at)
-        values ($1, $2, $3, $4, $5, $6, null)
+        insert into auth.sessions (
+            id,
+            user_id,
+            token_hash,
+            device_id,
+            client_ip,
+            user_agent,
+            created_at,
+            expires_at,
+            revoked_at
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, null)
         "#,
     )
     .bind(&session_id)
     .bind(&user_id.0)
     .bind(session_token_hash(&token))
     .bind(decision.device_id.as_deref())
+    .bind(options.client.ip.as_deref())
+    .bind(options.client.user_agent.as_deref())
     .bind(created_at)
     .bind(expires_at)
     .execute(&mut **tx)

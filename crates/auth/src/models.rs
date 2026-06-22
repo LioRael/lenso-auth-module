@@ -27,6 +27,8 @@ pub struct AuthSessionRecord {
     pub id: String,
     pub user_id: AuthUserId,
     pub device_id: Option<String>,
+    pub client_ip: Option<String>,
+    pub user_agent: Option<String>,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub revoked_at: Option<DateTime<Utc>>,
