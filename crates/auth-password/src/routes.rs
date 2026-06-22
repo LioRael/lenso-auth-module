@@ -1,7 +1,8 @@
 use crate::dto::PasswordSessionResponse;
-use crate::repositories::{AuthToken, PasswordAuthRepository};
-use axum::Json;
+use crate::repositories::{AuthToken, PasswordAuthRepository, PasswordSessionOptions};
+use auth::session_policy::AuthSessionPolicyHandle;
 use axum::extract::State;
+use axum::{Extension, Json};
 use chrono::Duration;
 use platform_core::AppContext;
 use platform_http::responses::json;
@@ -65,25 +66,32 @@ pub fn router() -> ApiOpenApiRouter {
 )]
 async fn register(
     State(ctx): State<AppContext>,
+    session_policy: Option<Extension<AuthSessionPolicyHandle>>,
     HttpRequestContext(request_ctx): HttpRequestContext,
     JsonBody(input): JsonBody<crate::dto::PasswordRegisterRequest>,
 ) -> Result<Json<PasswordSessionResponse>, ApiErrorResponse> {
     let now = ctx.clock.now();
     let password_config = crate::config::AuthPasswordConfig::from_context(&ctx)
         .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
-    let auth_token = PasswordAuthRepository::new(ctx.db.clone())
-        .register(
-            &input.identifier,
-            &input.password,
-            ctx.ids.new_id("usr"),
-            ctx.ids.new_id("auth_identity"),
-            ctx.ids.new_id("sess"),
-            now,
-            now + Duration::hours(SESSION_TTL_HOURS),
-            &password_config,
-        )
-        .await
-        .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
+    let auth_token = PasswordAuthRepository::new_with_session_policy(
+        ctx.db.clone(),
+        session_policy_from_extension(session_policy).into_policy(),
+    )
+    .register_with_options(
+        &input.identifier,
+        &input.password,
+        ctx.ids.new_id("usr"),
+        ctx.ids.new_id("auth_identity"),
+        ctx.ids.new_id("sess"),
+        now,
+        now + Duration::hours(SESSION_TTL_HOURS),
+        &password_config,
+        PasswordSessionOptions {
+            device_id: input.device_id,
+        },
+    )
+    .await
+    .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
 
     Ok(json(auth_token_to_response(auth_token)))
 }
@@ -135,25 +143,40 @@ async fn register(
 )]
 async fn login(
     State(ctx): State<AppContext>,
+    session_policy: Option<Extension<AuthSessionPolicyHandle>>,
     HttpRequestContext(request_ctx): HttpRequestContext,
     JsonBody(input): JsonBody<crate::dto::PasswordLoginRequest>,
 ) -> Result<Json<PasswordSessionResponse>, ApiErrorResponse> {
     let now = ctx.clock.now();
     let password_config = crate::config::AuthPasswordConfig::from_context(&ctx)
         .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
-    let auth_token = PasswordAuthRepository::new(ctx.db.clone())
-        .login(
-            &input.identifier,
-            &input.password,
-            ctx.ids.new_id("sess"),
-            now,
-            now + Duration::hours(SESSION_TTL_HOURS),
-            &password_config,
-        )
-        .await
-        .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
+    let auth_token = PasswordAuthRepository::new_with_session_policy(
+        ctx.db.clone(),
+        session_policy_from_extension(session_policy).into_policy(),
+    )
+    .login_with_options(
+        &input.identifier,
+        &input.password,
+        ctx.ids.new_id("sess"),
+        now,
+        now + Duration::hours(SESSION_TTL_HOURS),
+        &password_config,
+        PasswordSessionOptions {
+            device_id: input.device_id,
+        },
+    )
+    .await
+    .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
 
     Ok(json(auth_token_to_response(auth_token)))
+}
+
+fn session_policy_from_extension(
+    session_policy: Option<Extension<AuthSessionPolicyHandle>>,
+) -> AuthSessionPolicyHandle {
+    session_policy
+        .map(|Extension(session_policy)| session_policy)
+        .unwrap_or_default()
 }
 
 fn auth_token_to_response(token: AuthToken) -> PasswordSessionResponse {
@@ -174,5 +197,55 @@ fn auth_token_to_response(token: AuthToken) -> PasswordSessionResponse {
             token,
             expires_at,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use auth::models::AuthUserId;
+    use auth::session_policy::{
+        AuthSessionPolicy, AuthSessionPolicyHandle, SessionCreateDecision, SessionCreateInput,
+    };
+    use axum::Extension;
+    use chrono::Utc;
+    use platform_core::AppResult;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn route_session_policy_prefers_injected_policy_extension() {
+        let handle = session_policy_from_extension(Some(Extension(AuthSessionPolicyHandle::new(
+            Arc::new(FixedPolicy),
+        ))));
+        let now = Utc::now();
+
+        let decision = handle
+            .policy()
+            .before_session_create(&SessionCreateInput {
+                user_id: AuthUserId("usr_route".to_owned()),
+                session_id: "sess_route".to_owned(),
+                proposed_device_id: Some("device_route".to_owned()),
+                created_at: now,
+                expires_at: now,
+            })
+            .await
+            .expect("policy should allow");
+
+        assert_eq!(decision.device_id.as_deref(), Some("device_from_route"));
+    }
+
+    #[derive(Debug)]
+    struct FixedPolicy;
+
+    #[async_trait::async_trait]
+    impl AuthSessionPolicy for FixedPolicy {
+        async fn before_session_create(
+            &self,
+            _input: &SessionCreateInput,
+        ) -> AppResult<SessionCreateDecision> {
+            Ok(SessionCreateDecision {
+                device_id: Some("device_from_route".to_owned()),
+            })
+        }
     }
 }

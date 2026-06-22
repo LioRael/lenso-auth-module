@@ -48,6 +48,12 @@ pub fn user_schema() -> AdminSchema {
                         nullable: false,
                     },
                     FieldSchema {
+                        name: "device_id".to_owned(),
+                        label: "Device".to_owned(),
+                        field_type: FieldType::String,
+                        nullable: true,
+                    },
+                    FieldSchema {
                         name: "created_at".to_owned(),
                         label: "Created".to_owned(),
                         field_type: FieldType::Timestamp,

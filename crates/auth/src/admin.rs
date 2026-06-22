@@ -203,6 +203,7 @@ fn session_to_value(session: &AuthSessionRecord) -> Value {
     serde_json::json!({
         "id": session.id,
         "user_id": session.user_id.0,
+        "device_id": session.device_id,
         "created_at": session.created_at,
         "expires_at": session.expires_at,
         "revoked_at": session.revoked_at,
@@ -245,6 +246,7 @@ mod tests {
         let value = session_to_value(&AuthSessionRecord {
             id: "sess_1".to_owned(),
             user_id: AuthUserId("usr_1".to_owned()),
+            device_id: Some("device_1".to_owned()),
             created_at: now,
             expires_at: now,
             revoked_at: None,
@@ -254,7 +256,14 @@ mod tests {
         keys.sort();
         assert_eq!(
             keys,
-            vec!["created_at", "expires_at", "id", "revoked_at", "user_id"]
+            vec![
+                "created_at",
+                "device_id",
+                "expires_at",
+                "id",
+                "revoked_at",
+                "user_id"
+            ]
         );
     }
 }

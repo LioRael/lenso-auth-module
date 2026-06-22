@@ -13,4 +13,8 @@ pub const AUTH_MIGRATIONS: &[Migration] = &[
         name: "auth/0003_add_user_disable_details",
         sql: include_str!("../migrations/0003_add_user_disable_details.sql"),
     },
+    Migration {
+        name: "auth/0004_add_session_device",
+        sql: include_str!("../migrations/0004_add_session_device.sql"),
+    },
 ];

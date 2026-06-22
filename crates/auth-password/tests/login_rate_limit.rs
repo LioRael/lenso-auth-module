@@ -1,10 +1,12 @@
+use auth::session_policy::{AuthSessionPolicy, SessionCreateDecision, SessionCreateInput};
 use auth_password::config::AuthPasswordConfig;
 use auth_password::migrations::AUTH_PASSWORD_MIGRATIONS;
-use auth_password::repositories::PasswordAuthRepository;
+use auth_password::repositories::{PasswordAuthRepository, PasswordSessionOptions};
 use chrono::{Duration, Utc};
-use platform_core::{ErrorCode, Migration, PLATFORM_MIGRATIONS, apply_migrations};
+use platform_core::{AppResult, ErrorCode, Migration, PLATFORM_MIGRATIONS, apply_migrations};
 use platform_runtime::RUNTIME_MIGRATIONS;
 use platform_testing::TestDatabase;
+use std::sync::Arc;
 
 fn migrations() -> Vec<Migration> {
     PLATFORM_MIGRATIONS
@@ -14,6 +16,95 @@ fn migrations() -> Vec<Migration> {
         .chain(AUTH_PASSWORD_MIGRATIONS)
         .copied()
         .collect()
+}
+
+#[tokio::test]
+async fn register_with_options_attaches_device_id_to_session_tokens() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+    let repo = PasswordAuthRepository::new(db.pool.clone());
+    let config = fast_config();
+    let now = Utc::now();
+    let token = repo
+        .register_with_options(
+            "device@example.com",
+            "correct-password",
+            "usr_password_device".to_owned(),
+            "auth_identity_password_device".to_owned(),
+            "sess_password_device".to_owned(),
+            now,
+            now + Duration::hours(1),
+            &config,
+            PasswordSessionOptions {
+                device_id: Some("device_password".to_owned()),
+            },
+        )
+        .await
+        .expect("register");
+
+    let auth_password::repositories::AuthToken::Session(session) = token else {
+        panic!("session strategy should return a session token");
+    };
+    assert_eq!(session.device_id.as_deref(), Some("device_password"));
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
+async fn register_with_options_uses_the_injected_session_policy() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+    let repo =
+        PasswordAuthRepository::new_with_session_policy(db.pool.clone(), Arc::new(FixedPolicy));
+    let config = fast_config();
+    let now = Utc::now();
+    let token = repo
+        .register_with_options(
+            "policy@example.com",
+            "correct-password",
+            "usr_password_policy".to_owned(),
+            "auth_identity_password_policy".to_owned(),
+            "sess_password_policy".to_owned(),
+            now,
+            now + Duration::hours(1),
+            &config,
+            PasswordSessionOptions {
+                device_id: Some("device_hint".to_owned()),
+            },
+        )
+        .await
+        .expect("register");
+
+    let auth_password::repositories::AuthToken::Session(session) = token else {
+        panic!("session strategy should return a session token");
+    };
+    assert_eq!(session.device_id.as_deref(), Some("device_from_policy"));
+
+    db.cleanup().await;
+}
+
+#[derive(Debug)]
+struct FixedPolicy;
+
+#[async_trait::async_trait]
+impl AuthSessionPolicy for FixedPolicy {
+    async fn before_session_create(
+        &self,
+        input: &SessionCreateInput,
+    ) -> AppResult<SessionCreateDecision> {
+        assert_eq!(input.proposed_device_id.as_deref(), Some("device_hint"));
+        Ok(SessionCreateDecision {
+            device_id: Some("device_from_policy".to_owned()),
+        })
+    }
 }
 
 fn fast_config() -> AuthPasswordConfig {
