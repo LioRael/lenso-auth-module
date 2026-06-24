@@ -1277,6 +1277,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "lenso-module-auth-oidc"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "getrandom 0.4.3",
+ "jsonwebtoken",
+ "lenso-module-auth",
+ "lenso-platform-core",
+ "lenso-platform-http",
+ "lenso-platform-module",
+ "lenso-platform-testing",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx",
+ "tokio",
+ "tower",
+ "utoipa",
+]
+
+[[package]]
 name = "lenso-module-auth-password"
 version = "0.1.6"
 dependencies = [
