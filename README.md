@@ -4,6 +4,7 @@ First-party Lenso auth modules and Runtime Console surface.
 
 - `crates/auth`: Rust linked auth module.
 - `crates/auth-device`: Rust linked auth device policy module.
+- `crates/auth-oidc`: Rust OIDC provider module.
 - `crates/auth-password`: Rust password provider module.
 - `packages/auth-console`: Runtime Console surface loaded as a runtime bundle.
 
@@ -11,6 +12,7 @@ First-party Lenso auth modules and Runtime Console surface.
 
 - Rust: `lenso-module-auth`
 - Rust: `lenso-module-auth-device`
+- Rust: `lenso-module-auth-oidc`
 - Rust: `lenso-module-auth-password`
 - npm: `@lenso/auth-console`
 
@@ -44,7 +46,7 @@ lenso module install auth --profile redis-session-cache
 ## Development
 
 ```sh
-cargo test --locked -p lenso-module-auth -p lenso-module-auth-device -p lenso-module-auth-password
+cargo test --locked -p lenso-module-auth -p lenso-module-auth-device -p lenso-module-auth-oidc -p lenso-module-auth-password
 pnpm install --frozen-lockfile
 pnpm check
 ```

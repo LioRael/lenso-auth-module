@@ -1,0 +1,39 @@
+[package]
+name = "lenso-module-auth-oidc"
+version = "0.1.0"
+edition.workspace = true
+license = "MIT"
+description = "First-party OIDC provider module for the Lenso backend framework."
+repository = "https://github.com/LioRael/lenso-auth-module"
+homepage = "https://github.com/LioRael/lenso-auth-module"
+readme = "../../README.md"
+categories = ["web-programming", "development-tools"]
+keywords = ["backend", "framework", "auth", "oidc"]
+rust-version.workspace = true
+
+[lib]
+name = "auth_oidc"
+path = "src/lib.rs"
+
+[dependencies]
+auth.workspace = true
+axum.workspace = true
+chrono.workspace = true
+getrandom.workspace = true
+jsonwebtoken.workspace = true
+platform-core.workspace = true
+platform-http.workspace = true
+platform-module.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx.workspace = true
+utoipa.workspace = true
+
+[dev-dependencies]
+platform-testing.workspace = true
+tokio.workspace = true
+tower.workspace = true
+
+[lints]
+workspace = true
