@@ -2,15 +2,17 @@ import { runtimeConsoleHostApi } from "@lenso/runtime-console-api";
 import { useState, type FormEvent } from "react";
 
 import {
+  CONSOLE_ACCESS_PRESETS,
   CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY,
   CONSOLE_ADMIN_USER_SCOPES_SERVICE,
   authSessionRows,
   authSessionsSummary,
   authUserRows,
   authUsersSummary,
+  consoleAccessPresetId,
   consoleAdminAccessForUser,
   consoleAdminUserScopes,
-  setConsoleAdminUserAccess,
+  setConsoleUserScopes,
   type AuthSessionRow,
   type AuthUserRow,
   type ConsoleAdminAccess,
@@ -187,17 +189,17 @@ const AuthUsersSurfacePage = () => {
   const selectedConsoleAccess = selectedUser
     ? consoleAdminAccessForUser(selectedUser.id, configValues)
     : null;
-  const updateConsoleAccess = (enabled: boolean) => {
+  const updateConsoleScopes = (scopes: readonly string[]) => {
     if (!selectedUser) {
       return;
     }
     writeConfigValue.mutate({
       key: CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY,
       service: CONSOLE_ADMIN_USER_SCOPES_SERVICE,
-      value: setConsoleAdminUserAccess(
+      value: setConsoleUserScopes(
         consoleAdminUserScopes(configValues),
         selectedUser.id,
-        enabled
+        scopes
       ),
     });
   };
@@ -283,7 +285,7 @@ const AuthUsersSurfacePage = () => {
                 isError={configValuesQuery.isError}
                 isPending={configValuesQuery.isPending}
                 isWriting={writeConfigValue.isPending}
-                onToggle={updateConsoleAccess}
+                onChange={updateConsoleScopes}
                 writeError={writeConfigValue.error}
                 writeIsError={writeConfigValue.isError}
               />
@@ -493,7 +495,7 @@ function ConsoleAccessPanel({
   isError,
   isPending,
   isWriting,
-  onToggle,
+  onChange,
   writeError,
   writeIsError,
 }: {
@@ -502,11 +504,12 @@ function ConsoleAccessPanel({
   isError: boolean;
   isPending: boolean;
   isWriting: boolean;
-  onToggle: (enabled: boolean) => void;
+  onChange: (scopes: readonly string[]) => void;
   writeError: unknown;
   writeIsError: boolean;
 }) {
   const enabled = access?.enabled ?? false;
+  const presetId = consoleAccessPresetId(access?.scopes ?? []);
   const status = access
     ? `${enabled ? "enabled" : "disabled"}${
         access.pendingRestart ? ", pending restart" : ""
@@ -514,10 +517,6 @@ function ConsoleAccessPanel({
     : "-";
   const scopes =
     access && access.scopes.length > 0 ? access.scopes.join(", ") : "-";
-  let actionLabel = enabled ? "Revoke console access" : "Grant console access";
-  if (isWriting) {
-    actionLabel = "Saving";
-  }
 
   return (
     <div className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2 font-mono">
@@ -528,19 +527,26 @@ function ConsoleAccessPanel({
       <div className="mt-1 truncate text-[10px] text-(--muted)">
         {isPending ? "-" : scopes}
       </div>
-      <button
-        className={[
-          "mt-2 h-7 border px-2 text-[11px] font-semibold disabled:opacity-45",
-          enabled
-            ? "border-[var(--tone-error-border)] bg-[var(--tone-error-bg)] text-(--tone-error-fg)"
-            : "border-[var(--tone-success-border)] bg-[var(--tone-success-bg)] text-(--tone-success-fg)",
-        ].join(" ")}
+      <select
+        aria-label="Console access preset"
+        className="mt-2 h-7 w-full border border-(--border-subtle) bg-(--bg-control) px-2 text-[11px] text-(--foreground) disabled:opacity-45"
         disabled={isPending || isWriting || isError}
-        onClick={() => onToggle(!enabled)}
-        type="button"
+        onChange={(event) => {
+          const nextPreset = CONSOLE_ACCESS_PRESETS.find(
+            (preset) => preset.id === event.currentTarget.value
+          );
+          onChange(nextPreset?.scopes ?? []);
+        }}
+        value={isPending ? "none" : presetId}
       >
-        {actionLabel}
-      </button>
+        <option value="none">No access</option>
+        {CONSOLE_ACCESS_PRESETS.map((preset) => (
+          <option key={preset.id} value={preset.id}>
+            {preset.label}
+          </option>
+        ))}
+        {presetId === "custom" ? <option value="custom">Custom</option> : null}
+      </select>
       {isError ? (
         <div className="mt-1 truncate text-[10px] text-(--error)">
           {String((error as Error | undefined)?.message)}

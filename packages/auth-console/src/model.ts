@@ -7,6 +7,28 @@ export const DEFAULT_CONSOLE_ADMIN_SCOPES = [
   "console.admin",
   "auth.users.read",
 ] as const;
+export const CONSOLE_ACCESS_PRESETS = [
+  {
+    id: "support",
+    label: "Support",
+    scopes: ["console.admin", "auth.users.read"],
+  },
+  {
+    id: "operations",
+    label: "Operations",
+    scopes: ["console.admin", "runtime.stories.read", "identity.users.read"],
+  },
+  {
+    id: "admin",
+    label: "Admin",
+    scopes: [
+      "console.admin",
+      "runtime.stories.read",
+      "auth.users.read",
+      "identity.users.read",
+    ],
+  },
+] as const;
 
 export type AuthUserRow = {
   createdAt: string;
@@ -185,6 +207,31 @@ export function setConsoleAdminUserAccess(
   return next;
 }
 
+export function setConsoleUserScopes(
+  current: Record<string, readonly string[]> | unknown,
+  userId: string,
+  scopes: readonly string[]
+): Record<string, string[]> {
+  const next = normalizeConsoleAdminUserScopes(current);
+  if (scopes.length > 0) {
+    next[userId] = uniqueStrings(scopes);
+  } else {
+    delete next[userId];
+  }
+  return next;
+}
+
+export function consoleAccessPresetId(scopes: readonly string[]): string {
+  if (scopes.length === 0) {
+    return "none";
+  }
+  return (
+    CONSOLE_ACCESS_PRESETS.find((preset) =>
+      sameStringSet(scopes, preset.scopes)
+    )?.id ?? "custom"
+  );
+}
+
 function normalizeConsoleAdminUserScopes(
   value: unknown
 ): Record<string, string[]> {
@@ -208,4 +255,11 @@ function normalizeConsoleAdminUserScopes(
 
 function uniqueStrings(values: readonly string[]) {
   return [...new Set(values)];
+}
+
+function sameStringSet(left: readonly string[], right: readonly string[]) {
+  const leftSet = new Set(left);
+  return (
+    leftSet.size === right.length && right.every((item) => leftSet.has(item))
+  );
 }
