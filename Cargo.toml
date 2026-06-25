@@ -11,7 +11,7 @@ rust-version = "1.94"
 async-trait = "0.1"
 axum = "0.8"
 argon2 = "0.5.3"
-auth = { package = "lenso-module-auth", path = "crates/auth", version = "0.1.5" }
+auth = { package = "lenso-module-auth", path = "crates/auth", version = "0.1.6" }
 auth-device = { package = "lenso-module-auth-device", path = "crates/auth-device", version = "0.1.1" }
 auth-oidc = { package = "lenso-module-auth-oidc", path = "crates/auth-oidc", version = "0.1.0" }
 chrono = { version = "0.4", features = ["serde"] }
