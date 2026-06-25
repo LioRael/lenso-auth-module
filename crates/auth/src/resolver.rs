@@ -2,16 +2,18 @@ use chrono::{DateTime, Utc};
 use platform_core::{ActorContext, ActorResolutionRequest, ActorResolver, AppResult, DbPool};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
-const SESSION_COOKIE: &str = "lenso_session";
+pub const SESSION_COOKIE_NAME: &str = "lenso_session";
 
 #[derive(Debug, Clone)]
 pub struct AuthActorResolver {
     pool: DbPool,
     fallback: Arc<dyn ActorResolver>,
     session_cache: Option<Arc<dyn SessionCache>>,
+    user_scopes: BTreeMap<String, Vec<String>>,
 }
 
 impl AuthActorResolver {
@@ -21,6 +23,7 @@ impl AuthActorResolver {
             pool,
             fallback,
             session_cache: None,
+            user_scopes: BTreeMap::new(),
         }
     }
 
@@ -34,7 +37,14 @@ impl AuthActorResolver {
             pool,
             fallback,
             session_cache,
+            user_scopes: BTreeMap::new(),
         }
+    }
+
+    #[must_use]
+    pub fn with_user_scopes(mut self, user_scopes: BTreeMap<String, Vec<String>>) -> Self {
+        self.user_scopes = user_scopes;
+        self
     }
 
     async fn resolve_session_token(&self, token: &str) -> AppResult<Option<String>> {
@@ -116,10 +126,8 @@ impl ActorResolver for AuthActorResolver {
         for token in tokens {
             match self.resolve_session_token(&token).await {
                 Ok(Some(user_id)) => {
-                    return ActorContext::User {
-                        user_id,
-                        scopes: Vec::new(),
-                    };
+                    let scopes = self.user_scopes.get(&user_id).cloned().unwrap_or_default();
+                    return ActorContext::User { user_id, scopes };
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -173,7 +181,7 @@ fn bearer_token(header: &str) -> Option<&str> {
 fn session_cookie(header: &str) -> Option<String> {
     header.split(';').find_map(|part| {
         let (name, value) = part.trim().split_once('=')?;
-        (name == SESSION_COOKIE)
+        (name == SESSION_COOKIE_NAME)
             .then(|| value.trim())
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned)
@@ -248,6 +256,42 @@ mod tests {
             other => panic!("expected cached user actor, got {other:?}"),
         }
         assert_eq!(*cache.gets.lock().expect("gets"), 1);
+    }
+
+    #[tokio::test]
+    async fn configured_user_scopes_are_attached_to_session_users() {
+        let token_hash = session_token_hash("admin-token");
+        let cache = Arc::new(FakeSessionCache::new([(
+            token_hash,
+            CachedSession {
+                user_id: "usr_admin".to_owned(),
+                expires_at: Utc::now() + chrono::Duration::hours(1),
+            },
+        )]));
+        let resolver = AuthActorResolver::new_with_session_cache(
+            DbPool::connect_lazy("postgres://localhost/unused").expect("lazy pool"),
+            Arc::new(AnonymousResolver),
+            Some(cache),
+        )
+        .with_user_scopes(BTreeMap::from([(
+            "usr_admin".to_owned(),
+            vec!["console.admin".to_owned(), "auth.users.read".to_owned()],
+        )]));
+
+        let actor = resolver
+            .resolve_actor(ActorResolutionRequest {
+                authorization: Some("Bearer admin-token".to_owned()),
+                cookie: None,
+            })
+            .await;
+
+        match actor {
+            ActorContext::User { user_id, scopes } => {
+                assert_eq!(user_id, "usr_admin");
+                assert_eq!(scopes, vec!["console.admin", "auth.users.read"]);
+            }
+            other => panic!("expected configured user actor, got {other:?}"),
+        }
     }
 
     #[derive(Debug)]

@@ -1,10 +1,13 @@
 use crate::dto::PasswordSessionResponse;
 use crate::repositories::{AuthToken, PasswordAuthRepository, PasswordSessionOptions};
+use auth::resolver::SESSION_COOKIE_NAME;
 use auth::session_policy::AuthSessionPolicyHandle;
 use axum::extract::State;
+use axum::http::header::SET_COOKIE;
+use axum::http::{HeaderMap, HeaderValue};
 use axum::{Extension, Json};
-use chrono::Duration;
-use platform_core::AppContext;
+use chrono::{DateTime, Duration, Utc};
+use platform_core::{AppContext, is_local_development_environment};
 use platform_http::responses::json;
 use platform_http::{
     ApiErrorResponse, ApiOpenApiRouter, ErrorResponse, HttpRequestContext, JsonBody, OpenApiRouter,
@@ -69,7 +72,7 @@ async fn register(
     session_policy: Option<Extension<AuthSessionPolicyHandle>>,
     HttpRequestContext(request_ctx): HttpRequestContext,
     JsonBody(input): JsonBody<crate::dto::PasswordRegisterRequest>,
-) -> Result<Json<PasswordSessionResponse>, ApiErrorResponse> {
+) -> Result<(HeaderMap, Json<PasswordSessionResponse>), ApiErrorResponse> {
     let now = ctx.clock.now();
     let password_config = crate::config::AuthPasswordConfig::from_context(&ctx)
         .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
@@ -94,7 +97,11 @@ async fn register(
     .await
     .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
 
-    Ok(json(auth_token_to_response(auth_token)))
+    Ok(auth_token_to_response(
+        auth_token,
+        now,
+        secure_session_cookie(&ctx),
+    ))
 }
 
 #[utoipa::path(
@@ -147,7 +154,7 @@ async fn login(
     session_policy: Option<Extension<AuthSessionPolicyHandle>>,
     HttpRequestContext(request_ctx): HttpRequestContext,
     JsonBody(input): JsonBody<crate::dto::PasswordLoginRequest>,
-) -> Result<Json<PasswordSessionResponse>, ApiErrorResponse> {
+) -> Result<(HeaderMap, Json<PasswordSessionResponse>), ApiErrorResponse> {
     let now = ctx.clock.now();
     let password_config = crate::config::AuthPasswordConfig::from_context(&ctx)
         .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
@@ -170,7 +177,11 @@ async fn login(
     .await
     .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
 
-    Ok(json(auth_token_to_response(auth_token)))
+    Ok(auth_token_to_response(
+        auth_token,
+        now,
+        secure_session_cookie(&ctx),
+    ))
 }
 
 fn session_policy_from_extension(
@@ -181,25 +192,67 @@ fn session_policy_from_extension(
         .unwrap_or_default()
 }
 
-fn auth_token_to_response(token: AuthToken) -> PasswordSessionResponse {
+fn auth_token_to_response(
+    token: AuthToken,
+    now: DateTime<Utc>,
+    secure_cookie: bool,
+) -> (HeaderMap, Json<PasswordSessionResponse>) {
+    let mut headers = HeaderMap::new();
     match token {
-        AuthToken::Session(session) => PasswordSessionResponse {
-            user_id: session.user_id.0,
-            session_id: Some(session.id),
-            token: session.token,
-            expires_at: session.expires_at,
-        },
+        AuthToken::Session(session) => {
+            let max_age_seconds = session
+                .expires_at
+                .signed_duration_since(now)
+                .num_seconds()
+                .max(0);
+            headers.insert(
+                SET_COOKIE,
+                HeaderValue::from_str(&session_cookie_header(
+                    &session.token,
+                    max_age_seconds,
+                    secure_cookie,
+                ))
+                .expect("session cookie header should be valid"),
+            );
+
+            (
+                headers,
+                json(PasswordSessionResponse {
+                    user_id: session.user_id.0,
+                    session_id: Some(session.id),
+                    token: session.token,
+                    expires_at: session.expires_at,
+                }),
+            )
+        }
         AuthToken::Jwt {
             user_id,
             token,
             expires_at,
-        } => PasswordSessionResponse {
-            user_id,
-            session_id: None,
-            token,
-            expires_at,
-        },
+        } => (
+            headers,
+            json(PasswordSessionResponse {
+                user_id,
+                session_id: None,
+                token,
+                expires_at,
+            }),
+        ),
     }
+}
+
+fn session_cookie_header(token: &str, max_age_seconds: i64, secure: bool) -> String {
+    let mut value = format!(
+        "{SESSION_COOKIE_NAME}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age_seconds}"
+    );
+    if secure {
+        value.push_str("; Secure");
+    }
+    value
+}
+
+fn secure_session_cookie(ctx: &AppContext) -> bool {
+    !is_local_development_environment(&ctx.config.service.environment)
 }
 
 #[cfg(test)]
@@ -213,6 +266,18 @@ mod tests {
     use chrono::Utc;
     use platform_core::AppResult;
     use std::sync::Arc;
+
+    #[test]
+    fn session_cookie_header_is_http_only_and_secure_when_requested() {
+        assert_eq!(
+            session_cookie_header("session-token", 3600, true),
+            "lenso_session=session-token; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600; Secure"
+        );
+        assert_eq!(
+            session_cookie_header("session-token", 3600, false),
+            "lenso_session=session-token; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600"
+        );
+    }
 
     #[tokio::test]
     async fn route_session_policy_prefers_injected_policy_extension() {
