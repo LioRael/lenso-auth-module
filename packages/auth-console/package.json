@@ -1,6 +1,6 @@
 {
   "name": "@lenso/auth-console",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Runtime Console surface for the Lenso auth module.",
   "license": "MIT",
   "type": "module",

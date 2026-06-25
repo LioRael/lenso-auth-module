@@ -2,13 +2,43 @@ import { runtimeConsoleHostApi } from "@lenso/runtime-console-api";
 import { useState, type FormEvent } from "react";
 
 import {
+  CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY,
+  CONSOLE_ADMIN_USER_SCOPES_SERVICE,
   authSessionRows,
   authSessionsSummary,
   authUserRows,
   authUsersSummary,
+  consoleAdminAccessForUser,
+  consoleAdminUserScopes,
+  setConsoleAdminUserAccess,
   type AuthSessionRow,
   type AuthUserRow,
+  type ConsoleAdminAccess,
+  type ConsoleConfigValueLike,
 } from "./model";
+
+type ConsoleConfigHostApi = typeof runtimeConsoleHostApi & {
+  config: {
+    useValues: () => {
+      data?: { data: ConsoleConfigValueLike[] };
+      error: unknown;
+      isError: boolean;
+      isPending: boolean;
+    };
+    useWriteValue: () => {
+      error: unknown;
+      isError: boolean;
+      isPending: boolean;
+      mutate: (request: {
+        key: string;
+        service: string;
+        value: unknown;
+      }) => void;
+    };
+  };
+};
+
+const consoleHostApi = runtimeConsoleHostApi as ConsoleConfigHostApi;
 
 const AuthUsersTable = ({
   error,
@@ -146,11 +176,31 @@ const AuthUsersSurfacePage = () => {
     moduleName: "auth",
   });
   const userAction = runtimeConsoleHostApi.adminData.useInvokeAction();
+  const configValuesQuery = consoleHostApi.config.useValues();
+  const writeConfigValue = consoleHostApi.config.useWriteValue();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const userRows = authUserRows(usersQuery.data?.data ?? []);
   const summary = authUsersSummary(usersQuery.data?.data ?? []);
+  const configValues = configValuesQuery.data?.data ?? [];
   const selectedUser =
     userRows.find((user) => user.id === selectedUserId) ?? userRows[0] ?? null;
+  const selectedConsoleAccess = selectedUser
+    ? consoleAdminAccessForUser(selectedUser.id, configValues)
+    : null;
+  const updateConsoleAccess = (enabled: boolean) => {
+    if (!selectedUser) {
+      return;
+    }
+    writeConfigValue.mutate({
+      key: CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY,
+      service: CONSOLE_ADMIN_USER_SCOPES_SERVICE,
+      value: setConsoleAdminUserAccess(
+        consoleAdminUserScopes(configValues),
+        selectedUser.id,
+        enabled
+      ),
+    });
+  };
   const disableUser = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedUser) {
@@ -227,6 +277,16 @@ const AuthUsersSurfacePage = () => {
               <Metric label="reason" value={selectedUser.disabledReason} />
               <Metric label="until" value={selectedUser.disabledUntil} />
               <Metric label="status" value={selectedUser.status} />
+              <ConsoleAccessPanel
+                access={selectedConsoleAccess}
+                error={configValuesQuery.error}
+                isError={configValuesQuery.isError}
+                isPending={configValuesQuery.isPending}
+                isWriting={writeConfigValue.isPending}
+                onToggle={updateConsoleAccess}
+                writeError={writeConfigValue.error}
+                writeIsError={writeConfigValue.isError}
+              />
               <div className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
                 {selectedUser.status === "active" ? (
                   <form
@@ -423,6 +483,74 @@ function Metric({ label, value }: { label: string; value: string }) {
       <div className="mt-1 truncate text-[12px] font-semibold text-(--foreground)">
         {value}
       </div>
+    </div>
+  );
+}
+
+function ConsoleAccessPanel({
+  access,
+  error,
+  isError,
+  isPending,
+  isWriting,
+  onToggle,
+  writeError,
+  writeIsError,
+}: {
+  access: ConsoleAdminAccess | null;
+  error: unknown;
+  isError: boolean;
+  isPending: boolean;
+  isWriting: boolean;
+  onToggle: (enabled: boolean) => void;
+  writeError: unknown;
+  writeIsError: boolean;
+}) {
+  const enabled = access?.enabled ?? false;
+  const status = access
+    ? `${enabled ? "enabled" : "disabled"}${
+        access.pendingRestart ? ", pending restart" : ""
+      }`
+    : "-";
+  const scopes =
+    access && access.scopes.length > 0 ? access.scopes.join(", ") : "-";
+  let actionLabel = enabled ? "Revoke console access" : "Grant console access";
+  if (isWriting) {
+    actionLabel = "Saving";
+  }
+
+  return (
+    <div className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2 font-mono">
+      <div className="text-[10px] text-(--muted)">console access</div>
+      <div className="mt-1 truncate text-[12px] font-semibold text-(--foreground)">
+        {isPending ? "loading" : status}
+      </div>
+      <div className="mt-1 truncate text-[10px] text-(--muted)">
+        {isPending ? "-" : scopes}
+      </div>
+      <button
+        className={[
+          "mt-2 h-7 border px-2 text-[11px] font-semibold disabled:opacity-45",
+          enabled
+            ? "border-[var(--tone-error-border)] bg-[var(--tone-error-bg)] text-(--tone-error-fg)"
+            : "border-[var(--tone-success-border)] bg-[var(--tone-success-bg)] text-(--tone-success-fg)",
+        ].join(" ")}
+        disabled={isPending || isWriting || isError}
+        onClick={() => onToggle(!enabled)}
+        type="button"
+      >
+        {actionLabel}
+      </button>
+      {isError ? (
+        <div className="mt-1 truncate text-[10px] text-(--error)">
+          {String((error as Error | undefined)?.message)}
+        </div>
+      ) : null}
+      {writeIsError ? (
+        <div className="mt-1 truncate text-[10px] text-(--error)">
+          {String((writeError as Error | undefined)?.message)}
+        </div>
+      ) : null}
     </div>
   );
 }

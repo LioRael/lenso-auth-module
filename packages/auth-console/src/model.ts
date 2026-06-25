@@ -1,5 +1,13 @@
 import type { ConsoleAdminRecord } from "@lenso/runtime-console-api";
 
+export const CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY =
+  "auth.console_admin_user_scopes";
+export const CONSOLE_ADMIN_USER_SCOPES_SERVICE = "*";
+export const DEFAULT_CONSOLE_ADMIN_SCOPES = [
+  "console.admin",
+  "auth.users.read",
+] as const;
+
 export type AuthUserRow = {
   createdAt: string;
   disabledAt: string;
@@ -29,6 +37,18 @@ export type AuthSessionsSummary = {
   expired: number;
   revoked: number;
   total: number;
+};
+
+export type ConsoleAdminAccess = {
+  enabled: boolean;
+  pendingRestart: boolean;
+  scopes: string[];
+};
+
+export type ConsoleConfigValueLike = {
+  desired_value: unknown;
+  key: string;
+  pending_restart: boolean;
 };
 
 const fieldText = (value: unknown): string =>
@@ -123,4 +143,69 @@ function sessionStatus(
   return Number.isFinite(expiresMs) && expiresMs <= now.getTime()
     ? "expired"
     : "active";
+}
+
+export function consoleAdminUserScopes(
+  values: readonly ConsoleConfigValueLike[]
+): Record<string, string[]> {
+  const value = values.find(
+    (item) => item.key === CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY
+  );
+  return normalizeConsoleAdminUserScopes(value?.desired_value);
+}
+
+export function consoleAdminAccessForUser(
+  userId: string,
+  values: readonly ConsoleConfigValueLike[]
+): ConsoleAdminAccess {
+  const value = values.find(
+    (item) => item.key === CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY
+  );
+  const scopes =
+    normalizeConsoleAdminUserScopes(value?.desired_value)[userId] ?? [];
+  return {
+    enabled: scopes.includes("console.admin"),
+    pendingRestart: value?.pending_restart ?? false,
+    scopes,
+  };
+}
+
+export function setConsoleAdminUserAccess(
+  current: Record<string, readonly string[]> | unknown,
+  userId: string,
+  enabled: boolean,
+  scopes: readonly string[] = DEFAULT_CONSOLE_ADMIN_SCOPES
+): Record<string, string[]> {
+  const next = normalizeConsoleAdminUserScopes(current);
+  if (enabled) {
+    next[userId] = uniqueStrings([...scopes, ...(next[userId] ?? [])]);
+  } else {
+    delete next[userId];
+  }
+  return next;
+}
+
+function normalizeConsoleAdminUserScopes(
+  value: unknown
+): Record<string, string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const result: Record<string, string[]> = {};
+  for (const [userId, scopes] of Object.entries(value)) {
+    if (typeof userId === "string" && Array.isArray(scopes)) {
+      const normalizedScopes = scopes.filter(
+        (scope): scope is string =>
+          typeof scope === "string" && scope.length > 0
+      );
+      if (normalizedScopes.length > 0) {
+        result[userId] = uniqueStrings(normalizedScopes);
+      }
+    }
+  }
+  return result;
+}
+
+function uniqueStrings(values: readonly string[]) {
+  return [...new Set(values)];
 }
