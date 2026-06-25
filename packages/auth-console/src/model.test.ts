@@ -1,10 +1,14 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY,
   authSessionRows,
   authSessionsSummary,
   authUserRows,
   authUsersSummary,
+  consoleAdminAccessForUser,
+  consoleAdminUserScopes,
+  setConsoleAdminUserAccess,
 } from "./model";
 
 describe("auth console model", () => {
@@ -103,6 +107,66 @@ describe("auth console model", () => {
       expired: 1,
       revoked: 1,
       total: 3,
+    });
+  });
+
+  test("reads console admin access from runtime config values", () => {
+    const values = [
+      {
+        desired_value: {
+          usr_admin: ["console.admin", "auth.users.read"],
+          usr_viewer: ["auth.users.read"],
+        },
+        effective_value: {},
+        key: CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY,
+        pending_restart: true,
+        source: "database",
+        value: {},
+      },
+    ];
+
+    expect(consoleAdminUserScopes(values)).toEqual({
+      usr_admin: ["console.admin", "auth.users.read"],
+      usr_viewer: ["auth.users.read"],
+    });
+    expect(consoleAdminAccessForUser("usr_admin", values)).toEqual({
+      enabled: true,
+      pendingRestart: true,
+      scopes: ["console.admin", "auth.users.read"],
+    });
+    expect(consoleAdminAccessForUser("usr_viewer", values)).toEqual({
+      enabled: false,
+      pendingRestart: true,
+      scopes: ["auth.users.read"],
+    });
+  });
+
+  test("updates console admin access without dropping extra scopes", () => {
+    expect(
+      setConsoleAdminUserAccess(
+        {
+          usr_admin: ["custom.scope"],
+          usr_other: ["console.admin"],
+        },
+        "usr_admin",
+        true
+      )
+    ).toEqual({
+      usr_admin: ["console.admin", "auth.users.read", "custom.scope"],
+      usr_other: ["console.admin"],
+    });
+
+    expect(
+      setConsoleAdminUserAccess(
+        {
+          usr_admin: ["console.admin", "auth.users.read"],
+          usr_other: ["console.admin"],
+        },
+        "usr_admin",
+        false
+      )
+    ).toEqual({
+      usr_other: ["console.admin"],
     });
   });
 });
