@@ -6,9 +6,11 @@ import {
   authSessionsSummary,
   authUserRows,
   authUsersSummary,
+  consoleAccessPresetId,
   consoleAdminAccessForUser,
   consoleAdminUserScopes,
   setConsoleAdminUserAccess,
+  setConsoleUserScopes,
 } from "./model";
 
 describe("auth console model", () => {
@@ -168,5 +170,37 @@ describe("auth console model", () => {
     ).toEqual({
       usr_other: ["console.admin"],
     });
+  });
+
+  test("maps console access presets to exact scopes", () => {
+    expect(consoleAccessPresetId([])).toBe("none");
+    expect(consoleAccessPresetId(["auth.users.read", "console.admin"])).toBe(
+      "support"
+    );
+    expect(
+      consoleAccessPresetId([
+        "console.admin",
+        "runtime.stories.read",
+        "identity.users.read",
+      ])
+    ).toBe("operations");
+    expect(
+      consoleAccessPresetId(["console.admin", "custom.scope"])
+    ).toBe("custom");
+
+    expect(
+      setConsoleUserScopes(
+        { usr_admin: ["custom.scope"], usr_other: ["console.admin"] },
+        "usr_admin",
+        ["console.admin", "runtime.stories.read"]
+      )
+    ).toEqual({
+      usr_admin: ["console.admin", "runtime.stories.read"],
+      usr_other: ["console.admin"],
+    });
+
+    expect(
+      setConsoleUserScopes({ usr_admin: ["console.admin"] }, "usr_admin", [])
+    ).toEqual({});
   });
 });
