@@ -20,6 +20,7 @@ pub fn http_routes() -> Vec<ModuleHttpRoute> {
             method: ModuleHttpMethod::Post,
             path: "/v1/auth/dev/sessions".to_owned(),
             capability: None,
+            operation: None,
             display_name: Some("Create Development Session".to_owned()),
             story_title: Some("Development Auth Session".to_owned()),
         },
@@ -27,6 +28,7 @@ pub fn http_routes() -> Vec<ModuleHttpRoute> {
             method: ModuleHttpMethod::Post,
             path: "/v1/auth/sessions/revoke".to_owned(),
             capability: None,
+            operation: None,
             display_name: Some("Revoke Session".to_owned()),
             story_title: Some("Auth Session Revoked".to_owned()),
         },
@@ -193,6 +195,7 @@ fn action_with_string_input(
             }],
         }),
         confirmation: None,
+        operation: None,
         danger_level,
     }
 }
@@ -228,6 +231,7 @@ fn disable_user_action() -> AdminAction {
             ],
         }),
         confirmation: None,
+        operation: None,
         danger_level: AdminActionDangerLevel::Medium,
     }
 }
