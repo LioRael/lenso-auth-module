@@ -39,6 +39,13 @@ jobs:
           cargo test --locked -p lenso-module-auth -p lenso-module-auth-password
         working-directory: lenso-auth-module
 
-      - name: Check npm package
-        run: npm pack --dry-run --registry https://registry.npmjs.org/
-        working-directory: lenso-auth-module/packages/auth-console
+      - name: Check npm packages
+        run: |
+          set -eu
+          for package_dir in auth-console auth-device-console auth-provider-console; do
+            (
+              cd "packages/$package_dir"
+              npm pack --dry-run --registry https://registry.npmjs.org/
+            )
+          done
+        working-directory: lenso-auth-module
