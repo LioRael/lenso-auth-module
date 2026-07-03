@@ -308,6 +308,70 @@ async fn failed_login_records_client_metadata() {
 }
 
 #[tokio::test]
+async fn reset_password_replaces_existing_credential_hash() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+    let repo = PasswordAuthRepository::new(db.pool.clone());
+    let config = fast_config();
+    let now = Utc::now();
+    let user_id = AuthUserId("usr_password_reset".to_owned());
+    repo.register(
+        "reset@example.com",
+        "old-password",
+        user_id.0.clone(),
+        "auth_identity_password_reset".to_owned(),
+        "sess_password_reset_register".to_owned(),
+        now,
+        now + Duration::hours(1),
+        &config,
+    )
+    .await
+    .expect("register");
+
+    let updated = repo
+        .reset_password(
+            &user_id,
+            "new-password",
+            now + Duration::seconds(1),
+            &config,
+        )
+        .await
+        .expect("reset password");
+
+    assert!(updated);
+    assert_eq!(
+        repo.login(
+            "reset@example.com",
+            "old-password",
+            "sess_password_reset_old".to_owned(),
+            now + Duration::seconds(2),
+            now + Duration::hours(1),
+            &config,
+        )
+        .await
+        .expect_err("old password should fail")
+        .code,
+        ErrorCode::Unauthorized
+    );
+    repo.login(
+        "reset@example.com",
+        "new-password",
+        "sess_password_reset_new".to_owned(),
+        now + Duration::seconds(3),
+        now + Duration::hours(1),
+        &config,
+    )
+    .await
+    .expect("new password should login");
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
 async fn successful_login_clears_previous_failures() {
     let Some(db) = TestDatabase::create().await else {
         return;

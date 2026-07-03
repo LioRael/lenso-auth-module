@@ -315,6 +315,36 @@ impl PasswordAuthRepository {
         }
     }
 
+    pub async fn reset_password(
+        &self,
+        user_id: &AuthUserId,
+        password: &str,
+        now: DateTime<Utc>,
+        config: &AuthPasswordConfig,
+    ) -> AppResult<bool> {
+        validate_password(password)?;
+        let password_hash = hash_password(password, config)?;
+        let result = sqlx::query(
+            r#"
+            update auth_password.credentials credentials
+            set password_hash = $2, updated_at = $3
+            from auth.identities identities
+            where credentials.identity_id = identities.id
+              and identities.user_id = $1
+              and identities.provider = $4
+            "#,
+        )
+        .bind(&user_id.0)
+        .bind(password_hash)
+        .bind(now)
+        .bind(PASSWORD_PROVIDER)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sql_error)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     async fn ensure_login_not_locked(
         &self,
         normalized_identifier: &str,

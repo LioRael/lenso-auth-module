@@ -5,14 +5,18 @@ use platform_http::ApiOpenApiRouter;
 use platform_module::{
     AdminAction, AdminActionDangerLevel, AdminActionInputField, AdminActionInputSchema,
     AdminDeclarativeComponent, AdminDeclarativePage, AdminDeclarativeSection,
-    AdminDeclarativeSurface, AdminSchema, ConsoleArea, ConsoleNavigation, ConsolePackage,
-    ConsoleSurface, ConsoleWorkspaceRef, EntitySchema, FieldSchema, FieldType, LinkedBinding,
-    LinkedHttpContribution, Module, ModuleHttpMethod, ModuleHttpRoute, ModuleManifest,
+    AdminDeclarativeSurface, AdminSchema, ConsoleArea, ConsoleContributionKind, ConsoleNavigation,
+    ConsolePackage, ConsoleSlot, ConsoleSlotContext, ConsoleSlotContextField,
+    ConsoleSlotContextFieldType, ConsoleSurface, ConsoleWorkspaceRef, EntitySchema, FieldSchema,
+    FieldType, LinkedBinding, LinkedHttpContribution, Module, ModuleHttpMethod, ModuleHttpRoute,
+    ModuleManifest,
 };
 use std::sync::Arc;
 
 pub const MODULE_NAME: &str = "auth";
 pub const AUTH_USERS_READ: &str = "auth.users.read";
+pub const AUTH_USERS_DETAIL_ACTIONS_SLOT: &str = "auth.users.detail.actions";
+pub const AUTH_USERS_DETAIL_ACTIONS_SLOT_VERSION: u32 = 1;
 
 pub fn http_routes() -> Vec<ModuleHttpRoute> {
     vec![
@@ -289,12 +293,30 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
     ]
 }
 
+pub fn console_slots() -> Vec<ConsoleSlot> {
+    vec![ConsoleSlot {
+        id: AUTH_USERS_DETAIL_ACTIONS_SLOT.to_owned(),
+        version: AUTH_USERS_DETAIL_ACTIONS_SLOT_VERSION,
+        label: "User detail actions".to_owned(),
+        accepts: vec![ConsoleContributionKind::AdminAction],
+        context: vec![ConsoleSlotContext {
+            name: "selected_user".to_owned(),
+            fields: vec![ConsoleSlotContextField {
+                name: "id".to_owned(),
+                field_type: ConsoleSlotContextFieldType::String,
+                required: true,
+            }],
+        }],
+    }]
+}
+
 pub fn manifest() -> ModuleManifest {
     ModuleManifest::builder(MODULE_NAME)
         .capabilities(vec![AUTH_USERS_READ.to_owned()])
         .http_routes(http_routes())
         .declarative_admin(admin_surface())
         .console(console_surfaces())
+        .console_slots(console_slots())
         .build()
 }
 
@@ -339,6 +361,7 @@ mod tests {
             ))
         );
         assert_eq!(manifest.console, console_surfaces());
+        assert_eq!(manifest.console_slots, console_slots());
 
         let lints = lint_module_manifest(ModuleSource::Linked, &manifest);
         assert!(
