@@ -115,20 +115,64 @@ jobs:
           PUBLISH_AUTH_CRATE: ${{ inputs.publish_auth_crate }}
           PUBLISH_PASSWORD_CRATE: ${{ inputs.publish_password_crate }}
 
-      - name: Publish console packages with token
-        if: ${{ inputs.publish_npm && env.HAS_NPM_TOKEN == 'true' }}
+      - name: Publish console packages
+        if: ${{ inputs.publish_npm }}
         run: |
           set -eu
 
+          package_name() {
+            package_dir="$1"
+            node -p "require('./packages/$package_dir/package.json').name"
+          }
+
+          package_version() {
+            package_dir="$1"
+            node -p "require('./packages/$package_dir/package.json').version"
+          }
+
+          version_exists() {
+            package_dir="$1"
+            name="$(package_name "$package_dir")"
+            version="$(package_version "$package_dir")"
+            if npm view "$name@$version" version --registry https://registry.npmjs.org/ >/dev/null 2>&1; then
+              return 0
+            fi
+            return 1
+          }
+
+          publish_with_token() {
+            package_dir="$1"
+            (cd "packages/$package_dir" && npm publish --access public --registry https://registry.npmjs.org/)
+          }
+
+          publish_with_trusted_publishing() {
+            package_dir="$1"
+            tmp_npmrc="$(mktemp)"
+            printf 'registry=https://registry.npmjs.org/\n' > "$tmp_npmrc"
+            (
+              cd "packages/$package_dir"
+              NPM_CONFIG_USERCONFIG="$tmp_npmrc" npm publish --access public --registry https://registry.npmjs.org/ --provenance
+            )
+            rm -f "$tmp_npmrc"
+          }
+
           publish_package() {
             package_dir="$1"
-            name="$(node -p "require('./packages/$package_dir/package.json').name")"
-            version="$(node -p "require('./packages/$package_dir/package.json').version")"
-            if npm view "$name@$version" version --registry https://registry.npmjs.org/ >/dev/null 2>&1; then
+            name="$(package_name "$package_dir")"
+            version="$(package_version "$package_dir")"
+            if version_exists "$package_dir"; then
               echo "$name@$version is already on npm; skipping."
-            else
-              (cd "packages/$package_dir" && npm publish --access public --registry https://registry.npmjs.org/)
+              return 0
             fi
+
+            if [ "${HAS_NPM_TOKEN:-}" = "true" ]; then
+              if publish_with_token "$package_dir"; then
+                return 0
+              fi
+              echo "::warning::$name@$version did not publish with NPM_TOKEN; retrying with trusted publishing."
+            fi
+
+            publish_with_trusted_publishing "$package_dir"
           }
 
           publish_package auth-console
@@ -137,24 +181,3 @@ jobs:
         working-directory: lenso-auth-module
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish console packages with trusted publishing
-        if: ${{ inputs.publish_npm && env.HAS_NPM_TOKEN != 'true' }}
-        run: |
-          set -eu
-
-          publish_package() {
-            package_dir="$1"
-            name="$(node -p "require('./packages/$package_dir/package.json').name")"
-            version="$(node -p "require('./packages/$package_dir/package.json').version")"
-            if npm view "$name@$version" version --registry https://registry.npmjs.org/ >/dev/null 2>&1; then
-              echo "$name@$version is already on npm; skipping."
-            else
-              (cd "packages/$package_dir" && npm publish --access public --registry https://registry.npmjs.org/)
-            fi
-          }
-
-          publish_package auth-console
-          publish_package auth-device-console
-          publish_package auth-provider-console
-        working-directory: lenso-auth-module
