@@ -3,9 +3,22 @@ use crate::session_policy::{AllowSessionPolicy, AuthSessionPolicy, SessionCreate
 use chrono::{DateTime, Utc};
 use platform_core::{AppError, AppResult, DbPool, ErrorCode};
 use sqlx::{Postgres, Transaction};
+use std::fmt::Write as _;
 
 pub use crate::models::{AuthSession, AuthUserId};
 pub use crate::session_policy::SessionCreateOptions;
+
+pub fn new_session_token() -> String {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes).expect("OS randomness should be available");
+
+    let mut token = String::with_capacity("sess_".len() + bytes.len() * 2);
+    token.push_str("sess_");
+    for byte in bytes {
+        let _ = write!(token, "{byte:02x}");
+    }
+    token
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthIdentity {
@@ -21,13 +34,126 @@ pub async fn create_user_identity_in_tx(
     provider_subject: &str,
     created_at: DateTime<Utc>,
 ) -> AppResult<AuthIdentity> {
-    sqlx::query(
+    create_user_identity_in_tx_with_anonymous(
+        tx,
+        user_id,
+        identity_id,
+        provider,
+        provider_subject,
+        created_at,
+        false,
+    )
+    .await
+}
+
+pub async fn create_anonymous_user_identity_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: AuthUserId,
+    identity_id: String,
+    provider: &str,
+    provider_subject: &str,
+    created_at: DateTime<Utc>,
+) -> AppResult<AuthIdentity> {
+    create_user_identity_in_tx_with_anonymous(
+        tx,
+        user_id,
+        identity_id,
+        provider,
+        provider_subject,
+        created_at,
+        true,
+    )
+    .await
+}
+
+pub async fn link_identity_to_anonymous_user_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: &AuthUserId,
+    identity_id: String,
+    provider: &str,
+    provider_subject: &str,
+    created_at: DateTime<Utc>,
+) -> AppResult<AuthIdentity> {
+    let anonymous_user_exists = sqlx::query_scalar::<_, bool>(
         r#"
-        insert into auth.users (id, created_at, disabled_at, disabled_reason, disabled_until)
-        values ($1, $2, null, null, null)
+        select exists(
+            select 1
+            from auth.users
+            where id = $1
+              and is_anonymous
+              and (disabled_at is null or disabled_until <= now())
+        )
         "#,
     )
     .bind(&user_id.0)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(map_sql_error)?;
+
+    if !anonymous_user_exists {
+        return Err(AppError::new(
+            ErrorCode::Conflict,
+            "Auth user is not anonymous",
+        ));
+    }
+
+    sqlx::query(
+        r#"
+        insert into auth.identities (id, user_id, provider, provider_subject, created_at, updated_at)
+        values ($1, $2, $3, $4, $5, $5)
+        "#,
+    )
+    .bind(&identity_id)
+    .bind(&user_id.0)
+    .bind(provider)
+    .bind(provider_subject)
+    .bind(created_at)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_sql_error)?;
+
+    sqlx::query(
+        r#"
+        update auth.users
+        set is_anonymous = false
+        where id = $1
+        "#,
+    )
+    .bind(&user_id.0)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_sql_error)?;
+
+    Ok(AuthIdentity {
+        id: identity_id,
+        user_id: user_id.clone(),
+    })
+}
+
+async fn create_user_identity_in_tx_with_anonymous(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: AuthUserId,
+    identity_id: String,
+    provider: &str,
+    provider_subject: &str,
+    created_at: DateTime<Utc>,
+    is_anonymous: bool,
+) -> AppResult<AuthIdentity> {
+    sqlx::query(
+        r#"
+        insert into auth.users (
+            id,
+            is_anonymous,
+            created_at,
+            disabled_at,
+            disabled_reason,
+            disabled_until
+        )
+        values ($1, $2, $3, null, null, null)
+        "#,
+    )
+    .bind(&user_id.0)
+    .bind(is_anonymous)
     .bind(created_at)
     .execute(&mut **tx)
     .await

@@ -21,4 +21,8 @@ pub const AUTH_MIGRATIONS: &[Migration] = &[
         name: "auth/0005_add_session_client_metadata",
         sql: include_str!("../migrations/0005_add_session_client_metadata.sql"),
     },
+    Migration {
+        name: "auth/0006_add_user_anonymous_flag",
+        sql: include_str!("../migrations/0006_add_user_anonymous_flag.sql"),
+    },
 ];

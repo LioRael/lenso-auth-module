@@ -192,6 +192,7 @@ fn unknown_action(action: &str) -> AppError {
 fn user_to_value(user: &AuthUser) -> Value {
     serde_json::json!({
         "id": user.id.0,
+        "is_anonymous": user.is_anonymous,
         "created_at": user.created_at,
         "disabled_at": user.disabled_at,
         "disabled_reason": user.disabled_reason,
@@ -222,6 +223,7 @@ mod tests {
         let now = Utc::now();
         let value = user_to_value(&AuthUser {
             id: AuthUserId("usr_1".to_owned()),
+            is_anonymous: false,
             created_at: now,
             disabled_at: None,
             disabled_reason: None,
@@ -237,7 +239,8 @@ mod tests {
                 "disabled_at",
                 "disabled_reason",
                 "disabled_until",
-                "id"
+                "id",
+                "is_anonymous"
             ]
         );
     }

@@ -15,6 +15,7 @@ use std::sync::Mutex;
 async fn seed(repo: &PostgresAuthUserRepository, id: &str) {
     repo.insert(&AuthUser {
         id: AuthUserId(id.to_owned()),
+        is_anonymous: false,
         created_at: Utc::now(),
         disabled_at: None,
         disabled_reason: None,
@@ -322,6 +323,7 @@ async fn expired_user_disable_allows_new_sessions() {
     let now = Utc::now();
     repo.insert(&AuthUser {
         id: AuthUserId("usr_expired_disable".to_owned()),
+        is_anonymous: false,
         created_at: now,
         disabled_at: Some(now - Duration::hours(2)),
         disabled_reason: Some("temporary".to_owned()),

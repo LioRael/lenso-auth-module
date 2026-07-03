@@ -3,7 +3,6 @@ use argon2::password_hash::{PasswordHash, SaltString};
 use argon2::{Argon2, Params, PasswordHasher, PasswordVerifier, Version};
 use platform_core::error::ErrorDetail;
 use platform_core::{AppError, AppResult, ErrorCode};
-use std::fmt::Write as _;
 
 const MAX_IDENTIFIER_BYTES: usize = 512;
 const MIN_PASSWORD_BYTES: usize = 8;
@@ -54,15 +53,7 @@ pub fn verify_password(password_hash: &str, password: &str) -> AppResult<bool> {
 }
 
 pub fn new_session_token() -> String {
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).expect("OS randomness should be available");
-
-    let mut token = String::with_capacity("sess_".len() + bytes.len() * 2);
-    token.push_str("sess_");
-    for byte in bytes {
-        let _ = write!(token, "{byte:02x}");
-    }
-    token
+    auth::public::new_session_token()
 }
 
 fn argon2_from_config(config: &AuthPasswordConfig) -> AppResult<Argon2<'static>> {

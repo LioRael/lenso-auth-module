@@ -1,5 +1,6 @@
 use crate::dto::PasswordSessionResponse;
 use crate::repositories::{AuthToken, PasswordAuthRepository, PasswordSessionOptions};
+use auth::models::AuthUserId;
 use auth::resolver::SESSION_COOKIE_NAME;
 use auth::session_policy::AuthSessionPolicyHandle;
 use axum::extract::State;
@@ -7,7 +8,7 @@ use axum::http::header::SET_COOKIE;
 use axum::http::{HeaderMap, HeaderValue};
 use axum::{Extension, Json};
 use chrono::{DateTime, Duration, Utc};
-use platform_core::{AppContext, is_local_development_environment};
+use platform_core::{ActorContext, AppContext, is_local_development_environment};
 use platform_http::responses::json;
 use platform_http::{
     ApiErrorResponse, ApiOpenApiRouter, ErrorResponse, HttpRequestContext, JsonBody, OpenApiRouter,
@@ -92,6 +93,7 @@ async fn register(
         PasswordSessionOptions {
             device_id: input.device_id,
             client: request_ctx.client.clone(),
+            link_anonymous_user_id: actor_user_id(&request_ctx.actor),
         },
     )
     .await
@@ -172,6 +174,7 @@ async fn login(
         PasswordSessionOptions {
             device_id: input.device_id,
             client: request_ctx.client.clone(),
+            ..PasswordSessionOptions::default()
         },
     )
     .await
@@ -182,6 +185,13 @@ async fn login(
         now,
         secure_session_cookie(&ctx),
     ))
+}
+
+fn actor_user_id(actor: &ActorContext) -> Option<AuthUserId> {
+    match actor {
+        ActorContext::User { user_id, .. } => Some(AuthUserId(user_id.clone())),
+        ActorContext::Anonymous | ActorContext::Service { .. } | ActorContext::System => None,
+    }
 }
 
 fn session_policy_from_extension(

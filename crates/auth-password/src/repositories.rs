@@ -34,6 +34,7 @@ pub enum AuthToken {
 pub struct PasswordSessionOptions {
     pub device_id: Option<String>,
     pub client: ClientRequestMetadata,
+    pub link_anonymous_user_id: Option<AuthUserId>,
 }
 
 impl PasswordAuthRepository {
@@ -98,15 +99,30 @@ impl PasswordAuthRepository {
             TokenStrategy::Session => {
                 let token = new_session_token();
                 let mut tx = self.pool.begin().await.map_err(map_sql_error)?;
-                let identity = public::create_user_identity_in_tx(
-                    &mut tx,
-                    AuthUserId(user_id),
-                    identity_id,
-                    PASSWORD_PROVIDER,
-                    &normalized_identifier,
-                    now,
-                )
-                .await?;
+                let identity = match options.link_anonymous_user_id.as_ref() {
+                    Some(link_user_id) => {
+                        public::link_identity_to_anonymous_user_in_tx(
+                            &mut tx,
+                            link_user_id,
+                            identity_id,
+                            PASSWORD_PROVIDER,
+                            &normalized_identifier,
+                            now,
+                        )
+                        .await?
+                    }
+                    None => {
+                        public::create_user_identity_in_tx(
+                            &mut tx,
+                            AuthUserId(user_id),
+                            identity_id,
+                            PASSWORD_PROVIDER,
+                            &normalized_identifier,
+                            now,
+                        )
+                        .await?
+                    }
+                };
 
                 sqlx::query(
                     r#"
@@ -144,15 +160,30 @@ impl PasswordAuthRepository {
                     AppError::new(ErrorCode::Internal, "JWT configuration is required")
                 })?;
                 let mut tx = self.pool.begin().await.map_err(map_sql_error)?;
-                let identity = public::create_user_identity_in_tx(
-                    &mut tx,
-                    AuthUserId(user_id),
-                    identity_id,
-                    PASSWORD_PROVIDER,
-                    &normalized_identifier,
-                    now,
-                )
-                .await?;
+                let identity = match options.link_anonymous_user_id.as_ref() {
+                    Some(link_user_id) => {
+                        public::link_identity_to_anonymous_user_in_tx(
+                            &mut tx,
+                            link_user_id,
+                            identity_id,
+                            PASSWORD_PROVIDER,
+                            &normalized_identifier,
+                            now,
+                        )
+                        .await?
+                    }
+                    None => {
+                        public::create_user_identity_in_tx(
+                            &mut tx,
+                            AuthUserId(user_id),
+                            identity_id,
+                            PASSWORD_PROVIDER,
+                            &normalized_identifier,
+                            now,
+                        )
+                        .await?
+                    }
+                };
 
                 sqlx::query(
                     r#"

@@ -3,7 +3,11 @@
 First-party Lenso auth modules and Runtime Console surface.
 
 - `crates/auth`: Rust linked auth module.
+- `crates/auth-anonymous`: Rust anonymous auth provider module.
 - `crates/auth-device`: Rust linked auth device policy module.
+- `crates/auth-github`: Rust GitHub OAuth provider module.
+- `crates/auth-google`: Rust Google OAuth/OIDC provider module.
+- `crates/auth-oauth`: Rust OAuth client substrate module.
 - `crates/auth-oidc`: Rust OIDC provider module.
 - `crates/auth-password`: Rust password provider module.
 - `packages/auth-console`: Runtime Console surface loaded as a runtime bundle.
@@ -11,7 +15,11 @@ First-party Lenso auth modules and Runtime Console surface.
 ## Packages
 
 - Rust: `lenso-module-auth`
+- Rust: `lenso-module-auth-anonymous`
 - Rust: `lenso-module-auth-device`
+- Rust: `lenso-module-auth-github`
+- Rust: `lenso-module-auth-google`
+- Rust: `lenso-module-auth-oauth`
 - Rust: `lenso-module-auth-oidc`
 - Rust: `lenso-module-auth-password`
 - npm: `@lenso/auth-console`
@@ -46,7 +54,7 @@ lenso module install auth --profile redis-session-cache
 ## Development
 
 ```sh
-cargo test --locked -p lenso-module-auth -p lenso-module-auth-device -p lenso-module-auth-oidc -p lenso-module-auth-password
+cargo test --locked -p lenso-module-auth -p lenso-module-auth-anonymous -p lenso-module-auth-device -p lenso-module-auth-github -p lenso-module-auth-google -p lenso-module-auth-oauth -p lenso-module-auth-oidc -p lenso-module-auth-password
 pnpm install --frozen-lockfile
 pnpm check
 ```
