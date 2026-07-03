@@ -20,6 +20,12 @@ import {
 } from "./model";
 
 type ConsoleConfigHostApi = typeof runtimeConsoleHostApi & {
+  contributions: {
+    useSlot: (
+      slotId: string,
+      context: Record<string, unknown>
+    ) => ConsoleResolvedContributionLike[];
+  };
   config: {
     useValues: () => {
       data?: { data: ConsoleConfigValueLike[] };
@@ -40,7 +46,20 @@ type ConsoleConfigHostApi = typeof runtimeConsoleHostApi & {
   };
 };
 
+type ConsoleResolvedContributionLike = {
+  kind: "admin_action";
+  key: string;
+  label: string;
+  moduleName: string;
+  actionName: string;
+  input: Record<string, unknown>;
+  icon?: string | null;
+  requiredCapabilities?: readonly string[];
+};
+
 const consoleHostApi = runtimeConsoleHostApi as ConsoleConfigHostApi;
+const AUTH_USERS_DETAIL_ACTIONS_SLOT = "auth.users.detail.actions";
+const RESET_PASSWORD_ACTION = "reset_password";
 
 const AuthUsersTable = ({
   error,
@@ -178,6 +197,7 @@ const AuthUsersSurfacePage = () => {
     moduleName: "auth",
   });
   const userAction = runtimeConsoleHostApi.adminData.useInvokeAction();
+  const resetPasswordAction = runtimeConsoleHostApi.adminData.useInvokeAction();
   const configValuesQuery = consoleHostApi.config.useValues();
   const writeConfigValue = consoleHostApi.config.useWriteValue();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -189,6 +209,16 @@ const AuthUsersSurfacePage = () => {
   const selectedConsoleAccess = selectedUser
     ? consoleAdminAccessForUser(selectedUser.id, configValues)
     : null;
+  const detailActions = consoleHostApi.contributions.useSlot(
+    AUTH_USERS_DETAIL_ACTIONS_SLOT,
+    { selected_user: selectedUser }
+  );
+  const resetPasswordContribution =
+    detailActions.find(
+      (contribution) =>
+        contribution.kind === "admin_action" &&
+        contribution.actionName === RESET_PASSWORD_ACTION
+    ) ?? null;
   const updateConsoleScopes = (scopes: readonly string[]) => {
     if (!selectedUser) {
       return;
@@ -223,6 +253,26 @@ const AuthUsersSurfacePage = () => {
       input,
       moduleName: "auth",
     });
+  };
+  const resetPassword = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedUser || !resetPasswordContribution) {
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const newPassword = String(form.get("new_password") ?? "").trim();
+    if (newPassword.length === 0) {
+      return;
+    }
+    resetPasswordAction.mutate({
+      actionName: resetPasswordContribution.actionName,
+      input: {
+        ...resetPasswordContribution.input,
+        new_password: newPassword,
+      },
+      moduleName: resetPasswordContribution.moduleName,
+    });
+    event.currentTarget.reset();
   };
 
   return (
@@ -289,6 +339,15 @@ const AuthUsersSurfacePage = () => {
                 writeError={writeConfigValue.error}
                 writeIsError={writeConfigValue.isError}
               />
+              {resetPasswordContribution ? (
+                <UserActionContributionPanel
+                  contribution={resetPasswordContribution}
+                  error={resetPasswordAction.error}
+                  isError={resetPasswordAction.isError}
+                  isPending={resetPasswordAction.isPending}
+                  onSubmit={resetPassword}
+                />
+              ) : null}
               <div className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
                 {selectedUser.status === "active" ? (
                   <form
@@ -557,6 +616,48 @@ function ConsoleAccessPanel({
           {String((writeError as Error | undefined)?.message)}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function UserActionContributionPanel({
+  contribution,
+  error,
+  isError,
+  isPending,
+  onSubmit,
+}: {
+  contribution: ConsoleResolvedContributionLike;
+  error: unknown;
+  isError: boolean;
+  isPending: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
+      <form className="grid gap-2" onSubmit={onSubmit}>
+        <label className="grid gap-1 font-mono text-[10px] text-(--muted)">
+          New password
+          <input
+            aria-label="New password"
+            className="h-7 border border-(--border-subtle) bg-(--bg-control) px-2 text-[11px] text-(--foreground)"
+            name="new_password"
+            type="password"
+          />
+        </label>
+        <button
+          className="h-7 justify-self-start border border-[var(--tone-warning-border)] bg-[var(--tone-warning-bg)] px-2 font-mono text-[11px] font-semibold text-(--tone-warning-fg) disabled:opacity-45"
+          disabled={isPending}
+          type="submit"
+        >
+          {isPending ? "Resetting" : contribution.label}
+        </button>
+        {isError ? (
+          <div className="truncate font-mono text-[10px] text-(--error)">
+            {String((error as Error | undefined)?.message)}
+          </div>
+        ) : null}
+      </form>
     </div>
   );
 }
