@@ -1,0 +1,7 @@
+@reference "@lenso/runtime-console-api/theme.css";
+
+@layer utilities;
+
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@source "./**/*.{ts,tsx}";

@@ -1,0 +1,52 @@
+{
+  "name": "@lenso/auth-provider-console",
+  "version": "0.1.0",
+  "description": "Runtime Console surfaces for Lenso auth provider modules.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LioRael/lenso-auth-module.git",
+    "directory": "packages/auth-provider-console"
+  },
+  "homepage": "https://github.com/LioRael/lenso-auth-module#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "src/index.tsx",
+    "src/manifest.ts",
+    "src/model.ts",
+    "src/page.tsx",
+    "console-surface.json",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "prepack": "pnpm build"
+  },
+  "exports": {
+    ".": "./src/index.tsx",
+    "./bundle": "./dist/auth-provider-console.js",
+    "./style": "./dist/auth-provider-console.css",
+    "./console-surface": "./console-surface.json"
+  },
+  "lenso": {
+    "console": {
+      "bundle": "./dist/auth-provider-console.js",
+      "hostApi": "1",
+      "styles": ["./dist/auth-provider-console.css"],
+      "surface": "./console-surface.json"
+    }
+  },
+  "peerDependencies": {
+    "@lenso/runtime-console-api": "^0.1.0",
+    "react": "^19.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@lenso/runtime-console-api": {
+      "optional": true
+    }
+  }
+}

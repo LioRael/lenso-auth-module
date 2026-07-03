@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "pnpm --dir packages/auth-console build",
+    "build": "pnpm --dir packages/auth-console build && pnpm --dir packages/auth-device-console build && pnpm --dir packages/auth-provider-console build",
     "check": "pnpm test && pnpm typecheck && pnpm build",
-    "test": "vitest run packages/auth-console/src",
+    "test": "vitest run packages/auth-console/src packages/auth-device-console/src packages/auth-provider-console/src",
     "typecheck": "tsc -b --pretty false"
   },
   "devDependencies": {

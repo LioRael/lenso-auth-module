@@ -20,5 +20,9 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true
   },
-  "include": ["packages/auth-console/src"]
+  "include": [
+    "packages/auth-console/src",
+    "packages/auth-device-console/src",
+    "packages/auth-provider-console/src"
+  ]
 }
