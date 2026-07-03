@@ -7,6 +7,7 @@ pub struct AuthUserId(pub String);
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AuthUser {
     pub id: AuthUserId,
+    pub is_anonymous: bool,
     pub created_at: DateTime<Utc>,
     pub disabled_at: Option<DateTime<Utc>>,
     pub disabled_reason: Option<String>,

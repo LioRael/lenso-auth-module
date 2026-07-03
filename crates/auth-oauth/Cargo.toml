@@ -1,43 +1,31 @@
 [package]
-name = "lenso-module-auth"
-version = "0.1.6"
+name = "lenso-module-auth-oauth"
+version = "0.1.0"
 edition.workspace = true
 license = "MIT"
-description = "First-party auth anchor module for the Lenso backend framework."
+description = "First-party OAuth client substrate module for the Lenso backend framework."
 repository = "https://github.com/LioRael/lenso-auth-module"
 homepage = "https://github.com/LioRael/lenso-auth-module"
 readme = "../../README.md"
 categories = ["web-programming", "development-tools"]
-keywords = ["backend", "framework", "auth"]
+keywords = ["backend", "framework", "auth", "oauth"]
 rust-version.workspace = true
 
 [lib]
-name = "auth"
+name = "auth_oauth"
 path = "src/lib.rs"
 
-[features]
-default = []
-redis = ["dep:redis"]
-
 [dependencies]
-async-trait.workspace = true
-axum.workspace = true
+auth.workspace = true
 chrono.workspace = true
 getrandom.workspace = true
 platform-core.workspace = true
-platform-http.workspace = true
 platform-module.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 sha2.workspace = true
 sqlx.workspace = true
-tracing.workspace = true
-utoipa.workspace = true
-redis = { workspace = true, optional = true }
 
 [dev-dependencies]
 platform-testing.workspace = true
-platform-runtime.workspace = true
 tokio.workspace = true
 
 [lints]

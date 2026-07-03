@@ -67,8 +67,15 @@ impl PostgresAuthUserRepository {
 
         sqlx::query(
             r#"
-            insert into auth.users (id, created_at, disabled_at, disabled_reason, disabled_until)
-            values ($1, $2, null, null, null)
+            insert into auth.users (
+                id,
+                is_anonymous,
+                created_at,
+                disabled_at,
+                disabled_reason,
+                disabled_until
+            )
+            values ($1, false, $2, null, null, null)
             on conflict (id) do nothing
             "#,
         )
@@ -178,15 +185,17 @@ impl AuthUserRepository for PostgresAuthUserRepository {
             r#"
             insert into auth.users (
                 id,
+                is_anonymous,
                 created_at,
                 disabled_at,
                 disabled_reason,
                 disabled_until
             )
-            values ($1, $2, $3, $4, $5)
+            values ($1, $2, $3, $4, $5, $6)
             "#,
         )
         .bind(&user.id.0)
+        .bind(user.is_anonymous)
         .bind(user.created_at)
         .bind(user.disabled_at)
         .bind(user.disabled_reason.as_deref())
@@ -202,6 +211,7 @@ impl AuthUserRepository for PostgresAuthUserRepository {
             r#"
             select
                 id,
+                is_anonymous,
                 created_at,
                 case when disabled_until <= now() then null else disabled_at end,
                 case when disabled_until <= now() then null else disabled_reason end,
@@ -224,6 +234,7 @@ impl AuthUserRepository for PostgresAuthUserRepository {
                     r#"
                     select
                         id,
+                        is_anonymous,
                         created_at,
                         case when disabled_until <= now() then null else disabled_at end,
                         case when disabled_until <= now() then null else disabled_reason end,
@@ -244,6 +255,7 @@ impl AuthUserRepository for PostgresAuthUserRepository {
                     r#"
                     select
                         id,
+                        is_anonymous,
                         created_at,
                         case when disabled_until <= now() then null else disabled_at end,
                         case when disabled_until <= now() then null else disabled_reason end,
@@ -397,6 +409,7 @@ impl AuthUserRepository for PostgresAuthUserRepository {
 
 type UserRow = (
     String,
+    bool,
     DateTime<Utc>,
     Option<DateTime<Utc>>,
     Option<String>,
@@ -414,9 +427,10 @@ type SessionRow = (
 );
 
 fn user_from_row(row: UserRow) -> AuthUser {
-    let (id, created_at, disabled_at, disabled_reason, disabled_until) = row;
+    let (id, is_anonymous, created_at, disabled_at, disabled_reason, disabled_until) = row;
     AuthUser {
         id: AuthUserId(id),
+        is_anonymous,
         created_at,
         disabled_at,
         disabled_reason,

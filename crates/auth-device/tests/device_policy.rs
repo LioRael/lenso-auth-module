@@ -44,6 +44,7 @@ async fn device_policy_registers_the_proposed_device_and_exposes_admin_data() {
     PostgresAuthUserRepository::new(db.pool.clone())
         .insert(&AuthUser {
             id: AuthUserId("usr_device".to_owned()),
+            is_anonymous: false,
             created_at: now,
             disabled_at: None,
             disabled_reason: None,

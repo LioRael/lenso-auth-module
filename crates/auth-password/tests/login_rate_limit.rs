@@ -1,3 +1,5 @@
+use auth::models::AuthUserId;
+use auth::public::create_anonymous_user_identity_in_tx;
 use auth::session_policy::{AuthSessionPolicy, SessionCreateDecision, SessionCreateInput};
 use auth_password::config::AuthPasswordConfig;
 use auth_password::migrations::AUTH_PASSWORD_MIGRATIONS;
@@ -44,6 +46,7 @@ async fn register_with_options_attaches_device_id_to_session_tokens() {
             PasswordSessionOptions {
                 device_id: Some("device_password".to_owned()),
                 client: Default::default(),
+                ..PasswordSessionOptions::default()
             },
         )
         .await
@@ -82,6 +85,7 @@ async fn register_with_options_uses_the_injected_session_policy() {
             PasswordSessionOptions {
                 device_id: Some("device_hint".to_owned()),
                 client: Default::default(),
+                ..PasswordSessionOptions::default()
             },
         )
         .await
@@ -91,6 +95,72 @@ async fn register_with_options_uses_the_injected_session_policy() {
         panic!("session strategy should return a session token");
     };
     assert_eq!(session.device_id.as_deref(), Some("device_from_policy"));
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
+async fn register_with_options_links_password_to_anonymous_user() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+    let config = fast_config();
+    let now = Utc::now();
+    let anonymous_user_id = AuthUserId("usr_password_anonymous".to_owned());
+    let mut tx = db.pool.begin().await.expect("begin tx");
+    create_anonymous_user_identity_in_tx(
+        &mut tx,
+        anonymous_user_id.clone(),
+        "auth_identity_password_anonymous".to_owned(),
+        "anonymous",
+        "anonymous-password-link",
+        now,
+    )
+    .await
+    .expect("anonymous identity");
+    tx.commit().await.expect("commit anonymous user");
+
+    let token = PasswordAuthRepository::new(db.pool.clone())
+        .register_with_options(
+            "link@example.com",
+            "correct-password",
+            "usr_password_new".to_owned(),
+            "auth_identity_password_linked".to_owned(),
+            "sess_password_linked".to_owned(),
+            now,
+            now + Duration::hours(1),
+            &config,
+            PasswordSessionOptions {
+                link_anonymous_user_id: Some(anonymous_user_id.clone()),
+                ..PasswordSessionOptions::default()
+            },
+        )
+        .await
+        .expect("register links anonymous user");
+
+    let auth_password::repositories::AuthToken::Session(session) = token else {
+        panic!("session strategy should return a session token");
+    };
+    assert_eq!(session.user_id, anonymous_user_id);
+
+    let row = sqlx::query_as::<_, (bool, i64)>(
+        r#"
+        select users.is_anonymous, count(identities.id)
+        from auth.users users
+        join auth.identities identities on identities.user_id = users.id
+        where users.id = $1
+        group by users.id
+        "#,
+    )
+    .bind(&anonymous_user_id.0)
+    .fetch_one(&db.pool)
+    .await
+    .expect("linked user row");
+    assert!(!row.0);
+    assert_eq!(row.1, 2);
 
     db.cleanup().await;
 }
@@ -213,6 +283,7 @@ async fn failed_login_records_client_metadata() {
                     ip: Some("203.0.113.8".to_owned()),
                     user_agent: Some("LensoTest/2.0".to_owned()),
                 },
+                ..PasswordSessionOptions::default()
             },
         )
         .await

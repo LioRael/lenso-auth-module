@@ -50,6 +50,12 @@ pub fn user_schema() -> AdminSchema {
                         nullable: false,
                     },
                     FieldSchema {
+                        name: "is_anonymous".to_owned(),
+                        label: "Anonymous".to_owned(),
+                        field_type: FieldType::Boolean,
+                        nullable: false,
+                    },
+                    FieldSchema {
                         name: "device_id".to_owned(),
                         label: "Device".to_owned(),
                         field_type: FieldType::String,
