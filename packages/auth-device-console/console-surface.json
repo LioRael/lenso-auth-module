@@ -1,0 +1,30 @@
+{
+  "exportName": "authDeviceConsoleModule",
+  "id": "auth-device",
+  "bundle": {
+    "hostApi": "1",
+    "path": "dist/auth-device-console.js",
+    "styles": ["dist/auth-device-console.css"]
+  },
+  "packageName": "@lenso/auth-device-console",
+  "source": "runtime_bundle",
+  "surfaces": [
+    {
+      "area": "data",
+      "icon": "network",
+      "label": "Devices",
+      "navigation": {
+        "order": 70,
+        "workspace": {
+          "icon": "shield",
+          "id": "auth",
+          "label": "Auth"
+        }
+      },
+      "requiredCapabilities": ["auth_device.devices.read"],
+      "route": "/data/auth/devices",
+      "surfaceName": "devices"
+    }
+  ],
+  "version": "workspace"
+}

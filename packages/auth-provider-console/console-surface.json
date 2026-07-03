@@ -1,0 +1,78 @@
+{
+  "exportName": "authProviderConsoleModule",
+  "id": "auth-provider",
+  "bundle": {
+    "hostApi": "1",
+    "path": "dist/auth-provider-console.js",
+    "styles": ["dist/auth-provider-console.css"]
+  },
+  "packageName": "@lenso/auth-provider-console",
+  "source": "runtime_bundle",
+  "surfaces": [
+    {
+      "area": "data",
+      "icon": "network",
+      "label": "Providers",
+      "navigation": {
+        "order": 80,
+        "workspace": {
+          "icon": "shield",
+          "id": "auth",
+          "label": "Auth"
+        }
+      },
+      "requiredCapabilities": [],
+      "route": "/data/auth/providers",
+      "surfaceName": "providers"
+    },
+    {
+      "area": "data",
+      "icon": "network",
+      "label": "GitHub",
+      "navigation": {
+        "order": 81,
+        "workspace": {
+          "icon": "shield",
+          "id": "auth",
+          "label": "Auth"
+        }
+      },
+      "requiredCapabilities": [],
+      "route": "/data/auth/providers/github",
+      "surfaceName": "github"
+    },
+    {
+      "area": "data",
+      "icon": "network",
+      "label": "Google",
+      "navigation": {
+        "order": 82,
+        "workspace": {
+          "icon": "shield",
+          "id": "auth",
+          "label": "Auth"
+        }
+      },
+      "requiredCapabilities": [],
+      "route": "/data/auth/providers/google",
+      "surfaceName": "google"
+    },
+    {
+      "area": "data",
+      "icon": "shield",
+      "label": "OIDC Provider",
+      "navigation": {
+        "order": 83,
+        "workspace": {
+          "icon": "shield",
+          "id": "auth",
+          "label": "Auth"
+        }
+      },
+      "requiredCapabilities": [],
+      "route": "/data/auth/providers/oidc",
+      "surfaceName": "oidc"
+    }
+  ],
+  "version": "workspace"
+}

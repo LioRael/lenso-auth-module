@@ -2,11 +2,20 @@ use crate::migrations::AUTH_GOOGLE_MIGRATIONS;
 use platform_core::AppContext;
 use platform_http::ApiOpenApiRouter;
 use platform_module::{
+    ConsoleArea, ConsoleNavigation, ConsolePackage, ConsoleSurface, ConsoleWorkspaceRef,
     HostLinkedModule, LinkedBinding, LinkedHttpContribution, Module, ModuleHttpMethod,
     ModuleHttpRoute, ModuleManifest,
 };
 
 pub const MODULE_NAME: &str = "auth-google";
+
+fn auth_workspace() -> ConsoleWorkspaceRef {
+    ConsoleWorkspaceRef {
+        id: "auth".to_owned(),
+        label: "Auth".to_owned(),
+        icon: Some("shield".to_owned()),
+    }
+}
 
 pub fn http_routes() -> Vec<ModuleHttpRoute> {
     vec![
@@ -29,6 +38,26 @@ pub fn http_routes() -> Vec<ModuleHttpRoute> {
     ]
 }
 
+pub fn console_surfaces() -> Vec<ConsoleSurface> {
+    vec![ConsoleSurface {
+        name: "google-provider".to_owned(),
+        label: "Google".to_owned(),
+        area: ConsoleArea::Data,
+        route: "/data/auth/providers/google".to_owned(),
+        package: ConsolePackage {
+            name: "@lenso/auth-provider-console".to_owned(),
+            export: "authProviderConsoleModule".to_owned(),
+        },
+        icon: Some("network".to_owned()),
+        required_capabilities: Vec::new(),
+        navigation: Some(ConsoleNavigation {
+            workspace: auth_workspace(),
+            group: None,
+            order: Some(82),
+        }),
+    }]
+}
+
 pub fn manifest() -> ModuleManifest {
     ModuleManifest::builder(MODULE_NAME)
         .dependencies(vec![
@@ -36,6 +65,7 @@ pub fn manifest() -> ModuleManifest {
             auth_oauth::module::MODULE_NAME.to_owned(),
         ])
         .http_routes(http_routes())
+        .console(console_surfaces())
         .build()
 }
 
@@ -79,6 +109,7 @@ mod tests {
             ]
         );
         assert_eq!(manifest.http_routes, http_routes());
+        assert_eq!(manifest.console, console_surfaces());
 
         let lints = lint_module_manifest(ModuleSource::Linked, &manifest);
         assert!(

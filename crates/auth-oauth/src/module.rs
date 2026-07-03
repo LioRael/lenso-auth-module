@@ -1,12 +1,44 @@
 use crate::migrations::AUTH_OAUTH_MIGRATIONS;
 use platform_core::AppContext;
-use platform_module::{HostLinkedModule, LinkedBinding, Module, ModuleManifest};
+use platform_module::{
+    ConsoleArea, ConsoleNavigation, ConsolePackage, ConsoleSurface, ConsoleWorkspaceRef,
+    HostLinkedModule, LinkedBinding, Module, ModuleManifest,
+};
 
 pub const MODULE_NAME: &str = "auth-oauth";
+
+fn auth_workspace() -> ConsoleWorkspaceRef {
+    ConsoleWorkspaceRef {
+        id: "auth".to_owned(),
+        label: "Auth".to_owned(),
+        icon: Some("shield".to_owned()),
+    }
+}
+
+pub fn console_surfaces() -> Vec<ConsoleSurface> {
+    vec![ConsoleSurface {
+        name: "providers".to_owned(),
+        label: "Providers".to_owned(),
+        area: ConsoleArea::Data,
+        route: "/data/auth/providers".to_owned(),
+        package: ConsolePackage {
+            name: "@lenso/auth-provider-console".to_owned(),
+            export: "authProviderConsoleModule".to_owned(),
+        },
+        icon: Some("network".to_owned()),
+        required_capabilities: Vec::new(),
+        navigation: Some(ConsoleNavigation {
+            workspace: auth_workspace(),
+            group: None,
+            order: Some(80),
+        }),
+    }]
+}
 
 pub fn manifest() -> ModuleManifest {
     ModuleManifest::builder(MODULE_NAME)
         .dependencies(vec![auth::module::MODULE_NAME.to_owned()])
+        .console(console_surfaces())
         .build()
 }
 
@@ -32,6 +64,7 @@ mod tests {
             manifest.dependencies,
             vec![auth::module::MODULE_NAME.to_owned()]
         );
+        assert_eq!(manifest.console, console_surfaces());
 
         let lints = lint_module_manifest(ModuleSource::Linked, &manifest);
         assert!(

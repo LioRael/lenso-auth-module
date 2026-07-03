@@ -5,13 +5,22 @@ use crate::repositories::PostgresAuthDeviceRepository;
 use auth::session_policy::{AuthHostExtension, AuthSessionPolicy};
 use platform_core::AppContext;
 use platform_module::{
-    AdminSchema, EntitySchema, FieldSchema, FieldType, HostLinkedModule, LinkedBinding, Module,
-    ModuleManifest,
+    AdminSchema, ConsoleArea, ConsoleNavigation, ConsolePackage, ConsoleSurface,
+    ConsoleWorkspaceRef, EntitySchema, FieldSchema, FieldType, HostLinkedModule, LinkedBinding,
+    Module, ModuleManifest,
 };
 use std::sync::Arc;
 
 pub const MODULE_NAME: &str = "auth-device";
 pub const AUTH_DEVICE_READ: &str = "auth_device.devices.read";
+
+fn auth_workspace() -> ConsoleWorkspaceRef {
+    ConsoleWorkspaceRef {
+        id: "auth".to_owned(),
+        label: "Auth".to_owned(),
+        icon: Some("shield".to_owned()),
+    }
+}
 
 pub fn device_schema() -> AdminSchema {
     AdminSchema {
@@ -73,11 +82,32 @@ pub fn device_schema() -> AdminSchema {
     }
 }
 
+pub fn console_surfaces() -> Vec<ConsoleSurface> {
+    vec![ConsoleSurface {
+        name: "devices".to_owned(),
+        label: "Devices".to_owned(),
+        area: ConsoleArea::Data,
+        route: "/data/auth/devices".to_owned(),
+        package: ConsolePackage {
+            name: "@lenso/auth-device-console".to_owned(),
+            export: "authDeviceConsoleModule".to_owned(),
+        },
+        icon: Some("network".to_owned()),
+        required_capabilities: vec![AUTH_DEVICE_READ.to_owned()],
+        navigation: Some(ConsoleNavigation {
+            workspace: auth_workspace(),
+            group: None,
+            order: Some(70),
+        }),
+    }]
+}
+
 pub fn manifest() -> ModuleManifest {
     ModuleManifest::builder(MODULE_NAME)
         .dependencies(vec![auth::module::MODULE_NAME.to_owned()])
         .capabilities(vec![AUTH_DEVICE_READ.to_owned()])
         .admin(device_schema())
+        .console(console_surfaces())
         .build()
 }
 
@@ -96,4 +126,32 @@ fn auth_session_policy(ctx: &AppContext) -> Arc<dyn AuthSessionPolicy> {
     Arc::new(AuthDevicePolicy::new(Arc::new(
         PostgresAuthDeviceRepository::new(ctx.db.clone()),
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_module::{AdminSurface, ModuleManifestLintSeverity, ModuleSource};
+
+    #[test]
+    fn manifest_declares_device_admin_and_console_surface() {
+        let manifest = manifest();
+
+        assert_eq!(manifest.name, MODULE_NAME);
+        assert_eq!(
+            manifest.dependencies,
+            vec![auth::module::MODULE_NAME.to_owned()]
+        );
+        assert_eq!(manifest.capabilities, vec![AUTH_DEVICE_READ.to_owned()]);
+        assert_eq!(manifest.admin, Some(AdminSurface::Schema(device_schema())));
+        assert_eq!(manifest.console, console_surfaces());
+
+        let lints = platform_module::lint_module_manifest(ModuleSource::Linked, &manifest);
+        assert!(
+            lints
+                .iter()
+                .all(|lint| lint.severity == ModuleManifestLintSeverity::Ok),
+            "auth-device manifest should not have warning/error lints: {lints:?}"
+        );
+    }
 }
