@@ -6,12 +6,21 @@ use auth_phone::repositories::{
     LoginPhonePasswordOptions, PhoneAuthRepository, PhoneOtpPurpose, SetPhonePasswordOptions,
     StartOtpInput, VerifyOtpOptions,
 };
+use axum::body::Body;
+use axum::http::{Request, StatusCode, header};
+use axum::middleware;
 use chrono::{Duration, Utc};
 use platform_core::{
-    AppResult, ClientRequestMetadata, ErrorCode, Migration, PLATFORM_MIGRATIONS, apply_migrations,
+    AppConfig, AppResult, AuthConfig, ClientRequestMetadata, DatabaseConfig, DevActorResolver,
+    ErrorCode, HttpConfig, LoggingEventPublisher, Migration, ModuleSourcesConfig,
+    PLATFORM_MIGRATIONS, RedisConfig, ServiceConfig, TelemetryConfig, apply_migrations,
 };
+use platform_http::request_context_middleware;
 use platform_testing::TestDatabase;
+use sqlx::PgPool;
+use std::collections::BTreeMap;
 use std::sync::Arc;
+use tower::ServiceExt;
 
 fn migrations() -> Vec<Migration> {
     PLATFORM_MIGRATIONS
@@ -27,6 +36,145 @@ fn fast_config() -> AuthPhoneConfig {
         return_debug_otp_code: true,
         ..AuthPhoneConfig::default()
     }
+}
+
+#[tokio::test]
+async fn password_set_route_updates_current_phone_identity() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+
+    seed_phone_identity(
+        &db.pool,
+        "usr_phone_password_set_route",
+        "auth_identity_phone_password_set_route",
+        "+8613800000200",
+        Utc::now(),
+    )
+    .await;
+
+    let response = test_app(db.pool.clone())
+        .oneshot(post_json_with_auth(
+            "/v1/auth/phone/password/set",
+            r#"{"password":"correct horse"}"#,
+            "Bearer dev-user:usr_phone_password_set_route",
+        ))
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+    assert_eq!(json["updated"].as_bool(), Some(true));
+
+    let credentials_exist = sqlx::query_scalar::<_, bool>(
+        r#"
+        select exists(
+            select 1
+            from auth_phone.password_credentials
+            where identity_id = $1
+        )
+        "#,
+    )
+    .bind("auth_identity_phone_password_set_route")
+    .fetch_one(&db.pool)
+    .await
+    .expect("credential exists");
+    assert!(credentials_exist);
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
+async fn password_login_route_creates_session_cookie() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+
+    let config = fast_config();
+    let repo = PhoneAuthRepository::new(db.pool.clone());
+    let user_id = AuthUserId("usr_phone_password_login_route".to_owned());
+    seed_phone_identity(
+        &db.pool,
+        &user_id.0,
+        "auth_identity_phone_password_login_route",
+        "+8613800000201",
+        Utc::now(),
+    )
+    .await;
+    repo.set_password(SetPhonePasswordOptions {
+        user_id: &user_id,
+        password: "correct horse",
+        now: Utc::now(),
+        config: &config,
+    })
+    .await
+    .expect("password set");
+
+    let response = test_app(db.pool.clone())
+        .oneshot(post_json(
+            "/v1/auth/phone/password/login",
+            r#"{"phone":"+8613800000201","password":"correct horse","device_id":"ios-device"}"#,
+        ))
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let set_cookie = response
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .expect("session cookie");
+    assert!(set_cookie.contains("lenso_session=sess_"));
+    assert!(set_cookie.contains("HttpOnly"));
+
+    let json = response_json(response).await;
+    assert_eq!(json["user_id"].as_str(), Some(user_id.0.as_str()));
+    assert!(
+        json["session_id"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("sess_"))
+    );
+    assert!(
+        json["token"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("sess_"))
+    );
+    assert!(json["expires_at"].as_str().is_some());
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
+async fn password_login_route_returns_generic_failure() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+
+    let response = test_app(db.pool.clone())
+        .oneshot(post_json(
+            "/v1/auth/phone/password/login",
+            r#"{"phone":"+8613800000202","password":"wrong horse"}"#,
+        ))
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let json = response_json(response).await;
+    assert_eq!(
+        json["error"]["message"].as_str(),
+        Some("Invalid phone or password")
+    );
+
+    db.cleanup().await;
 }
 
 #[tokio::test]
@@ -401,6 +549,119 @@ async fn phone_password_login_respects_session_policy() {
     );
 
     db.cleanup().await;
+}
+
+async fn seed_phone_identity(
+    pool: &PgPool,
+    user_id: &str,
+    identity_id: &str,
+    phone: &str,
+    now: chrono::DateTime<Utc>,
+) {
+    sqlx::query("insert into auth.users (id, created_at, disabled_at) values ($1, $2, null)")
+        .bind(user_id)
+        .bind(now)
+        .execute(pool)
+        .await
+        .expect("insert user");
+
+    sqlx::query(
+        r#"
+        insert into auth.identities (id, user_id, provider, provider_subject, created_at, updated_at)
+        values ($1, $2, 'phone', $3, $4, $4)
+        "#,
+    )
+    .bind(identity_id)
+    .bind(user_id)
+    .bind(phone)
+    .bind(now)
+    .execute(pool)
+    .await
+    .expect("insert auth identity");
+
+    sqlx::query(
+        r#"
+        insert into auth_phone.identities (
+            identity_id,
+            provider,
+            phone_e164,
+            verified_at,
+            created_at,
+            updated_at
+        )
+        values ($1, 'phone', $2, $3, $3, $3)
+        "#,
+    )
+    .bind(identity_id)
+    .bind(phone)
+    .bind(now)
+    .execute(pool)
+    .await
+    .expect("insert phone identity");
+}
+
+fn test_app(db: platform_core::DbPool) -> axum::Router {
+    let (router, _) = auth_phone::routes::router().split_for_parts();
+    let ctx =
+        platform_core::AppContext::new(test_config(), db.clone(), Arc::new(LoggingEventPublisher))
+            .with_actor_resolver(Arc::new(auth::resolver::AuthActorResolver::new(
+                db,
+                Arc::new(DevActorResolver::new("local")),
+            )));
+    router
+        .layer(middleware::from_fn_with_state(
+            ctx.clone(),
+            request_context_middleware,
+        ))
+        .with_state(ctx)
+}
+
+fn test_config() -> AppConfig {
+    AppConfig {
+        auth: AuthConfig::default(),
+        console: platform_core::config::ConsoleConfig::default(),
+        database: DatabaseConfig {
+            max_connections: 1,
+            url: "postgres://lenso:lenso@127.0.0.1:5432/lenso".to_owned(),
+        },
+        http: HttpConfig::default(),
+        module_sources: ModuleSourcesConfig::default(),
+        modules: BTreeMap::new(),
+        redis: RedisConfig::default(),
+        service: ServiceConfig {
+            environment: "local".to_owned(),
+            name: "auth-phone-password-test".to_owned(),
+        },
+        telemetry: TelemetryConfig::default(),
+    }
+}
+
+fn post_json(uri: &str, body: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json")
+        .header("user-agent", "test-agent")
+        .body(Body::from(body.to_owned()))
+        .expect("request should build")
+}
+
+fn post_json_with_auth(uri: &str, body: &str, authorization: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json")
+        .header("user-agent", "test-agent")
+        .header(header::AUTHORIZATION, authorization)
+        .body(Body::from(body.to_owned()))
+        .expect("request should build")
+}
+
+async fn response_json(response: axum::response::Response) -> serde_json::Value {
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    serde_json::from_slice(&body).expect("json body")
 }
 
 #[derive(Debug)]

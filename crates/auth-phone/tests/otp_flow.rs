@@ -6,13 +6,21 @@ use auth_phone::otp::hash_otp_code;
 use auth_phone::repositories::{
     PhoneAuthRepository, PhoneOtpPurpose, StartOtpInput, VerifyOtpOptions,
 };
+use axum::body::Body;
+use axum::http::{Request, StatusCode, header};
+use axum::middleware;
 use chrono::{Duration, Utc};
 use platform_core::{
-    AppResult, ClientRequestMetadata, Migration, PLATFORM_MIGRATIONS, apply_migrations,
+    AppConfig, AppResult, AuthConfig, ClientRequestMetadata, DatabaseConfig, DevActorResolver,
+    HttpConfig, LoggingEventPublisher, Migration, ModuleSourcesConfig, PLATFORM_MIGRATIONS,
+    RedisConfig, ServiceConfig, TelemetryConfig, apply_migrations,
 };
+use platform_http::request_context_middleware;
 use platform_testing::TestDatabase;
 use sqlx::PgPool;
+use std::collections::BTreeMap;
 use std::sync::Arc;
+use tower::ServiceExt;
 
 fn migrations() -> Vec<Migration> {
     PLATFORM_MIGRATIONS
@@ -21,6 +29,103 @@ fn migrations() -> Vec<Migration> {
         .chain(AUTH_PHONE_MIGRATIONS)
         .copied()
         .collect()
+}
+
+#[tokio::test]
+async fn otp_start_route_returns_challenge_without_raw_code() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+
+    let response = test_app(db.pool.clone())
+        .oneshot(post_json(
+            "/v1/auth/phone/otp/start",
+            r#"{"phone":"+8613800000100","purpose":"sign_in"}"#,
+        ))
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+    assert!(
+        json["challenge_id"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("phone_otp_challenge_"))
+    );
+    assert!(json["expires_at"].as_str().is_some());
+    assert!(json["resend_after"].as_str().is_some());
+    assert!(json.get("code").is_none());
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
+async fn otp_verify_route_creates_phone_session_cookie() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+
+    let config = AuthPhoneConfig::default();
+    seed_otp_challenge(
+        &db.pool,
+        "phone_otp_route_verify",
+        "+8613800000101",
+        "654321",
+        Utc::now(),
+        &config,
+    )
+    .await;
+
+    let response = test_app(db.pool.clone())
+        .oneshot(post_json(
+            "/v1/auth/phone/otp/verify",
+            r#"{"challenge_id":"phone_otp_route_verify","code":"654321","device_id":"ios-device"}"#,
+        ))
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let set_cookie = response
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .expect("session cookie");
+    assert!(set_cookie.contains("lenso_session=sess_"));
+    assert!(set_cookie.contains("HttpOnly"));
+
+    let json = response_json(response).await;
+    assert!(
+        json["user_id"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("usr_"))
+    );
+    assert!(
+        json["session_id"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("sess_"))
+    );
+    assert!(
+        json["token"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("sess_"))
+    );
+    assert!(json["expires_at"].as_str().is_some());
+
+    let consumed_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("select consumed_at from auth_phone.otp_challenges where id = $1")
+            .bind("phone_otp_route_verify")
+            .fetch_one(&db.pool)
+            .await
+            .expect("challenge consumed");
+    assert!(consumed_at.is_some());
+
+    db.cleanup().await;
 }
 
 #[tokio::test]
@@ -465,8 +570,97 @@ async fn insert_identity(
     .bind(provider_subject)
     .bind(now)
     .execute(pool)
+        .await
+        .expect("insert identity");
+}
+
+async fn seed_otp_challenge(
+    pool: &PgPool,
+    challenge_id: &str,
+    phone: &str,
+    code: &str,
+    now: chrono::DateTime<Utc>,
+    config: &AuthPhoneConfig,
+) {
+    sqlx::query(
+        r#"
+        insert into auth_phone.otp_challenges (
+            id,
+            phone_e164,
+            purpose,
+            code_hash,
+            attempts,
+            max_attempts,
+            created_at,
+            expires_at,
+            resend_after,
+            consumed_at
+        )
+        values ($1, $2, 'sign_in', $3, 0, $4, $5, $6, $5, null)
+        "#,
+    )
+    .bind(challenge_id)
+    .bind(phone)
+    .bind(hash_otp_code(code, &config.otp_secret))
+    .bind(config.otp_max_attempts)
+    .bind(now)
+    .bind(now + Duration::seconds(config.otp_ttl_seconds))
+    .execute(pool)
     .await
-    .expect("insert identity");
+    .expect("seed otp challenge");
+}
+
+fn test_app(db: platform_core::DbPool) -> axum::Router {
+    let (router, _) = auth_phone::routes::router().split_for_parts();
+    let ctx =
+        platform_core::AppContext::new(test_config(), db.clone(), Arc::new(LoggingEventPublisher))
+            .with_actor_resolver(Arc::new(auth::resolver::AuthActorResolver::new(
+                db,
+                Arc::new(DevActorResolver::new("local")),
+            )));
+    router
+        .layer(middleware::from_fn_with_state(
+            ctx.clone(),
+            request_context_middleware,
+        ))
+        .with_state(ctx)
+}
+
+fn test_config() -> AppConfig {
+    AppConfig {
+        auth: AuthConfig::default(),
+        console: platform_core::config::ConsoleConfig::default(),
+        database: DatabaseConfig {
+            max_connections: 1,
+            url: "postgres://lenso:lenso@127.0.0.1:5432/lenso".to_owned(),
+        },
+        http: HttpConfig::default(),
+        module_sources: ModuleSourcesConfig::default(),
+        modules: BTreeMap::new(),
+        redis: RedisConfig::default(),
+        service: ServiceConfig {
+            environment: "local".to_owned(),
+            name: "auth-phone-otp-test".to_owned(),
+        },
+        telemetry: TelemetryConfig::default(),
+    }
+}
+
+fn post_json(uri: &str, body: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json")
+        .header("user-agent", "test-agent")
+        .body(Body::from(body.to_owned()))
+        .expect("request should build")
+}
+
+async fn response_json(response: axum::response::Response) -> serde_json::Value {
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    serde_json::from_slice(&body).expect("json body")
 }
 
 fn assert_foreign_key_violation(error: &sqlx::Error) {
