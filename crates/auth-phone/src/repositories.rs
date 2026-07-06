@@ -112,6 +112,7 @@ impl PhoneAuthRepository {
         let _ = &self.session_policy;
 
         let phone_e164 = normalize_phone_e164(phone)?;
+        ensure_otp_secret_configured(config)?;
         let code = new_otp_code(config.otp_code_length);
         let code_hash = hash_otp_code(&code, &config.otp_secret);
         let expires_at = now + Duration::seconds(config.otp_ttl_seconds);
@@ -204,6 +205,7 @@ impl PhoneAuthRepository {
             return Ok(None);
         }
 
+        ensure_otp_secret_configured(config)?;
         if code_hash != hash_otp_code(code, &config.otp_secret) {
             increment_otp_attempts(&mut tx, challenge_id).await?;
             tx.commit().await.map_err(map_sql_error)?;
@@ -605,6 +607,16 @@ fn failed_phone_password_login_update(
 
 fn invalid_phone_password_credentials() -> AppError {
     AppError::new(ErrorCode::Unauthorized, "Invalid phone or password")
+}
+
+fn ensure_otp_secret_configured(config: &AuthPhoneConfig) -> AppResult<()> {
+    if config.otp_secret.trim().is_empty() {
+        return Err(AppError::new(
+            ErrorCode::Internal,
+            "auth-phone otp_secret is required for OTP challenges",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_public_phone_password(password: &str, config: &AuthPhoneConfig) -> AppResult<()> {

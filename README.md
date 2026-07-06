@@ -10,6 +10,7 @@ First-party Lenso auth modules and Runtime Console surface.
 - `crates/auth-oauth`: Rust OAuth client substrate module.
 - `crates/auth-oidc`: Rust OIDC provider module.
 - `crates/auth-password`: Rust password provider module.
+- `auth-phone`: first-party phone provider with phone password and SMS OTP flows (`crates/auth-phone`).
 - `packages/auth-console`: Runtime Console surface loaded as a runtime bundle.
 
 ## Packages
@@ -22,6 +23,7 @@ First-party Lenso auth modules and Runtime Console surface.
 - Rust: `lenso-module-auth-oauth`
 - Rust: `lenso-module-auth-oidc`
 - Rust: `lenso-module-auth-password`
+- Rust: `lenso-module-auth-phone`
 - npm: `@lenso/auth-console`
 
 ## Redis Session Cache
@@ -54,7 +56,7 @@ lenso module install auth --profile redis-session-cache
 ## Development
 
 ```sh
-cargo test --locked -p lenso-module-auth -p lenso-module-auth-anonymous -p lenso-module-auth-device -p lenso-module-auth-github -p lenso-module-auth-google -p lenso-module-auth-oauth -p lenso-module-auth-oidc -p lenso-module-auth-password
+cargo test --locked -p lenso-module-auth -p lenso-module-auth-anonymous -p lenso-module-auth-device -p lenso-module-auth-github -p lenso-module-auth-google -p lenso-module-auth-oauth -p lenso-module-auth-oidc -p lenso-module-auth-password -p lenso-module-auth-phone
 pnpm install --frozen-lockfile
 pnpm check
 ```
