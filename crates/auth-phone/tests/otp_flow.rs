@@ -1,11 +1,18 @@
+use auth::public::{AuthUserId, create_anonymous_user_identity_in_tx};
+use auth::session_policy::{AuthSessionPolicy, SessionCreateDecision, SessionCreateInput};
 use auth_phone::config::AuthPhoneConfig;
 use auth_phone::migrations::AUTH_PHONE_MIGRATIONS;
 use auth_phone::otp::hash_otp_code;
-use auth_phone::repositories::{PhoneAuthRepository, PhoneOtpPurpose, StartOtpInput};
+use auth_phone::repositories::{
+    PhoneAuthRepository, PhoneOtpPurpose, StartOtpInput, VerifyOtpOptions,
+};
 use chrono::{Duration, Utc};
-use platform_core::{ClientRequestMetadata, Migration, PLATFORM_MIGRATIONS, apply_migrations};
+use platform_core::{
+    AppResult, ClientRequestMetadata, Migration, PLATFORM_MIGRATIONS, apply_migrations,
+};
 use platform_testing::TestDatabase;
 use sqlx::PgPool;
+use std::sync::Arc;
 
 fn migrations() -> Vec<Migration> {
     PLATFORM_MIGRATIONS
@@ -146,6 +153,222 @@ async fn start_otp_hides_debug_code_by_default() {
 }
 
 #[tokio::test]
+async fn verify_otp_creates_phone_identity_and_session() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+
+    let config = AuthPhoneConfig {
+        return_debug_otp_code: true,
+        ..AuthPhoneConfig::default()
+    };
+    let repo = PhoneAuthRepository::new(db.pool.clone());
+    let now = Utc::now();
+
+    let challenge = repo
+        .start_otp(StartOtpInput {
+            phone: "+8613800000004",
+            purpose: PhoneOtpPurpose::SignIn,
+            challenge_id: "phone_otp_session".to_owned(),
+            now,
+            config: &config,
+            client: ClientRequestMetadata::default(),
+        })
+        .await
+        .expect("otp starts");
+
+    let session = repo
+        .verify_otp_with_options(VerifyOtpOptions {
+            challenge_id: "phone_otp_session",
+            code: challenge.debug_code.as_deref().expect("debug code"),
+            session_id: "sess_phone_otp".to_owned(),
+            user_id: "usr_phone_otp".to_owned(),
+            identity_id: "auth_identity_phone_otp".to_owned(),
+            now: now + Duration::seconds(1),
+            expires_at: now + Duration::hours(12),
+            config: &config,
+            device_id: Some("ios-device".to_owned()),
+            client: ClientRequestMetadata::default(),
+            link_anonymous_user_id: None,
+        })
+        .await
+        .expect("otp verifies")
+        .expect("session created");
+
+    assert_eq!(session.user_id.0, "usr_phone_otp");
+    assert_eq!(session.id, "sess_phone_otp");
+    assert_eq!(session.device_id.as_deref(), Some("ios-device"));
+
+    let identity_row = sqlx::query_as::<_, (String, String, String)>(
+        r#"
+        select provider, provider_subject, user_id
+        from auth.identities
+        where id = $1
+        "#,
+    )
+    .bind("auth_identity_phone_otp")
+    .fetch_one(&db.pool)
+    .await
+    .expect("identity row");
+    assert_eq!(identity_row.0, "phone");
+    assert_eq!(identity_row.1, "+8613800000004");
+    assert_eq!(identity_row.2, "usr_phone_otp");
+
+    let phone_metadata = sqlx::query_as::<_, (String, String, String)>(
+        r#"
+        select identity_id, provider, phone_e164
+        from auth_phone.identities
+        where identity_id = $1
+        "#,
+    )
+    .bind("auth_identity_phone_otp")
+    .fetch_one(&db.pool)
+    .await
+    .expect("phone identity metadata");
+    assert_eq!(phone_metadata.0, "auth_identity_phone_otp");
+    assert_eq!(phone_metadata.1, "phone");
+    assert_eq!(phone_metadata.2, "+8613800000004");
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
+async fn verify_otp_links_anonymous_user_when_requested() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+
+    let config = AuthPhoneConfig {
+        return_debug_otp_code: true,
+        ..AuthPhoneConfig::default()
+    };
+    let repo = PhoneAuthRepository::new(db.pool.clone());
+    let now = Utc::now();
+    let anonymous_user_id = AuthUserId("usr_anon_phone".to_owned());
+    let mut tx = db.pool.begin().await.expect("begin tx");
+    create_anonymous_user_identity_in_tx(
+        &mut tx,
+        anonymous_user_id.clone(),
+        "auth_identity_anon".to_owned(),
+        "anonymous",
+        "anonymous-subject",
+        now,
+    )
+    .await
+    .expect("anonymous user");
+    tx.commit().await.expect("commit anonymous user");
+
+    let challenge = repo
+        .start_otp(StartOtpInput {
+            phone: "+8613800000005",
+            purpose: PhoneOtpPurpose::SignIn,
+            challenge_id: "phone_otp_link".to_owned(),
+            now,
+            config: &config,
+            client: ClientRequestMetadata::default(),
+        })
+        .await
+        .expect("otp starts");
+
+    let session = repo
+        .verify_otp_with_options(VerifyOtpOptions {
+            challenge_id: "phone_otp_link",
+            code: challenge.debug_code.as_deref().expect("debug code"),
+            session_id: "sess_phone_link".to_owned(),
+            user_id: "usr_unused_new".to_owned(),
+            identity_id: "auth_identity_phone_link".to_owned(),
+            now: now + Duration::seconds(1),
+            expires_at: now + Duration::hours(12),
+            config: &config,
+            device_id: None,
+            client: ClientRequestMetadata::default(),
+            link_anonymous_user_id: Some(anonymous_user_id.clone()),
+        })
+        .await
+        .expect("otp verifies")
+        .expect("session created");
+
+    assert_eq!(session.user_id, anonymous_user_id);
+
+    let row = sqlx::query_as::<_, (String, bool, i64)>(
+        r#"
+        select identities.user_id, users.is_anonymous, count(all_identities.id)
+        from auth.identities identities
+        join auth.users users on users.id = identities.user_id
+        join auth.identities all_identities on all_identities.user_id = users.id
+        where identities.id = $1
+        group by identities.user_id, users.is_anonymous
+        "#,
+    )
+    .bind("auth_identity_phone_link")
+    .fetch_one(&db.pool)
+    .await
+    .expect("linked anonymous user row");
+    assert_eq!(row.0, "usr_anon_phone");
+    assert!(!row.1);
+    assert_eq!(row.2, 2);
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
+async fn verify_otp_with_options_uses_the_injected_session_policy() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+
+    let config = AuthPhoneConfig {
+        return_debug_otp_code: true,
+        ..AuthPhoneConfig::default()
+    };
+    let repo = PhoneAuthRepository::new_with_session_policy(db.pool.clone(), Arc::new(FixedPolicy));
+    let now = Utc::now();
+
+    let challenge = repo
+        .start_otp(StartOtpInput {
+            phone: "+8613800000006",
+            purpose: PhoneOtpPurpose::SignIn,
+            challenge_id: "phone_otp_policy".to_owned(),
+            now,
+            config: &config,
+            client: ClientRequestMetadata::default(),
+        })
+        .await
+        .expect("otp starts");
+
+    let session = repo
+        .verify_otp_with_options(VerifyOtpOptions {
+            challenge_id: "phone_otp_policy",
+            code: challenge.debug_code.as_deref().expect("debug code"),
+            session_id: "sess_phone_policy".to_owned(),
+            user_id: "usr_phone_policy".to_owned(),
+            identity_id: "auth_identity_phone_policy".to_owned(),
+            now: now + Duration::seconds(1),
+            expires_at: now + Duration::hours(12),
+            config: &config,
+            device_id: Some("device_hint".to_owned()),
+            client: ClientRequestMetadata::default(),
+            link_anonymous_user_id: None,
+        })
+        .await
+        .expect("otp verifies")
+        .expect("session created");
+
+    assert_eq!(session.device_id.as_deref(), Some("device_from_policy"));
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
 async fn phone_identity_metadata_rejects_non_phone_or_mismatched_subject() {
     let Some(db) = TestDatabase::create().await else {
         return;
@@ -251,4 +474,20 @@ fn assert_foreign_key_violation(error: &sqlx::Error) {
         .as_database_error()
         .expect("database error details should exist");
     assert_eq!(database_error.code().as_deref(), Some("23503"));
+}
+
+#[derive(Debug)]
+struct FixedPolicy;
+
+#[async_trait::async_trait]
+impl AuthSessionPolicy for FixedPolicy {
+    async fn before_session_create(
+        &self,
+        input: &SessionCreateInput,
+    ) -> AppResult<SessionCreateDecision> {
+        assert_eq!(input.proposed_device_id.as_deref(), Some("device_hint"));
+        Ok(SessionCreateDecision {
+            device_id: Some("device_from_policy".to_owned()),
+        })
+    }
 }

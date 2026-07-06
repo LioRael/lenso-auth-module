@@ -1,11 +1,14 @@
 use crate::config::AuthPhoneConfig;
 use crate::otp::{hash_otp_code, new_otp_code};
 use crate::phone::normalize_phone_e164;
+use auth::public::{self, AuthSession, AuthUserId, SessionCreateOptions};
 use auth::session_policy::{AllowSessionPolicy, AuthSessionPolicy};
 use chrono::{DateTime, Duration, Utc};
 use platform_core::{AppError, AppResult, ClientRequestMetadata, DbPool, ErrorCode};
 use sqlx::{Postgres, Transaction};
 use std::sync::Arc;
+
+const PHONE_PROVIDER: &str = "phone";
 
 #[derive(Debug, Clone)]
 pub struct PhoneAuthRepository {
@@ -38,6 +41,21 @@ pub struct PhoneOtpChallenge {
     pub expires_at: DateTime<Utc>,
     pub resend_after: DateTime<Utc>,
     pub debug_code: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct VerifyOtpOptions<'a> {
+    pub challenge_id: &'a str,
+    pub code: &'a str,
+    pub session_id: String,
+    pub user_id: String,
+    pub identity_id: String,
+    pub now: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub config: &'a AuthPhoneConfig,
+    pub device_id: Option<String>,
+    pub client: ClientRequestMetadata,
+    pub link_anonymous_user_id: Option<AuthUserId>,
 }
 
 impl PhoneAuthRepository {
@@ -192,6 +210,77 @@ impl PhoneAuthRepository {
             debug_code: None,
         }))
     }
+
+    pub async fn verify_otp_with_options(
+        &self,
+        input: VerifyOtpOptions<'_>,
+    ) -> AppResult<Option<AuthSession>> {
+        let VerifyOtpOptions {
+            challenge_id,
+            code,
+            session_id,
+            user_id,
+            identity_id,
+            now,
+            expires_at,
+            config,
+            device_id,
+            client,
+            link_anonymous_user_id,
+        } = input;
+
+        let Some(challenge) = self.consume_otp(challenge_id, code, now, config).await? else {
+            return Ok(None);
+        };
+
+        let mut tx = self.pool.begin().await.map_err(map_sql_error)?;
+        let identity =
+            match find_active_phone_identity_in_tx(&mut tx, &challenge.phone_e164).await? {
+                Some(identity) => identity,
+                None => match link_anonymous_user_id.as_ref() {
+                    Some(link_user_id) => {
+                        public::link_identity_to_anonymous_user_in_tx(
+                            &mut tx,
+                            link_user_id,
+                            identity_id,
+                            PHONE_PROVIDER,
+                            &challenge.phone_e164,
+                            now,
+                        )
+                        .await?
+                    }
+                    None => {
+                        public::create_user_identity_in_tx(
+                            &mut tx,
+                            AuthUserId(user_id),
+                            identity_id,
+                            PHONE_PROVIDER,
+                            &challenge.phone_e164,
+                            now,
+                        )
+                        .await?
+                    }
+                },
+            };
+
+        upsert_phone_identity_metadata(&mut tx, &identity.id, &challenge.phone_e164, now, now)
+            .await?;
+
+        let session = public::create_session_in_tx_with_policy(
+            &mut tx,
+            &identity.user_id,
+            session_id,
+            public::new_session_token(),
+            now,
+            expires_at,
+            SessionCreateOptions { device_id, client },
+            self.session_policy.as_ref(),
+        )
+        .await?;
+
+        tx.commit().await.map_err(map_sql_error)?;
+        Ok(Some(session))
+    }
 }
 
 type OtpChallengeRow = (
@@ -225,6 +314,66 @@ async fn increment_otp_attempts(
     Ok(())
 }
 
+async fn find_active_phone_identity_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    phone_e164: &str,
+) -> AppResult<Option<public::AuthIdentity>> {
+    sqlx::query_as::<_, IdentityRow>(
+        r#"
+        select identities.id, identities.user_id
+        from auth.identities identities
+        join auth.users users on users.id = identities.user_id
+        where identities.provider = $1
+          and identities.provider_subject = $2
+          and (users.disabled_at is null or users.disabled_until <= now())
+        limit 1
+        "#,
+    )
+    .bind(PHONE_PROVIDER)
+    .bind(phone_e164)
+    .fetch_optional(&mut **tx)
+    .await
+    .map(|row| row.map(identity_from_row))
+    .map_err(map_sql_error)
+}
+
+async fn upsert_phone_identity_metadata(
+    tx: &mut Transaction<'_, Postgres>,
+    identity_id: &str,
+    phone_e164: &str,
+    verified_at: DateTime<Utc>,
+    created_at: DateTime<Utc>,
+) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        insert into auth_phone.identities (
+            identity_id,
+            provider,
+            phone_e164,
+            verified_at,
+            created_at,
+            updated_at
+        )
+        values ($1, $2, $3, $4, $5, $4)
+        on conflict (identity_id) do update
+        set provider = excluded.provider,
+            phone_e164 = excluded.phone_e164,
+            verified_at = excluded.verified_at,
+            updated_at = excluded.updated_at
+        "#,
+    )
+    .bind(identity_id)
+    .bind(PHONE_PROVIDER)
+    .bind(phone_e164)
+    .bind(verified_at)
+    .bind(created_at)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_sql_error)?;
+
+    Ok(())
+}
+
 impl PhoneOtpPurpose {
     fn as_str(self) -> &'static str {
         match self {
@@ -244,6 +393,16 @@ impl PhoneOtpPurpose {
                 format!("Unknown phone OTP purpose: {value}"),
             )),
         }
+    }
+}
+
+type IdentityRow = (String, String);
+
+fn identity_from_row(row: IdentityRow) -> public::AuthIdentity {
+    let (id, user_id) = row;
+    public::AuthIdentity {
+        id,
+        user_id: AuthUserId(user_id),
     }
 }
 
