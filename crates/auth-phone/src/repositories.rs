@@ -314,7 +314,6 @@ impl PhoneAuthRepository {
             config,
         } = input;
 
-        let password_hash = hash_password(password, config)?;
         let Some(identity_id) = sqlx::query_scalar::<_, String>(
             r#"
             select identities.id
@@ -333,6 +332,8 @@ impl PhoneAuthRepository {
         else {
             return Ok(false);
         };
+
+        let password_hash = hash_password(password, config)?;
 
         sqlx::query(
             r#"
@@ -374,9 +375,13 @@ impl PhoneAuthRepository {
         } = input;
 
         let phone_e164 = normalize_phone_e164(phone)?;
-        validate_password(password, config)?;
         self.ensure_phone_password_login_not_locked(&phone_e164, now)
             .await?;
+        if let Err(error) = validate_public_phone_password(password, config) {
+            self.record_failed_phone_password_login(&phone_e164, now, &client)
+                .await?;
+            return Err(error);
+        }
 
         let Some(identity) =
             public::find_active_identity(&self.pool, PHONE_PROVIDER, &phone_e164).await?
@@ -602,6 +607,10 @@ fn invalid_phone_password_credentials() -> AppError {
     AppError::new(ErrorCode::Unauthorized, "Invalid phone or password")
 }
 
+fn validate_public_phone_password(password: &str, config: &AuthPhoneConfig) -> AppResult<()> {
+    validate_password(password, config).map_err(|_| invalid_phone_password_credentials())
+}
+
 fn phone_password_rate_limited(locked_until: DateTime<Utc>) -> AppError {
     AppError::new(
         ErrorCode::RateLimited,
@@ -717,6 +726,7 @@ fn map_sql_error(source: sqlx::Error) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::AuthPhoneConfig;
 
     #[test]
     fn failed_phone_password_login_update_locks_on_fifth_failure_in_window() {
@@ -729,5 +739,14 @@ mod tests {
             update.locked_until,
             Some(now + PASSWORD_LOGIN_LOCKOUT_DURATION)
         );
+    }
+
+    #[test]
+    fn public_phone_password_validation_returns_generic_unauthorized() {
+        let error =
+            validate_public_phone_password("short", &AuthPhoneConfig::default()).unwrap_err();
+
+        assert_eq!(error.code, ErrorCode::Unauthorized);
+        assert_eq!(error.public_message, "Invalid phone or password");
     }
 }

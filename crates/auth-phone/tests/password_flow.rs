@@ -84,7 +84,7 @@ async fn set_password_then_login_creates_session() {
 
     let password_session = repo
         .login_password_with_options(LoginPhonePasswordOptions {
-            phone: "+86 138 0000 0002",
+            phone: "+8613800000002",
             password: "correct horse",
             session_id: "sess_phone_password_login".to_owned(),
             now: now + Duration::seconds(3),
@@ -212,6 +212,22 @@ async fn short_phone_password_still_returns_generic_unauthorized() {
     assert_eq!(error.code, ErrorCode::Unauthorized);
     assert_eq!(error.public_message, "Invalid phone or password");
 
+    let row: (i32, Option<String>, Option<String>) = sqlx::query_as(
+        r#"
+        select failed_count, last_failed_ip, last_failed_user_agent
+        from auth_phone.password_failures
+        where phone_e164 = $1
+        "#,
+    )
+    .bind("+8613800000006")
+    .fetch_one(&db.pool)
+    .await
+    .expect("failure row");
+
+    assert_eq!(row.0, 1);
+    assert_eq!(row.1, None);
+    assert_eq!(row.2, None);
+
     db.cleanup().await;
 }
 
@@ -323,7 +339,7 @@ async fn phone_password_login_respects_session_policy() {
         .expect("migrations apply");
 
     let config = fast_config();
-    let repo = PhoneAuthRepository::new_with_session_policy(db.pool.clone(), Arc::new(FixedPolicy));
+    let repo = PhoneAuthRepository::new(db.pool.clone());
     let now = Utc::now();
     let challenge = repo
         .start_otp(StartOtpInput {
@@ -362,7 +378,9 @@ async fn phone_password_login_respects_session_policy() {
     .await
     .expect("password set");
 
-    let password_session = repo
+    let policy_repo =
+        PhoneAuthRepository::new_with_session_policy(db.pool.clone(), Arc::new(FixedPolicy));
+    let password_session = policy_repo
         .login_password_with_options(LoginPhonePasswordOptions {
             phone: "+8613800000005",
             password: "correct horse",
