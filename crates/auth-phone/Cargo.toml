@@ -27,6 +27,7 @@ platform-http.workspace = true
 platform-module.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 sqlx.workspace = true
 utoipa.workspace = true
 
