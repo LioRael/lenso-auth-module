@@ -16,6 +16,8 @@ pub struct AuthPhoneConfig {
     pub otp_max_attempts: i32,
     #[serde(default = "default_otp_secret")]
     pub otp_secret: String,
+    #[serde(default)]
+    pub return_debug_otp_code: bool,
     #[serde(default = "default_password_min_length")]
     pub password_min_length: usize,
 }
@@ -28,6 +30,7 @@ impl Default for AuthPhoneConfig {
             otp_resend_cooldown_seconds: default_otp_resend_cooldown_seconds(),
             otp_max_attempts: default_otp_max_attempts(),
             otp_secret: default_otp_secret(),
+            return_debug_otp_code: false,
             password_min_length: default_password_min_length(),
         }
     }

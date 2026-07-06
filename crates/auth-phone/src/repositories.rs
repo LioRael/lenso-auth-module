@@ -114,7 +114,7 @@ impl PhoneAuthRepository {
             purpose,
             expires_at,
             resend_after,
-            debug_code: Some(code),
+            debug_code: config.return_debug_otp_code.then_some(code),
         })
     }
 
