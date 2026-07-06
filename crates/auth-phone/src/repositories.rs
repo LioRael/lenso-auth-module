@@ -1,5 +1,6 @@
 use crate::config::AuthPhoneConfig;
 use crate::otp::{hash_otp_code, new_otp_code};
+use crate::password::{hash_password, validate_password, verify_password};
 use crate::phone::normalize_phone_e164;
 use auth::public::{self, AuthSession, AuthUserId, SessionCreateOptions};
 use auth::session_policy::{AllowSessionPolicy, AuthSessionPolicy};
@@ -9,6 +10,9 @@ use sqlx::{Postgres, Transaction};
 use std::sync::Arc;
 
 const PHONE_PROVIDER: &str = "phone";
+const MAX_FAILED_PASSWORD_LOGINS: i32 = 5;
+const PASSWORD_LOGIN_FAILURE_WINDOW: Duration = Duration::minutes(15);
+const PASSWORD_LOGIN_LOCKOUT_DURATION: Duration = Duration::minutes(15);
 
 #[derive(Debug, Clone)]
 pub struct PhoneAuthRepository {
@@ -56,6 +60,26 @@ pub struct VerifyOtpOptions<'a> {
     pub device_id: Option<String>,
     pub client: ClientRequestMetadata,
     pub link_anonymous_user_id: Option<AuthUserId>,
+}
+
+#[derive(Debug)]
+pub struct SetPhonePasswordOptions<'a> {
+    pub user_id: &'a AuthUserId,
+    pub password: &'a str,
+    pub now: DateTime<Utc>,
+    pub config: &'a AuthPhoneConfig,
+}
+
+#[derive(Debug)]
+pub struct LoginPhonePasswordOptions<'a> {
+    pub phone: &'a str,
+    pub password: &'a str,
+    pub session_id: String,
+    pub now: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub config: &'a AuthPhoneConfig,
+    pub device_id: Option<String>,
+    pub client: ClientRequestMetadata,
 }
 
 impl PhoneAuthRepository {
@@ -281,6 +305,127 @@ impl PhoneAuthRepository {
         tx.commit().await.map_err(map_sql_error)?;
         Ok(Some(session))
     }
+
+    pub async fn set_password(&self, input: SetPhonePasswordOptions<'_>) -> AppResult<bool> {
+        let SetPhonePasswordOptions {
+            user_id,
+            password,
+            now,
+            config,
+        } = input;
+
+        let password_hash = hash_password(password, config)?;
+        let Some(identity_id) = sqlx::query_scalar::<_, String>(
+            r#"
+            select identities.id
+            from auth.identities identities
+            join auth_phone.identities phone_identities on phone_identities.identity_id = identities.id
+            where identities.user_id = $1
+              and identities.provider = $2
+            limit 1
+            "#,
+        )
+        .bind(&user_id.0)
+        .bind(PHONE_PROVIDER)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sql_error)?
+        else {
+            return Ok(false);
+        };
+
+        sqlx::query(
+            r#"
+            insert into auth_phone.password_credentials (
+                identity_id,
+                password_hash,
+                created_at,
+                updated_at
+            )
+            values ($1, $2, $3, $3)
+            on conflict (identity_id) do update
+            set password_hash = excluded.password_hash,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(identity_id)
+        .bind(password_hash)
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sql_error)?;
+
+        Ok(true)
+    }
+
+    pub async fn login_password_with_options(
+        &self,
+        input: LoginPhonePasswordOptions<'_>,
+    ) -> AppResult<Option<AuthSession>> {
+        let LoginPhonePasswordOptions {
+            phone,
+            password,
+            session_id,
+            now,
+            expires_at,
+            config,
+            device_id,
+            client,
+        } = input;
+
+        let phone_e164 = normalize_phone_e164(phone)?;
+        validate_password(password, config)?;
+        self.ensure_phone_password_login_not_locked(&phone_e164, now)
+            .await?;
+
+        let Some(identity) =
+            public::find_active_identity(&self.pool, PHONE_PROVIDER, &phone_e164).await?
+        else {
+            self.record_failed_phone_password_login(&phone_e164, now, &client)
+                .await?;
+            return Err(invalid_phone_password_credentials());
+        };
+
+        let Some(password_hash) = sqlx::query_scalar::<_, String>(
+            r#"
+            select credentials.password_hash
+            from auth_phone.password_credentials credentials
+            where credentials.identity_id = $1
+            "#,
+        )
+        .bind(&identity.id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sql_error)?
+        else {
+            self.record_failed_phone_password_login(&phone_e164, now, &client)
+                .await?;
+            return Err(invalid_phone_password_credentials());
+        };
+
+        if !verify_password(&password_hash, password)? {
+            self.record_failed_phone_password_login(&phone_e164, now, &client)
+                .await?;
+            return Err(invalid_phone_password_credentials());
+        }
+
+        let mut tx = self.pool.begin().await.map_err(map_sql_error)?;
+        let session = public::create_session_in_tx_with_policy(
+            &mut tx,
+            &identity.user_id,
+            session_id,
+            public::new_session_token(),
+            now,
+            expires_at,
+            SessionCreateOptions { device_id, client },
+            self.session_policy.as_ref(),
+        )
+        .await?;
+        clear_phone_password_login_failures(&mut tx, &phone_e164).await?;
+        tx.commit().await.map_err(map_sql_error)?;
+
+        Ok(Some(session))
+    }
 }
 
 type OtpChallengeRow = (
@@ -374,6 +519,24 @@ async fn upsert_phone_identity_metadata(
     Ok(())
 }
 
+async fn clear_phone_password_login_failures(
+    tx: &mut Transaction<'_, Postgres>,
+    phone_e164: &str,
+) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        delete from auth_phone.password_failures
+        where phone_e164 = $1
+        "#,
+    )
+    .bind(phone_e164)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_sql_error)?;
+
+    Ok(())
+}
+
 impl PhoneOtpPurpose {
     fn as_str(self) -> &'static str {
         match self {
@@ -406,6 +569,165 @@ fn identity_from_row(row: IdentityRow) -> public::AuthIdentity {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FailedPhonePasswordLoginUpdate {
+    failed_count: i32,
+    window_started_at: DateTime<Utc>,
+    locked_until: Option<DateTime<Utc>>,
+}
+
+fn failed_phone_password_login_update(
+    failed_count: i32,
+    window_started_at: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> FailedPhonePasswordLoginUpdate {
+    if now - window_started_at > PASSWORD_LOGIN_FAILURE_WINDOW {
+        return FailedPhonePasswordLoginUpdate {
+            failed_count: 1,
+            window_started_at: now,
+            locked_until: None,
+        };
+    }
+
+    let failed_count = failed_count + 1;
+    FailedPhonePasswordLoginUpdate {
+        failed_count,
+        window_started_at,
+        locked_until: (failed_count >= MAX_FAILED_PASSWORD_LOGINS)
+            .then_some(now + PASSWORD_LOGIN_LOCKOUT_DURATION),
+    }
+}
+
+fn invalid_phone_password_credentials() -> AppError {
+    AppError::new(ErrorCode::Unauthorized, "Invalid phone or password")
+}
+
+fn phone_password_rate_limited(locked_until: DateTime<Utc>) -> AppError {
+    AppError::new(
+        ErrorCode::RateLimited,
+        format!(
+            "Too many phone password login attempts; try again after {}",
+            locked_until.to_rfc3339()
+        ),
+    )
+}
+
+impl PhoneAuthRepository {
+    async fn ensure_phone_password_login_not_locked(
+        &self,
+        phone_e164: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<()> {
+        let locked_until = sqlx::query_scalar::<_, DateTime<Utc>>(
+            r#"
+            select locked_until
+            from auth_phone.password_failures
+            where phone_e164 = $1 and locked_until > $2
+            "#,
+        )
+        .bind(phone_e164)
+        .bind(now)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sql_error)?;
+
+        match locked_until {
+            Some(locked_until) => Err(phone_password_rate_limited(locked_until)),
+            None => Ok(()),
+        }
+    }
+
+    async fn record_failed_phone_password_login(
+        &self,
+        phone_e164: &str,
+        now: DateTime<Utc>,
+        client: &ClientRequestMetadata,
+    ) -> AppResult<()> {
+        let mut tx = self.pool.begin().await.map_err(map_sql_error)?;
+        let row = sqlx::query_as::<_, (i32, DateTime<Utc>)>(
+            r#"
+            select failed_count, window_started_at
+            from auth_phone.password_failures
+            where phone_e164 = $1
+            for update
+            "#,
+        )
+        .bind(phone_e164)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_sql_error)?;
+
+        if let Some((failed_count, window_started_at)) = row {
+            let update = failed_phone_password_login_update(failed_count, window_started_at, now);
+            sqlx::query(
+                r#"
+                update auth_phone.password_failures
+                set failed_count = $2,
+                    window_started_at = $3,
+                    last_failed_at = $4,
+                    locked_until = $5,
+                    last_failed_ip = $6,
+                    last_failed_user_agent = $7
+                where phone_e164 = $1
+                "#,
+            )
+            .bind(phone_e164)
+            .bind(update.failed_count)
+            .bind(update.window_started_at)
+            .bind(now)
+            .bind(update.locked_until)
+            .bind(client.ip.as_deref())
+            .bind(client.user_agent.as_deref())
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sql_error)?;
+        } else {
+            sqlx::query(
+                r#"
+                insert into auth_phone.password_failures (
+                    phone_e164,
+                    failed_count,
+                    window_started_at,
+                    last_failed_at,
+                    locked_until,
+                    last_failed_ip,
+                    last_failed_user_agent
+                )
+                values ($1, 1, $2, $2, null, $3, $4)
+                "#,
+            )
+            .bind(phone_e164)
+            .bind(now)
+            .bind(client.ip.as_deref())
+            .bind(client.user_agent.as_deref())
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sql_error)?;
+        }
+
+        tx.commit().await.map_err(map_sql_error)?;
+        Ok(())
+    }
+}
+
 fn map_sql_error(source: sqlx::Error) -> AppError {
     AppError::new(ErrorCode::Internal, "Internal server error").with_source(source)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_phone_password_login_update_locks_on_fifth_failure_in_window() {
+        let now = Utc::now();
+        let update = failed_phone_password_login_update(4, now - Duration::minutes(1), now);
+
+        assert_eq!(update.failed_count, 5);
+        assert_eq!(update.window_started_at, now - Duration::minutes(1));
+        assert_eq!(
+            update.locked_until,
+            Some(now + PASSWORD_LOGIN_LOCKOUT_DURATION)
+        );
+    }
 }
