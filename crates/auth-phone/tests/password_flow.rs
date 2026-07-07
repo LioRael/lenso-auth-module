@@ -1,5 +1,7 @@
 use auth::models::AuthUserId;
 use auth::session_policy::{AuthSessionPolicy, SessionCreateDecision, SessionCreateInput};
+use auth_password::config::AuthPasswordConfig;
+use auth_password::migrations::AUTH_PASSWORD_MIGRATIONS;
 use auth_phone::config::AuthPhoneConfig;
 use auth_phone::migrations::AUTH_PHONE_MIGRATIONS;
 use auth_phone::repositories::{
@@ -26,16 +28,74 @@ fn migrations() -> Vec<Migration> {
     PLATFORM_MIGRATIONS
         .iter()
         .chain(auth::migrations::AUTH_MIGRATIONS)
+        .chain(AUTH_PASSWORD_MIGRATIONS)
         .chain(AUTH_PHONE_MIGRATIONS)
         .copied()
         .collect()
 }
 
-fn fast_config() -> AuthPhoneConfig {
+fn fast_otp_config() -> AuthPhoneConfig {
     AuthPhoneConfig {
         return_debug_otp_code: true,
         ..AuthPhoneConfig::default()
     }
+}
+
+fn fast_password_config() -> AuthPasswordConfig {
+    AuthPasswordConfig {
+        argon2_memory_kib: 8 * 1024,
+        argon2_time_cost: 1,
+        argon2_parallelism: 1,
+        ..AuthPasswordConfig::default()
+    }
+}
+
+#[tokio::test]
+async fn set_password_uses_auth_password_credentials() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+
+    let now = Utc::now();
+    seed_phone_identity(
+        &db.pool,
+        "usr_phone_password_credential_module",
+        "auth_identity_phone_password_credential_module",
+        "+8613800000210",
+        now,
+    )
+    .await;
+
+    let password_config = fast_password_config();
+    let updated = PhoneAuthRepository::new(db.pool.clone())
+        .set_password(SetPhonePasswordOptions {
+            user_id: &AuthUserId("usr_phone_password_credential_module".to_owned()),
+            password: "correct horse",
+            now,
+            config: &password_config,
+        })
+        .await
+        .expect("password set");
+
+    assert!(updated);
+
+    let credentials_exist = sqlx::query_scalar::<_, bool>(
+        r#"
+        select exists(
+            select 1
+            from auth_password.credentials
+            where identity_id = $1
+        )
+        "#,
+    )
+    .bind("auth_identity_phone_password_credential_module")
+    .fetch_one(&db.pool)
+    .await
+    .expect("credential lookup");
+    assert!(credentials_exist);
 }
 
 #[tokio::test]
@@ -73,7 +133,7 @@ async fn password_set_route_updates_current_phone_identity() {
         r#"
         select exists(
             select 1
-            from auth_phone.password_credentials
+            from auth_password.credentials
             where identity_id = $1
         )
         "#,
@@ -96,7 +156,7 @@ async fn password_login_route_creates_session_cookie() {
         .await
         .expect("migrations apply");
 
-    let config = fast_config();
+    let password_config = fast_password_config();
     let repo = PhoneAuthRepository::new(db.pool.clone());
     let user_id = AuthUserId("usr_phone_password_login_route".to_owned());
     seed_phone_identity(
@@ -111,7 +171,7 @@ async fn password_login_route_creates_session_cookie() {
         user_id: &user_id,
         password: "correct horse",
         now: Utc::now(),
-        config: &config,
+        config: &password_config,
     })
     .await
     .expect("password set");
@@ -186,7 +246,8 @@ async fn set_password_then_login_creates_session() {
         .await
         .expect("migrations apply");
 
-    let config = fast_config();
+    let otp_config = fast_otp_config();
+    let password_config = fast_password_config();
     let repo = PhoneAuthRepository::new(db.pool.clone());
     let now = Utc::now();
     let challenge = repo
@@ -195,7 +256,7 @@ async fn set_password_then_login_creates_session() {
             purpose: PhoneOtpPurpose::SignIn,
             challenge_id: "phone_password_challenge".to_owned(),
             now,
-            config: &config,
+            config: &otp_config,
             client: ClientRequestMetadata::default(),
         })
         .await
@@ -209,7 +270,7 @@ async fn set_password_then_login_creates_session() {
             identity_id: "auth_identity_phone_password".to_owned(),
             now: now + Duration::seconds(1),
             expires_at: now + Duration::hours(12),
-            config: &config,
+            config: &otp_config,
             device_id: None,
             client: ClientRequestMetadata::default(),
             link_anonymous_user_id: None,
@@ -223,12 +284,27 @@ async fn set_password_then_login_creates_session() {
             user_id: &session.user_id,
             password: "correct horse",
             now: now + Duration::seconds(2),
-            config: &config,
+            config: &password_config,
         })
         .await
         .expect("password set");
 
     assert!(updated);
+
+    let credentials_exist = sqlx::query_scalar::<_, bool>(
+        r#"
+        select exists(
+            select 1
+            from auth_password.credentials
+            where identity_id = $1
+        )
+        "#,
+    )
+    .bind("auth_identity_phone_password")
+    .fetch_one(&db.pool)
+    .await
+    .expect("credential exists");
+    assert!(credentials_exist);
 
     let password_session = repo
         .login_password_with_options(LoginPhonePasswordOptions {
@@ -237,7 +313,6 @@ async fn set_password_then_login_creates_session() {
             session_id: "sess_phone_password_login".to_owned(),
             now: now + Duration::seconds(3),
             expires_at: now + Duration::hours(12),
-            config: &config,
             device_id: Some("ios-device".to_owned()),
             client: ClientRequestMetadata::default(),
         })
@@ -261,7 +336,7 @@ async fn set_password_returns_false_without_phone_identity() {
         .await
         .expect("migrations apply");
 
-    let config = AuthPhoneConfig::default();
+    let config = AuthPasswordConfig::default();
     let repo = PhoneAuthRepository::new(db.pool.clone());
     let now = Utc::now();
 
@@ -289,7 +364,6 @@ async fn wrong_phone_password_records_failure_metadata_and_returns_generic_unaut
         .await
         .expect("migrations apply");
 
-    let config = AuthPhoneConfig::default();
     let repo = PhoneAuthRepository::new(db.pool.clone());
     let now = Utc::now();
     let error = repo
@@ -299,7 +373,6 @@ async fn wrong_phone_password_records_failure_metadata_and_returns_generic_unaut
             session_id: "sess_wrong".to_owned(),
             now,
             expires_at: now + Duration::hours(12),
-            config: &config,
             device_id: None,
             client: ClientRequestMetadata {
                 ip: Some("127.0.0.1".to_owned()),
@@ -315,8 +388,8 @@ async fn wrong_phone_password_records_failure_metadata_and_returns_generic_unaut
     let row: (i32, Option<String>, Option<String>) = sqlx::query_as(
         r#"
         select failed_count, last_failed_ip, last_failed_user_agent
-        from auth_phone.password_failures
-        where phone_e164 = $1
+        from auth_password.login_failures
+        where provider = 'phone' and identifier = $1
         "#,
     )
     .bind("+8613800000003")
@@ -340,7 +413,6 @@ async fn short_phone_password_still_returns_generic_unauthorized() {
         .await
         .expect("migrations apply");
 
-    let config = AuthPhoneConfig::default();
     let repo = PhoneAuthRepository::new(db.pool.clone());
     let now = Utc::now();
     let error = repo
@@ -350,7 +422,6 @@ async fn short_phone_password_still_returns_generic_unauthorized() {
             session_id: "sess_short_wrong".to_owned(),
             now,
             expires_at: now + Duration::hours(12),
-            config: &config,
             device_id: None,
             client: ClientRequestMetadata::default(),
         })
@@ -363,8 +434,8 @@ async fn short_phone_password_still_returns_generic_unauthorized() {
     let row: (i32, Option<String>, Option<String>) = sqlx::query_as(
         r#"
         select failed_count, last_failed_ip, last_failed_user_agent
-        from auth_phone.password_failures
-        where phone_e164 = $1
+        from auth_password.login_failures
+        where provider = 'phone' and identifier = $1
         "#,
     )
     .bind("+8613800000006")
@@ -388,7 +459,8 @@ async fn successful_phone_password_login_clears_previous_failures() {
         .await
         .expect("migrations apply");
 
-    let config = fast_config();
+    let otp_config = fast_otp_config();
+    let password_config = fast_password_config();
     let repo = PhoneAuthRepository::new(db.pool.clone());
     let now = Utc::now();
     let challenge = repo
@@ -397,7 +469,7 @@ async fn successful_phone_password_login_clears_previous_failures() {
             purpose: PhoneOtpPurpose::SignIn,
             challenge_id: "phone_password_failure_reset".to_owned(),
             now,
-            config: &config,
+            config: &otp_config,
             client: ClientRequestMetadata::default(),
         })
         .await
@@ -411,7 +483,7 @@ async fn successful_phone_password_login_clears_previous_failures() {
             identity_id: "auth_identity_phone_password_failure_reset".to_owned(),
             now: now + Duration::seconds(1),
             expires_at: now + Duration::hours(12),
-            config: &config,
+            config: &otp_config,
             device_id: None,
             client: ClientRequestMetadata::default(),
             link_anonymous_user_id: None,
@@ -423,7 +495,7 @@ async fn successful_phone_password_login_clears_previous_failures() {
         user_id: &session.user_id,
         password: "correct horse",
         now: now + Duration::seconds(2),
-        config: &config,
+        config: &password_config,
     })
     .await
     .expect("password set");
@@ -436,7 +508,6 @@ async fn successful_phone_password_login_clears_previous_failures() {
                 session_id: format!("sess_phone_wrong_{attempt}"),
                 now: now + Duration::seconds(3 + i64::from(attempt)),
                 expires_at: now + Duration::hours(12),
-                config: &config,
                 device_id: None,
                 client: ClientRequestMetadata::default(),
             })
@@ -451,7 +522,6 @@ async fn successful_phone_password_login_clears_previous_failures() {
         session_id: "sess_phone_success_after_failures".to_owned(),
         now: now + Duration::seconds(8),
         expires_at: now + Duration::hours(12),
-        config: &config,
         device_id: None,
         client: ClientRequestMetadata::default(),
     })
@@ -463,8 +533,8 @@ async fn successful_phone_password_login_clears_previous_failures() {
         r#"
         select exists(
             select 1
-            from auth_phone.password_failures
-            where phone_e164 = $1
+            from auth_password.login_failures
+            where provider = 'phone' and identifier = $1
         )
         "#,
     )
@@ -486,7 +556,8 @@ async fn phone_password_login_respects_session_policy() {
         .await
         .expect("migrations apply");
 
-    let config = fast_config();
+    let otp_config = fast_otp_config();
+    let password_config = fast_password_config();
     let repo = PhoneAuthRepository::new(db.pool.clone());
     let now = Utc::now();
     let challenge = repo
@@ -495,7 +566,7 @@ async fn phone_password_login_respects_session_policy() {
             purpose: PhoneOtpPurpose::SignIn,
             challenge_id: "phone_password_policy".to_owned(),
             now,
-            config: &config,
+            config: &otp_config,
             client: ClientRequestMetadata::default(),
         })
         .await
@@ -509,7 +580,7 @@ async fn phone_password_login_respects_session_policy() {
             identity_id: "auth_identity_phone_password_policy".to_owned(),
             now: now + Duration::seconds(1),
             expires_at: now + Duration::hours(12),
-            config: &config,
+            config: &otp_config,
             device_id: None,
             client: ClientRequestMetadata::default(),
             link_anonymous_user_id: None,
@@ -521,7 +592,7 @@ async fn phone_password_login_respects_session_policy() {
         user_id: &session.user_id,
         password: "correct horse",
         now: now + Duration::seconds(2),
-        config: &config,
+        config: &password_config,
     })
     .await
     .expect("password set");
@@ -535,7 +606,6 @@ async fn phone_password_login_respects_session_policy() {
             session_id: "sess_phone_password_policy".to_owned(),
             now: now + Duration::seconds(3),
             expires_at: now + Duration::hours(12),
-            config: &config,
             device_id: Some("device_hint".to_owned()),
             client: ClientRequestMetadata::default(),
         })

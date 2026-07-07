@@ -4,7 +4,9 @@
 
 **Goal:** Build a first-party `auth-phone` linked module that supports one phone identity with both phone password login and SMS OTP login.
 
-**Architecture:** Keep `auth` as the identity/session anchor. Add `auth-phone` in `lenso-auth-module` as a provider module that owns phone normalization, OTP challenges, phone password credentials, and phone session routes while creating sessions through `auth::public`. After the module crate is tested, wire it through the sibling `lenso` repo as a builtin, OpenAPI-visible module, and official catalog entry.
+**Architecture:** Keep `auth` as the identity/session anchor. Add `auth-phone` in `lenso-auth-module` as a provider module that owns phone normalization, OTP challenges, and phone session routes while delegating password credentials, hashing, and password failure tracking to `auth-password`. After the module crate is tested, wire it through the sibling `lenso` repo as a builtin, OpenAPI-visible module, and official catalog entry.
+
+> Update: the initial version of this plan placed password credentials inside `auth-phone`. The durable module boundary is now `auth-phone -> auth-password`: phone owns the identifier lifecycle, while `auth-password` owns password credentials.
 
 **Tech Stack:** Rust 2024, Axum, SQLx/Postgres, Argon2, `auth::public` identity/session helpers, Lenso linked module manifests, Runtime Config descriptors, cargo tests.
 

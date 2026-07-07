@@ -14,11 +14,7 @@ pub const AUTH_PHONE_MIGRATIONS: &[Migration] = &[
         sql: include_str!("../migrations/0003_create_otp_challenges.sql"),
     },
     Migration {
-        name: "auth-phone/0004_create_password_credentials",
-        sql: include_str!("../migrations/0004_create_password_credentials.sql"),
-    },
-    Migration {
-        name: "auth-phone/0005_create_password_failures",
-        sql: include_str!("../migrations/0005_create_password_failures.sql"),
+        name: "auth-phone/0004_migrate_password_state_to_auth_password",
+        sql: include_str!("../migrations/0004_migrate_password_state_to_auth_password.sql"),
     },
 ];

@@ -96,6 +96,7 @@ async fn start_otp(
         challenge_id: challenge.id,
         expires_at: challenge.expires_at,
         resend_after: challenge.resend_after,
+        debug_code: challenge.debug_code,
     }))
 }
 
@@ -243,7 +244,7 @@ async fn set_password(
 ) -> Result<Json<PhonePasswordUpdatedResponse>, ApiErrorResponse> {
     let user_id = required_user_id(&request_ctx)
         .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
-    let config = crate::config::AuthPhoneConfig::from_context(&ctx)
+    let config = auth_password::config::AuthPasswordConfig::from_context(&ctx)
         .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
     let updated = PhoneAuthRepository::new(ctx.db.clone())
         .set_password(SetPhonePasswordOptions {
@@ -323,8 +324,6 @@ async fn login_password(
     HttpRequestContext(request_ctx): HttpRequestContext,
     JsonBody(input): JsonBody<crate::dto::PhonePasswordLoginRequest>,
 ) -> Result<(HeaderMap, Json<PhoneSessionResponse>), ApiErrorResponse> {
-    let config = crate::config::AuthPhoneConfig::from_context(&ctx)
-        .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
     let now = ctx.clock.now();
     let session = PhoneAuthRepository::new_with_session_policy(
         ctx.db.clone(),
@@ -336,7 +335,6 @@ async fn login_password(
         session_id: ctx.ids.new_id("sess"),
         now,
         expires_at: now + Duration::hours(SESSION_TTL_HOURS),
-        config: &config,
         device_id: input.device_id,
         client: request_ctx.client.clone(),
     })

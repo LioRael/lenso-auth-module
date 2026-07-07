@@ -16,9 +16,9 @@ name = "auth_phone"
 path = "src/lib.rs"
 
 [dependencies]
-argon2.workspace = true
 async-trait.workspace = true
 auth.workspace = true
+auth-password = { package = "lenso-module-auth-password", path = "../auth-password", version = "0.1.7" }
 axum.workspace = true
 chrono.workspace = true
 getrandom.workspace = true

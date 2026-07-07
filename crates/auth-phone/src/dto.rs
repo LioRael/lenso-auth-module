@@ -13,6 +13,8 @@ pub struct PhoneOtpStartResponse {
     pub challenge_id: String,
     pub expires_at: DateTime<Utc>,
     pub resend_after: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debug_code: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

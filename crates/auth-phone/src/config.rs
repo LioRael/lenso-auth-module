@@ -22,8 +22,6 @@ pub struct AuthPhoneConfig {
     pub otp_secret: String,
     #[serde(default)]
     pub return_debug_otp_code: bool,
-    #[serde(default = "default_password_min_length")]
-    pub password_min_length: usize,
 }
 
 impl Default for AuthPhoneConfig {
@@ -35,7 +33,6 @@ impl Default for AuthPhoneConfig {
             otp_max_attempts: default_otp_max_attempts(),
             otp_secret: default_otp_secret(),
             return_debug_otp_code: false,
-            password_min_length: default_password_min_length(),
         }
     }
 }
@@ -83,20 +80,12 @@ struct AuthPhoneLocalConfig {
 
 pub static RUNTIME_CONFIG_GROUPS: LazyLock<Vec<RuntimeConfigGroupDescriptor>> =
     LazyLock::new(|| {
-        vec![
-            RuntimeConfigGroupDescriptor {
-                id: "auth-phone.otp",
-                label: "Phone OTP",
-                description: "Phone OTP code generation, expiry, and verification limits.",
-                order: 30,
-            },
-            RuntimeConfigGroupDescriptor {
-                id: "auth-phone.password",
-                label: "Phone Password",
-                description: "Phone password credential policy.",
-                order: 40,
-            },
-        ]
+        vec![RuntimeConfigGroupDescriptor {
+            id: "auth-phone.otp",
+            label: "Phone OTP",
+            description: "Phone OTP code generation, expiry, and verification limits.",
+            order: 30,
+        }]
     });
 
 pub static RUNTIME_CONFIG: LazyLock<Vec<RuntimeConfigDescriptor>> = LazyLock::new(|| {
@@ -169,23 +158,6 @@ pub static RUNTIME_CONFIG: LazyLock<Vec<RuntimeConfigDescriptor>> = LazyLock::ne
             restart_only: false,
             description: "Maximum verification attempts allowed for a single phone OTP challenge.",
         },
-        RuntimeConfigDescriptor {
-            key: "auth-phone.password_min_length".to_owned(),
-            scope: RuntimeConfigScope::Shared,
-            group: Some("auth-phone.password"),
-            section: None,
-            order: 10,
-            visible_when: None,
-            generated: None,
-            value_type: RuntimeConfigType::Int {
-                min: Some(8),
-                max: Some(256),
-            },
-            default: json!(default_password_min_length()),
-            editable: true,
-            restart_only: false,
-            description: "Minimum accepted byte length for phone account passwords.",
-        },
     ]
 });
 
@@ -209,10 +181,6 @@ fn default_otp_secret() -> String {
     "local-development-auth-phone-otp-secret".to_owned()
 }
 
-fn default_password_min_length() -> usize {
-    8
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,7 +194,6 @@ mod tests {
 
         assert!(keys.contains(&"auth-phone.otp_code_length"));
         assert!(keys.contains(&"auth-phone.otp_ttl_seconds"));
-        assert!(keys.contains(&"auth-phone.password_min_length"));
         assert!(!keys.contains(&"auth-phone.otp_secret"));
     }
 

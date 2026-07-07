@@ -9,8 +9,8 @@ First-party Lenso auth modules and Runtime Console surface.
 - `crates/auth-google`: Rust Google OAuth/OIDC provider module.
 - `crates/auth-oauth`: Rust OAuth client substrate module.
 - `crates/auth-oidc`: Rust OIDC provider module.
-- `crates/auth-password`: Rust password provider module.
-- `auth-phone`: first-party phone provider with phone password and SMS OTP flows (`crates/auth-phone`).
+- `crates/auth-password`: Rust password credential module and identifier/password provider.
+- `auth-phone`: first-party phone provider with SMS OTP flows and phone password routes backed by `auth-password` (`crates/auth-phone`).
 - `packages/auth-console`: Runtime Console surface loaded as a runtime bundle.
 
 ## Packages

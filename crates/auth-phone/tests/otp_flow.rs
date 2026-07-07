@@ -12,8 +12,8 @@ use axum::middleware;
 use chrono::{Duration, Utc};
 use platform_core::{
     AppConfig, AppResult, AuthConfig, ClientRequestMetadata, DatabaseConfig, DevActorResolver,
-    HttpConfig, LoggingEventPublisher, Migration, ModuleSourcesConfig, PLATFORM_MIGRATIONS,
-    RedisConfig, ServiceConfig, TelemetryConfig, apply_migrations,
+    HttpConfig, LoggingEventPublisher, Migration, ModuleConfig, ModuleSourcesConfig,
+    PLATFORM_MIGRATIONS, RedisConfig, ServiceConfig, TelemetryConfig, apply_migrations,
 };
 use platform_http::request_context_middleware;
 use platform_testing::TestDatabase;
@@ -58,6 +58,48 @@ async fn otp_start_route_returns_challenge_without_raw_code() {
     assert!(json["expires_at"].as_str().is_some());
     assert!(json["resend_after"].as_str().is_some());
     assert!(json.get("code").is_none());
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
+async fn otp_start_route_returns_debug_code_when_local_debug_delivery_is_enabled() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+
+    let response = test_app_with_config(db.pool.clone(), test_config_with_debug_otp_delivery())
+        .oneshot(post_json(
+            "/v1/auth/phone/otp/start",
+            r#"{"phone":"+8613800000102","purpose":"sign_in"}"#,
+        ))
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response_json(response).await;
+    let debug_code = json["debug_code"].as_str().expect("local debug OTP code");
+    assert_eq!(debug_code.len(), 6);
+    assert!(
+        debug_code
+            .chars()
+            .all(|character| character.is_ascii_digit())
+    );
+
+    let stored_hash: String =
+        sqlx::query_scalar("select code_hash from auth_phone.otp_challenges where id = $1")
+            .bind(json["challenge_id"].as_str().expect("challenge id"))
+            .fetch_one(&db.pool)
+            .await
+            .expect("stored hash");
+    assert_eq!(
+        stored_hash,
+        hash_otp_code(debug_code, &AuthPhoneConfig::default().otp_secret)
+    );
+    assert_ne!(stored_hash, debug_code);
 
     db.cleanup().await;
 }
@@ -611,19 +653,34 @@ async fn seed_otp_challenge(
 }
 
 fn test_app(db: platform_core::DbPool) -> axum::Router {
+    test_app_with_config(db, test_config())
+}
+
+fn test_app_with_config(db: platform_core::DbPool, config: AppConfig) -> axum::Router {
     let (router, _) = auth_phone::routes::router().split_for_parts();
-    let ctx =
-        platform_core::AppContext::new(test_config(), db.clone(), Arc::new(LoggingEventPublisher))
-            .with_actor_resolver(Arc::new(auth::resolver::AuthActorResolver::new(
-                db,
-                Arc::new(DevActorResolver::new("local")),
-            )));
+    let ctx = platform_core::AppContext::new(config, db.clone(), Arc::new(LoggingEventPublisher))
+        .with_actor_resolver(Arc::new(auth::resolver::AuthActorResolver::new(
+            db,
+            Arc::new(DevActorResolver::new("local")),
+        )));
     router
         .layer(middleware::from_fn_with_state(
             ctx.clone(),
             request_context_middleware,
         ))
         .with_state(ctx)
+}
+
+fn test_config_with_debug_otp_delivery() -> AppConfig {
+    let mut config = test_config();
+    config.modules.insert(
+        "auth-phone".to_owned(),
+        ModuleConfig {
+            enabled: Some(true),
+            values: BTreeMap::from([("return_debug_otp_code".to_owned(), serde_json::json!(true))]),
+        },
+    );
+    config
 }
 
 fn test_config() -> AppConfig {

@@ -20,11 +20,13 @@ Build a single `auth-phone` provider module.
 
 - phone number normalization;
 - `auth.identities(provider = 'phone')` creation and lookup;
-- optional password credentials for a phone identity;
 - SMS OTP challenge lifecycle;
 - phone login sessions through the existing `auth` session helpers;
 - anonymous-user upgrade by linking the phone identity to the current anonymous
   user when a bearer session is present.
+
+`auth-phone` delegates password credentials, password hashing, password policy,
+and password login failure tracking to `auth-password`.
 
 `auth` continues to own users, identities, sessions, session cookies, actor
 resolution, session cache, and session policy hooks.
@@ -56,9 +58,11 @@ modules still own subject normalization and identity mapping.
 
 - `auth`: core user, identity, session, resolver, session policy, and session
   cache module.
-- `auth-phone`: first-party phone provider module. Depends on `auth`.
-- `auth-password`: remains the generic identifier/password module for apps that
-  want identifier-based credentials. It should not become phone-specific.
+- `auth-phone`: first-party phone provider module. Depends on `auth` and
+  `auth-password`.
+- `auth-password`: reusable password credential capability plus the existing
+  generic identifier/password provider routes. It should not become
+  phone-specific.
 - Future SMS delivery adapters: out-of-process services or small sender
   adapters. They are delivery details, not identity providers.
 
@@ -69,9 +73,9 @@ modules still own subject normalization and identity mapping.
 - migrations for `auth_phone`;
 - phone normalization to E.164;
 - phone identity creation and lookup through `auth::public`;
-- phone password setup and login;
+- phone password setup and login through `auth-password`;
 - SMS OTP start and verify;
-- rate limiting for password login and OTP challenges;
+- rate limiting for OTP challenges and provider-scoped password login failures;
 - client metadata capture for failed attempts and sessions;
 - session creation through the existing `auth` helpers;
 - anonymous upgrade when the request actor is an anonymous user;
@@ -224,14 +228,17 @@ create table if not exists auth_phone.identities (
 Password credential:
 
 ```sql
-create table if not exists auth_phone.password_credentials (
+create table if not exists auth_password.credentials (
     identity_id text primary key references auth.identities(id) on delete cascade,
     password_hash text not null,
     created_at timestamptz not null,
     updated_at timestamptz not null,
-    constraint phone_password_hash_not_empty check (length(password_hash) > 0)
+    constraint credentials_password_hash_not_empty check (length(password_hash) > 0)
 );
 ```
+
+Phone password credentials use the `auth.identities.id` for the phone identity.
+They do not live in `auth_phone`.
 
 OTP challenge:
 
@@ -266,18 +273,23 @@ create index if not exists otp_challenges_expires_at_idx
 Password failure tracking:
 
 ```sql
-create table if not exists auth_phone.password_failures (
-    phone_e164 text primary key,
+create table if not exists auth_password.login_failures (
+    provider text not null,
+    identifier text not null,
     failed_count integer not null,
     window_started_at timestamptz not null,
     last_failed_at timestamptz not null,
     locked_until timestamptz,
     last_failed_ip text,
     last_failed_user_agent text,
-    constraint phone_password_failures_phone_not_empty check (length(phone_e164) > 0),
-    constraint phone_password_failures_count_positive check (failed_count > 0)
+    primary key (provider, identifier),
+    constraint login_failures_identifier_not_empty check (length(identifier) > 0),
+    constraint login_failures_failed_count_positive check (failed_count > 0)
 );
 ```
+
+Phone password failures use `provider = 'phone'` and
+`identifier = phone_e164`.
 
 ## Phone Normalization
 
@@ -346,10 +358,10 @@ Initial config keys:
 - `auth-phone.sms_sender`
 - `auth-phone.sms_webhook_url`
 - `auth-phone.sms_webhook_authorization`
-- `auth-phone.password_min_length`
-- `auth-phone.password_login_max_failures`
-- `auth-phone.password_login_window_seconds`
-- `auth-phone.password_login_lockout_seconds`
+
+Password hash policy and password credential settings come from
+`auth-password`. Password login failures are stored in
+`auth_password.login_failures` with `provider = 'phone'`.
 
 Defaults should be safe for local development and explicit for production.
 Production must not use the local log sender unless the host is explicitly in a
@@ -365,7 +377,8 @@ local development environment.
 - OTP verification returns generic errors for invalid, expired, consumed, or
   mismatched challenges.
 - OTP start applies per-phone and per-client-IP rate limits.
-- Password login applies per-phone lockout with client metadata.
+- Password login applies provider-scoped per-phone lockout with client metadata
+  through `auth-password`.
 - Public responses must not reveal whether a phone number already exists.
 - Session cookies use the same secure-cookie policy as `auth-password`.
 - All successful session creation goes through existing auth session policy.
@@ -410,14 +423,15 @@ app-owned and continue to run after the phone session is activated.
 
 Repository tests:
 
-- manifest declares `auth-phone` dependency on `auth`;
+- manifest declares `auth-phone` dependency on `auth` and `auth-password`;
 - migrations create the expected schema;
 - OTP start stores a hashed code and never returns the code in production;
 - OTP verify creates a session for a new phone identity;
 - OTP verify signs into an existing phone identity;
 - OTP verify links an anonymous user when appropriate;
 - OTP verify rejects expired, consumed, and too-many-attempt challenges;
-- password set requires an authenticated phone identity;
+- password set requires an authenticated phone identity and stores the
+  credential in `auth_password.credentials`;
 - password login creates a session with the active session policy;
 - password login records failure metadata and lockout;
 - Runtime Console/admin data surfaces do not expose raw OTP values.

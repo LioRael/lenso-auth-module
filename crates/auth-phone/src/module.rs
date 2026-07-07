@@ -54,7 +54,10 @@ pub fn http_routes() -> Vec<ModuleHttpRoute> {
 pub fn manifest() -> ModuleManifest {
     ModuleManifest::builder(MODULE_NAME)
         .capabilities(vec![AUTH_PHONE_CREDENTIALS_WRITE.to_owned()])
-        .dependencies(vec![auth::module::MODULE_NAME.to_owned()])
+        .dependencies(vec![
+            auth::module::MODULE_NAME.to_owned(),
+            auth_password::module::MODULE_NAME.to_owned(),
+        ])
         .http_routes(http_routes())
         .declarative_admin(admin_surface())
         .console_contributions(console_contributions())
@@ -158,7 +161,10 @@ mod tests {
         assert_eq!(manifest.name, MODULE_NAME);
         assert_eq!(
             manifest.dependencies,
-            vec![auth::module::MODULE_NAME.to_owned()]
+            vec![
+                auth::module::MODULE_NAME.to_owned(),
+                auth_password::module::MODULE_NAME.to_owned(),
+            ]
         );
         assert_eq!(manifest.http_routes, http_routes());
 

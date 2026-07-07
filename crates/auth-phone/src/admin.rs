@@ -1,7 +1,7 @@
-use crate::config::AuthPhoneConfig;
 use crate::module::RESET_PHONE_PASSWORD_ACTION;
 use crate::repositories::{PhoneAuthRepository, SetPhonePasswordOptions};
 use auth::public::AuthUserId;
+use auth_password::config::AuthPasswordConfig;
 use platform_core::{AppContext, AppError, AppResult, ErrorCode};
 use platform_module::AdminActionSource;
 use serde_json::Value;
@@ -29,7 +29,7 @@ impl AdminActionSource for AuthPhoneAdminActions {
             RESET_PHONE_PASSWORD_ACTION => {
                 let user_id = AuthUserId(required_string(&input, "user_id")?.to_owned());
                 let new_password = required_string(&input, "new_password")?;
-                let config = AuthPhoneConfig::from_context(&self.ctx)?;
+                let config = AuthPasswordConfig::from_context(&self.ctx)?;
                 let updated = self
                     .repository
                     .set_password(SetPhonePasswordOptions {
