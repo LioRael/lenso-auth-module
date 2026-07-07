@@ -206,6 +206,16 @@ async fn password_login_route_creates_session_cookie() {
             .is_some_and(|value| value.starts_with("sess_"))
     );
     assert!(json["expires_at"].as_str().is_some());
+    assert_eq!(json["primary_identifier"]["kind"].as_str(), Some("phone"));
+    assert_eq!(
+        json["primary_identifier"]["country_code"].as_str(),
+        Some("+86")
+    );
+    assert_eq!(
+        json["primary_identifier"]["masked_national_number"].as_str(),
+        Some("138****0201")
+    );
+    assert!(json.get("phone_e164").is_none());
 
     db.cleanup().await;
 }
