@@ -44,9 +44,17 @@ pub struct PhonePasswordUpdatedResponse {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct PhoneSessionPrimaryIdentifier {
+    pub kind: String,
+    pub country_code: String,
+    pub masked_national_number: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct PhoneSessionResponse {
     pub user_id: String,
     pub session_id: String,
     pub token: String,
     pub expires_at: DateTime<Utc>,
+    pub primary_identifier: PhoneSessionPrimaryIdentifier,
 }

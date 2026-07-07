@@ -158,6 +158,16 @@ async fn otp_verify_route_creates_phone_session_cookie() {
             .is_some_and(|value| value.starts_with("sess_"))
     );
     assert!(json["expires_at"].as_str().is_some());
+    assert_eq!(json["primary_identifier"]["kind"].as_str(), Some("phone"));
+    assert_eq!(
+        json["primary_identifier"]["country_code"].as_str(),
+        Some("+86")
+    );
+    assert_eq!(
+        json["primary_identifier"]["masked_national_number"].as_str(),
+        Some("138****0101")
+    );
+    assert!(json.get("phone_e164").is_none());
 
     let consumed_at: Option<chrono::DateTime<Utc>> =
         sqlx::query_scalar("select consumed_at from auth_phone.otp_challenges where id = $1")

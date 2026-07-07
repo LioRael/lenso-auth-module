@@ -1,4 +1,8 @@
-use crate::dto::{PhoneOtpStartResponse, PhonePasswordUpdatedResponse, PhoneSessionResponse};
+use crate::dto::{
+    PhoneOtpStartResponse, PhonePasswordUpdatedResponse, PhoneSessionPrimaryIdentifier,
+    PhoneSessionResponse,
+};
+use crate::phone::normalize_phone_e164;
 use crate::repositories::{
     LoginPhonePasswordOptions, PhoneAuthRepository, PhoneOtpPurpose, SetPhonePasswordOptions,
     StartOtpInput, VerifyOtpOptions,
@@ -155,6 +159,9 @@ async fn verify_otp(
     let config = crate::config::AuthPhoneConfig::from_context(&ctx)
         .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
     let now = ctx.clock.now();
+    let phone_e164 = load_otp_challenge_phone_e164(&ctx, &input.challenge_id)
+        .await
+        .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
     let session = PhoneAuthRepository::new_with_session_policy(
         ctx.db.clone(),
         session_policy_from_extension(session_policy).into_policy(),
@@ -179,6 +186,7 @@ async fn verify_otp(
 
     Ok(session_to_response(
         session,
+        &phone_e164,
         now,
         secure_session_cookie(&ctx),
     ))
@@ -325,6 +333,8 @@ async fn login_password(
     JsonBody(input): JsonBody<crate::dto::PhonePasswordLoginRequest>,
 ) -> Result<(HeaderMap, Json<PhoneSessionResponse>), ApiErrorResponse> {
     let now = ctx.clock.now();
+    let phone_e164 = normalize_phone_e164(&input.phone)
+        .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;
     let session = PhoneAuthRepository::new_with_session_policy(
         ctx.db.clone(),
         session_policy_from_extension(session_policy).into_policy(),
@@ -345,6 +355,7 @@ async fn login_password(
 
     Ok(session_to_response(
         session,
+        &phone_e164,
         now,
         secure_session_cookie(&ctx),
     ))
@@ -388,6 +399,7 @@ fn session_policy_from_extension(
 
 fn session_to_response(
     session: AuthSession,
+    phone_e164: &str,
     now: DateTime<Utc>,
     secure_cookie: bool,
 ) -> (HeaderMap, Json<PhoneSessionResponse>) {
@@ -414,8 +426,57 @@ fn session_to_response(
             session_id: session.id,
             token: session.token,
             expires_at: session.expires_at,
+            primary_identifier: phone_session_primary_identifier(phone_e164),
         }),
     )
+}
+
+async fn load_otp_challenge_phone_e164(ctx: &AppContext, challenge_id: &str) -> AppResult<String> {
+    sqlx::query_scalar::<_, String>(
+        r#"
+        select phone_e164
+        from auth_phone.otp_challenges
+        where id = $1
+        "#,
+    )
+    .bind(challenge_id)
+    .fetch_optional(&ctx.db)
+    .await
+    .map_err(|source| {
+        AppError::new(ErrorCode::Internal, "Phone OTP challenge lookup failed").with_source(source)
+    })?
+    .ok_or_else(invalid_phone_otp)
+}
+
+fn phone_session_primary_identifier(phone_e164: &str) -> PhoneSessionPrimaryIdentifier {
+    let (country_code, national_number) = split_phone_e164(phone_e164);
+
+    PhoneSessionPrimaryIdentifier {
+        kind: "phone".to_owned(),
+        country_code,
+        masked_national_number: mask_national_phone_number(&national_number),
+    }
+}
+
+fn split_phone_e164(phone_e164: &str) -> (String, String) {
+    let phone = phone_e164.trim();
+    if let Some(national_number) = phone.strip_prefix("+86") {
+        return ("+86".to_owned(), national_number.to_owned());
+    }
+
+    let digits = phone.strip_prefix('+').unwrap_or(phone);
+    let country_digits = digits.len().saturating_sub(10).clamp(1, 3);
+    let (country_code, national_number) = digits.split_at(country_digits.min(digits.len()));
+
+    (format!("+{country_code}"), national_number.to_owned())
+}
+
+fn mask_national_phone_number(phone: &str) -> String {
+    if phone.len() <= 7 {
+        return phone.to_owned();
+    }
+
+    format!("{}****{}", &phone[..3], &phone[phone.len() - 4..])
 }
 
 fn session_cookie_header(token: &str, max_age_seconds: i64, secure: bool) -> String {
@@ -445,4 +506,18 @@ fn phone_identity_required() -> AppError {
         ErrorCode::Forbidden,
         "Authenticated phone identity is required",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn phone_session_identifier_splits_country_code_and_masks_national_number() {
+        let identifier = phone_session_primary_identifier("+8613800000201");
+
+        assert_eq!(identifier.kind, "phone");
+        assert_eq!(identifier.country_code, "+86");
+        assert_eq!(identifier.masked_national_number, "138****0201");
+    }
 }
