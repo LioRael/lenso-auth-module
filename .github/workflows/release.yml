@@ -13,6 +13,11 @@ on:
         required: true
         default: true
         type: boolean
+      publish_provider_crates:
+        description: Publish first-party auth provider crates to crates.io
+        required: true
+        default: false
+        type: boolean
       publish_npm:
         description: Publish Runtime Console npm packages
         required: true
@@ -60,7 +65,7 @@ jobs:
       - name: Verify
         run: |
           cargo fmt --all --check
-          cargo test --locked -p lenso-module-auth -p lenso-module-auth-password
+          cargo test --locked --workspace
         working-directory: lenso-auth-module
 
       - name: Verify npm packages
@@ -75,7 +80,7 @@ jobs:
         working-directory: lenso-auth-module
 
       - name: Publish Rust crates
-        if: ${{ inputs.publish_auth_crate || inputs.publish_password_crate }}
+        if: ${{ inputs.publish_auth_crate || inputs.publish_password_crate || inputs.publish_provider_crates }}
         run: |
           set -eu
           test -n "$CARGO_REGISTRY_TOKEN" || { echo "CARGO_REGISTRY_TOKEN is required when publishing Rust crates" >&2; exit 1; }
@@ -91,6 +96,19 @@ jobs:
               "https://crates.io/api/v1/crates/$crate/$version" >/dev/null 2>&1
           }
 
+          wait_for_crate_version() {
+            crate="$1"
+            version="$2"
+            for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              if crate_version_exists "$crate" "$version"; then
+                return 0
+              fi
+              sleep 10
+            done
+            echo "timed out waiting for $crate $version to appear on crates.io" >&2
+            return 1
+          }
+
           publish_crate() {
             crate="$1"
             version="$(crate_version "$crate")"
@@ -98,6 +116,7 @@ jobs:
               echo "$crate $version is already on crates.io; skipping."
             else
               cargo publish -p "$crate"
+              wait_for_crate_version "$crate" "$version"
             fi
           }
 
@@ -105,18 +124,24 @@ jobs:
             publish_crate lenso-module-auth
           fi
 
-          if [ "$PUBLISH_AUTH_CRATE" = "true" ] && [ "$PUBLISH_PASSWORD_CRATE" = "true" ]; then
-            sleep 90
-          fi
-
           if [ "$PUBLISH_PASSWORD_CRATE" = "true" ]; then
             publish_crate lenso-module-auth-password
+          fi
+
+          if [ "$PUBLISH_PROVIDER_CRATES" = "true" ]; then
+            publish_crate lenso-module-auth-oauth
+            publish_crate lenso-module-auth-anonymous
+            publish_crate lenso-module-auth-github
+            publish_crate lenso-module-auth-google
+            publish_crate lenso-module-auth-oidc
+            publish_crate lenso-module-auth-phone
           fi
         working-directory: lenso-auth-module
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           PUBLISH_AUTH_CRATE: ${{ inputs.publish_auth_crate }}
           PUBLISH_PASSWORD_CRATE: ${{ inputs.publish_password_crate }}
+          PUBLISH_PROVIDER_CRATES: ${{ inputs.publish_provider_crates }}
 
       - name: Publish console packages
         if: ${{ inputs.publish_npm }}
