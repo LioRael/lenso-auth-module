@@ -681,7 +681,8 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let body = response_json(response).await;
-        assert_eq!(body["error"]["details"][0]["field"], "redirect_uri");
+        assert_eq!(body["status"], StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(body["errors"][0]["field"], "redirect_uri");
     }
 
     #[test]
