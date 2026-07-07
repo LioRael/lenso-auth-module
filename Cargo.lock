@@ -1542,6 +1542,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "lenso-module-auth-phone"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "getrandom 0.4.3",
+ "lenso-module-auth",
+ "lenso-module-auth-password",
+ "lenso-platform-core",
+ "lenso-platform-http",
+ "lenso-platform-module",
+ "lenso-platform-runtime",
+ "lenso-platform-testing",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlx",
+ "tokio",
+ "tower",
+ "utoipa",
+]
+
+[[package]]
 name = "lenso-platform-core"
 version = "0.1.5"
 source = "git+https://github.com/LioRael/lenso.git?branch=main#930695fd4dc4500f8249ac96fd810e03cd527f81"

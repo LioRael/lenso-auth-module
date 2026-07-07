@@ -8,7 +8,7 @@ use auth::session_policy::{AllowSessionPolicy, AuthSessionPolicy};
 use chrono::{DateTime, Duration, Utc};
 use platform_core::{AppError, AppResult, ClientRequestMetadata, DbPool, ErrorCode};
 
-const PASSWORD_PROVIDER: &str = "password";
+pub const PASSWORD_PROVIDER: &str = "password";
 const MAX_FAILED_LOGINS: i32 = 5;
 const LOGIN_FAILURE_WINDOW: Duration = Duration::minutes(15);
 const LOGIN_LOCKOUT_DURATION: Duration = Duration::minutes(15);
@@ -345,8 +345,66 @@ impl PasswordAuthRepository {
         Ok(result.rows_affected() > 0)
     }
 
-    async fn ensure_login_not_locked(
+    pub async fn set_identity_password(
         &self,
+        identity_id: &str,
+        password: &str,
+        now: DateTime<Utc>,
+        config: &AuthPasswordConfig,
+    ) -> AppResult<()> {
+        validate_password(password)?;
+        let password_hash = hash_password(password, config)?;
+
+        sqlx::query(
+            r#"
+            insert into auth_password.credentials (
+                identity_id,
+                password_hash,
+                created_at,
+                updated_at
+            )
+            values ($1, $2, $3, $3)
+            on conflict (identity_id) do update
+            set password_hash = excluded.password_hash,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(identity_id)
+        .bind(password_hash)
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sql_error)?;
+
+        Ok(())
+    }
+
+    pub async fn verify_identity_password(
+        &self,
+        identity_id: &str,
+        password: &str,
+    ) -> AppResult<bool> {
+        let Some(password_hash) = sqlx::query_scalar::<_, String>(
+            r#"
+            select password_hash
+            from auth_password.credentials
+            where identity_id = $1
+            "#,
+        )
+        .bind(identity_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sql_error)?
+        else {
+            return Ok(false);
+        };
+
+        verify_password(&password_hash, password)
+    }
+
+    pub async fn ensure_login_not_locked_for_provider(
+        &self,
+        provider: &str,
         normalized_identifier: &str,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
@@ -354,9 +412,12 @@ impl PasswordAuthRepository {
             r#"
             select locked_until
             from auth_password.login_failures
-            where identifier = $1 and locked_until > $2
+            where provider = $1
+              and identifier = $2
+              and locked_until > $3
             "#,
         )
+        .bind(provider)
         .bind(normalized_identifier)
         .bind(now)
         .fetch_optional(&self.pool)
@@ -369,8 +430,9 @@ impl PasswordAuthRepository {
         }
     }
 
-    async fn record_failed_login(
+    pub async fn record_failed_login_for_provider(
         &self,
+        provider: &str,
         normalized_identifier: &str,
         now: DateTime<Utc>,
         client: &ClientRequestMetadata,
@@ -380,10 +442,12 @@ impl PasswordAuthRepository {
             r#"
             select failed_count, window_started_at
             from auth_password.login_failures
-            where identifier = $1
+            where provider = $1
+              and identifier = $2
             for update
             "#,
         )
+        .bind(provider)
         .bind(normalized_identifier)
         .fetch_optional(&mut *tx)
         .await
@@ -394,15 +458,17 @@ impl PasswordAuthRepository {
             sqlx::query(
                 r#"
                 update auth_password.login_failures
-                set failed_count = $2,
-                    window_started_at = $3,
-                    last_failed_at = $4,
-                    locked_until = $5,
-                    last_failed_ip = $6,
-                    last_failed_user_agent = $7
-                where identifier = $1
+                set failed_count = $3,
+                    window_started_at = $4,
+                    last_failed_at = $5,
+                    locked_until = $6,
+                    last_failed_ip = $7,
+                    last_failed_user_agent = $8
+                where provider = $1
+                  and identifier = $2
                 "#,
             )
+            .bind(provider)
             .bind(normalized_identifier)
             .bind(update.failed_count)
             .bind(update.window_started_at)
@@ -418,6 +484,7 @@ impl PasswordAuthRepository {
                 r#"
                 insert into auth_password.login_failures
                     (
+                        provider,
                         identifier,
                         failed_count,
                         window_started_at,
@@ -426,9 +493,10 @@ impl PasswordAuthRepository {
                         last_failed_ip,
                         last_failed_user_agent
                     )
-                values ($1, 1, $2, $2, null, $3, $4)
+                values ($1, $2, 1, $3, $3, null, $4, $5)
                 "#,
             )
+            .bind(provider)
             .bind(normalized_identifier)
             .bind(now)
             .bind(client.ip.as_deref())
@@ -442,18 +510,48 @@ impl PasswordAuthRepository {
         Ok(())
     }
 
-    async fn clear_login_failures(&self, normalized_identifier: &str) -> AppResult<()> {
+    pub async fn clear_login_failures_for_provider(
+        &self,
+        provider: &str,
+        normalized_identifier: &str,
+    ) -> AppResult<()> {
         sqlx::query(
             r#"
             delete from auth_password.login_failures
-            where identifier = $1
+            where provider = $1
+              and identifier = $2
             "#,
         )
+        .bind(provider)
         .bind(normalized_identifier)
         .execute(&self.pool)
         .await
         .map_err(map_sql_error)?;
         Ok(())
+    }
+
+    async fn ensure_login_not_locked(
+        &self,
+        normalized_identifier: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<()> {
+        self.ensure_login_not_locked_for_provider(PASSWORD_PROVIDER, normalized_identifier, now)
+            .await
+    }
+
+    async fn record_failed_login(
+        &self,
+        normalized_identifier: &str,
+        now: DateTime<Utc>,
+        client: &ClientRequestMetadata,
+    ) -> AppResult<()> {
+        self.record_failed_login_for_provider(PASSWORD_PROVIDER, normalized_identifier, now, client)
+            .await
+    }
+
+    async fn clear_login_failures(&self, normalized_identifier: &str) -> AppResult<()> {
+        self.clear_login_failures_for_provider(PASSWORD_PROVIDER, normalized_identifier)
+            .await
     }
 }
 
