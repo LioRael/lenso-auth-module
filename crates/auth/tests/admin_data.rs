@@ -217,6 +217,88 @@ async fn admin_action_revoking_session_deletes_cached_token() {
 }
 
 #[tokio::test]
+async fn admin_action_disabling_user_deletes_all_cached_sessions() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    let migrations = PLATFORM_MIGRATIONS
+        .iter()
+        .chain(RUNTIME_MIGRATIONS)
+        .chain(auth::migrations::AUTH_MIGRATIONS)
+        .copied()
+        .collect::<Vec<_>>();
+    apply_migrations(&db.pool, &migrations)
+        .await
+        .expect("migrations apply");
+
+    let cache = Arc::new(FakeSessionCache::default());
+    let repo =
+        PostgresAuthUserRepository::new_with_session_cache(db.pool.clone(), Some(cache.clone()));
+    let now = Utc::now();
+    repo.create_dev_session(
+        AuthUserId("usr_cached_disable".to_owned()),
+        "sess_cached_disable_first".to_owned(),
+        "token_cached_disable_first".to_owned(),
+        now,
+        now + Duration::hours(1),
+    )
+    .await
+    .expect("first session should be created");
+    repo.create_dev_session(
+        AuthUserId("usr_cached_disable".to_owned()),
+        "sess_cached_disable_second".to_owned(),
+        "token_cached_disable_second".to_owned(),
+        now,
+        now + Duration::hours(1),
+    )
+    .await
+    .expect("second session should be created");
+    let first_hash = session_token_hash("token_cached_disable_first");
+    let second_hash = session_token_hash("token_cached_disable_second");
+    for token_hash in [&first_hash, &second_hash] {
+        cache
+            .put(
+                token_hash,
+                CachedSession {
+                    user_id: "usr_cached_disable".to_owned(),
+                    expires_at: now + Duration::hours(1),
+                },
+            )
+            .await
+            .expect("cache seed");
+    }
+
+    let admin = AuthAdminData::new(Arc::new(repo));
+    admin
+        .invoke(
+            "disable_user",
+            serde_json::json!({
+                "reason": "abuse",
+                "user_id": "usr_cached_disable",
+            }),
+        )
+        .await
+        .expect("disable user");
+
+    assert!(
+        cache
+            .get(&first_hash)
+            .await
+            .expect("first cache get")
+            .is_none()
+    );
+    assert!(
+        cache
+            .get(&second_hash)
+            .await
+            .expect("second cache get")
+            .is_none()
+    );
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
 async fn admin_action_disables_and_enables_auth_user() {
     let Some(db) = TestDatabase::create().await else {
         return;

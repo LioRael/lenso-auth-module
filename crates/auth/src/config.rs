@@ -4,9 +4,12 @@ use platform_core::{
 };
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
+use std::time::Duration;
 
 const SESSION_CACHE_KEY: &str = "auth.session_cache";
 const CONSOLE_ADMIN_USER_SCOPES_KEY: &str = "auth.console_admin_user_scopes";
+
+pub const SESSION_CACHE_MAX_TTL: Duration = Duration::from_secs(12 * 60 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionCacheMode {

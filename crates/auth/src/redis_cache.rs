@@ -1,10 +1,19 @@
+use crate::config::{AuthRuntimeConfig, SESSION_CACHE_MAX_TTL, SessionCacheMode};
 use crate::resolver::{CachedSession, SessionCache};
 use chrono::{DateTime, Utc};
-use platform_core::{AppError, AppResult, ErrorCode};
+use platform_core::{AppContext, AppError, AppResult, ErrorCode};
 use redis::AsyncCommands;
+use std::sync::Arc;
 use std::time::Duration;
 
 const DEFAULT_KEY_PREFIX: &str = "auth:sessions:";
+
+pub fn session_cache_from_context(ctx: &AppContext) -> Option<Arc<dyn SessionCache>> {
+    (AuthRuntimeConfig::from_context(ctx).session_cache == SessionCacheMode::Redis)
+        .then(|| ctx.redis.clone())
+        .flatten()
+        .map(|redis| Arc::new(RedisSessionCache::new(redis, SESSION_CACHE_MAX_TTL)) as Arc<_>)
+}
 
 #[derive(Debug, Clone)]
 pub struct RedisSessionCache {
@@ -101,6 +110,13 @@ fn map_redis_error(source: redis::RedisError) -> AppError {
 mod tests {
     use super::*;
     use chrono::Duration as ChronoDuration;
+    use platform_core::config::{
+        AppConfig, AuthConfig, ConsoleConfig, DatabaseConfig, HttpConfig, ModuleSourcesConfig,
+        RedisConfig, ServiceConfig, TelemetryConfig,
+    };
+    use platform_core::{AppContext, LoggingEventPublisher};
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
 
     #[test]
     fn ttl_uses_lower_of_session_and_cache_limits() {
@@ -129,5 +145,33 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn context_factory_returns_no_cache_for_database_mode() {
+        let ctx = AppContext::new(
+            AppConfig {
+                auth: AuthConfig::default(),
+                console: ConsoleConfig::default(),
+                database: DatabaseConfig {
+                    max_connections: 1,
+                    url: "postgres://localhost/lenso_test".to_owned(),
+                },
+                http: HttpConfig::default(),
+                module_sources: ModuleSourcesConfig::default(),
+                modules: BTreeMap::new(),
+                redis: RedisConfig::default(),
+                service: ServiceConfig {
+                    environment: "local".to_owned(),
+                    name: "auth-cache-test".to_owned(),
+                },
+                telemetry: TelemetryConfig::default(),
+            },
+            platform_core::DbPool::connect_lazy("postgres://localhost/lenso_test")
+                .expect("lazy database pool"),
+            Arc::new(LoggingEventPublisher),
+        );
+
+        assert!(session_cache_from_context(&ctx).is_none());
     }
 }
