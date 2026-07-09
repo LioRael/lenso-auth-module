@@ -15,6 +15,8 @@ use std::sync::Arc;
 
 pub const MODULE_NAME: &str = "auth";
 pub const AUTH_USERS_READ: &str = "auth.users.read";
+pub const AUTH_USERS_MANAGE: &str = "auth.users.manage";
+pub const AUTH_SESSIONS_REVOKE: &str = "auth.sessions.revoke";
 pub const AUTH_USERS_DETAIL_ACTIONS_SLOT: &str = "auth.users.detail.actions";
 pub const AUTH_USERS_DETAIL_ACTIONS_SLOT_VERSION: u32 = 1;
 
@@ -169,6 +171,7 @@ pub fn admin_surface() -> AdminDeclarativeSurface {
                 "Revoke session",
                 "session_id",
                 "Session",
+                AUTH_SESSIONS_REVOKE,
                 AdminActionDangerLevel::Medium,
             ),
             disable_user_action(),
@@ -177,6 +180,7 @@ pub fn admin_surface() -> AdminDeclarativeSurface {
                 "Enable user",
                 "user_id",
                 "User",
+                AUTH_USERS_MANAGE,
                 AdminActionDangerLevel::Low,
             ),
         ],
@@ -189,12 +193,13 @@ fn action_with_string_input(
     label: &str,
     input_name: &str,
     input_label: &str,
+    capability: &str,
     danger_level: AdminActionDangerLevel,
 ) -> AdminAction {
     AdminAction {
         name: name.to_owned(),
         label: label.to_owned(),
-        capability: AUTH_USERS_READ.to_owned(),
+        capability: capability.to_owned(),
         input_schema: Some(AdminActionInputSchema {
             fields: vec![AdminActionInputField {
                 name: input_name.to_owned(),
@@ -214,7 +219,7 @@ fn disable_user_action() -> AdminAction {
     AdminAction {
         name: "disable_user".to_owned(),
         label: "Disable user".to_owned(),
-        capability: AUTH_USERS_READ.to_owned(),
+        capability: AUTH_USERS_MANAGE.to_owned(),
         input_schema: Some(AdminActionInputSchema {
             fields: vec![
                 AdminActionInputField {
@@ -312,7 +317,11 @@ pub fn console_slots() -> Vec<ConsoleSlot> {
 
 pub fn manifest() -> ModuleManifest {
     ModuleManifest::builder(MODULE_NAME)
-        .capabilities(vec![AUTH_USERS_READ.to_owned()])
+        .capabilities(vec![
+            AUTH_USERS_READ.to_owned(),
+            AUTH_USERS_MANAGE.to_owned(),
+            AUTH_SESSIONS_REVOKE.to_owned(),
+        ])
         .http_routes(http_routes())
         .declarative_admin(admin_surface())
         .console(console_surfaces())
@@ -352,7 +361,14 @@ mod tests {
         let manifest = manifest();
 
         assert_eq!(manifest.name, MODULE_NAME);
-        assert_eq!(manifest.capabilities, vec![AUTH_USERS_READ]);
+        assert_eq!(
+            manifest.capabilities,
+            vec![
+                "auth.users.read",
+                "auth.users.manage",
+                "auth.sessions.revoke"
+            ]
+        );
         assert_eq!(manifest.http_routes, http_routes());
         assert_eq!(
             manifest.admin,
@@ -369,6 +385,36 @@ mod tests {
                 .iter()
                 .all(|lint| lint.severity == ModuleManifestLintSeverity::Ok),
             "auth manifest should not have warning/error lints: {lints:?}"
+        );
+    }
+
+    #[test]
+    fn admin_actions_require_narrow_mutation_capabilities() {
+        let actions = admin_surface().actions;
+
+        assert_eq!(
+            actions
+                .iter()
+                .find(|action| action.name == "revoke_session")
+                .expect("revoke action")
+                .capability,
+            "auth.sessions.revoke"
+        );
+        assert_eq!(
+            actions
+                .iter()
+                .find(|action| action.name == "disable_user")
+                .expect("disable action")
+                .capability,
+            "auth.users.manage"
+        );
+        assert_eq!(
+            actions
+                .iter()
+                .find(|action| action.name == "enable_user")
+                .expect("enable action")
+                .capability,
+            "auth.users.manage"
         );
     }
 }

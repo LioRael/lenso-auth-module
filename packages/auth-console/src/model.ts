@@ -6,6 +6,8 @@ export const CONSOLE_ADMIN_USER_SCOPES_SERVICE = "*";
 export const DEFAULT_CONSOLE_ADMIN_SCOPES = [
   "console.admin",
   "auth.users.read",
+  "auth.users.manage",
+  "auth.sessions.revoke",
 ] as const;
 export const CONSOLE_ACCESS_PRESETS = [
   {
@@ -25,6 +27,8 @@ export const CONSOLE_ACCESS_PRESETS = [
       "console.admin",
       "runtime.stories.read",
       "auth.users.read",
+      "auth.users.manage",
+      "auth.sessions.revoke",
       "identity.users.read",
     ],
   },
