@@ -70,6 +70,30 @@ async fn start_creates_oauth_flow_and_redirects_to_github() {
     db.cleanup().await;
 }
 
+#[tokio::test]
+async fn start_rejects_encoded_backslash_return_to_without_creating_flow() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+
+    let response = test_app(db.pool.clone())
+        .oneshot(get("/v1/auth/github/start?return_to=/%5Cevil.example/path"))
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let flow_count = sqlx::query_scalar::<_, i64>("select count(*) from auth_oauth.flows")
+        .fetch_one(&db.pool)
+        .await
+        .expect("flow count query");
+    assert_eq!(flow_count, 0);
+
+    db.cleanup().await;
+}
+
 fn test_app(db: platform_core::DbPool) -> axum::Router {
     let (router, _) = auth_github::routes::router().split_for_parts();
     let ctx = platform_core::AppContext::new(test_config(), db, Arc::new(LoggingEventPublisher));
