@@ -18,6 +18,10 @@ pub struct AuthPhoneConfig {
     pub otp_resend_cooldown_seconds: i64,
     #[serde(default = "default_otp_max_attempts")]
     pub otp_max_attempts: i32,
+    #[serde(default = "default_otp_start_window_seconds")]
+    pub otp_start_window_seconds: i64,
+    #[serde(default = "default_otp_max_starts_per_ip")]
+    pub otp_max_starts_per_ip: i64,
     #[serde(default = "default_otp_secret")]
     pub otp_secret: String,
     #[serde(default)]
@@ -31,6 +35,8 @@ impl Default for AuthPhoneConfig {
             otp_ttl_seconds: default_otp_ttl_seconds(),
             otp_resend_cooldown_seconds: default_otp_resend_cooldown_seconds(),
             otp_max_attempts: default_otp_max_attempts(),
+            otp_start_window_seconds: default_otp_start_window_seconds(),
+            otp_max_starts_per_ip: default_otp_max_starts_per_ip(),
             otp_secret: default_otp_secret(),
             return_debug_otp_code: false,
         }
@@ -139,7 +145,7 @@ pub static RUNTIME_CONFIG: LazyLock<Vec<RuntimeConfigDescriptor>> = LazyLock::ne
             default: json!(default_otp_resend_cooldown_seconds()),
             editable: true,
             restart_only: false,
-            description: "Recommended wait time in seconds before requesting another phone OTP.",
+            description: "Minimum enforced wait time in seconds before requesting another phone OTP.",
         },
         RuntimeConfigDescriptor {
             key: "auth-phone.otp_max_attempts".to_owned(),
@@ -157,6 +163,40 @@ pub static RUNTIME_CONFIG: LazyLock<Vec<RuntimeConfigDescriptor>> = LazyLock::ne
             editable: true,
             restart_only: false,
             description: "Maximum verification attempts allowed for a single phone OTP challenge.",
+        },
+        RuntimeConfigDescriptor {
+            key: "auth-phone.otp_start_window_seconds".to_owned(),
+            scope: RuntimeConfigScope::Shared,
+            group: Some("auth-phone.otp"),
+            section: Some("Rate limiting"),
+            order: 50,
+            visible_when: None,
+            generated: None,
+            value_type: RuntimeConfigType::Int {
+                min: Some(60),
+                max: Some(3600),
+            },
+            default: json!(default_otp_start_window_seconds()),
+            editable: true,
+            restart_only: false,
+            description: "Time window in seconds for per-client-IP phone OTP start limits.",
+        },
+        RuntimeConfigDescriptor {
+            key: "auth-phone.otp_max_starts_per_ip".to_owned(),
+            scope: RuntimeConfigScope::Shared,
+            group: Some("auth-phone.otp"),
+            section: Some("Rate limiting"),
+            order: 60,
+            visible_when: None,
+            generated: None,
+            value_type: RuntimeConfigType::Int {
+                min: Some(1),
+                max: Some(100),
+            },
+            default: json!(default_otp_max_starts_per_ip()),
+            editable: true,
+            restart_only: false,
+            description: "Maximum phone OTP starts allowed per client IP within the configured window.",
         },
     ]
 });
@@ -177,6 +217,14 @@ fn default_otp_max_attempts() -> i32 {
     5
 }
 
+fn default_otp_start_window_seconds() -> i64 {
+    300
+}
+
+fn default_otp_max_starts_per_ip() -> i64 {
+    10
+}
+
 fn default_otp_secret() -> String {
     "local-development-auth-phone-otp-secret".to_owned()
 }
@@ -194,7 +242,15 @@ mod tests {
 
         assert!(keys.contains(&"auth-phone.otp_code_length"));
         assert!(keys.contains(&"auth-phone.otp_ttl_seconds"));
+        assert!(keys.contains(&"auth-phone.otp_resend_cooldown_seconds"));
+        assert!(keys.contains(&"auth-phone.otp_max_attempts"));
+        assert!(keys.contains(&"auth-phone.otp_start_window_seconds"));
+        assert!(keys.contains(&"auth-phone.otp_max_starts_per_ip"));
         assert!(!keys.contains(&"auth-phone.otp_secret"));
+
+        let config = AuthPhoneConfig::default();
+        assert_eq!(config.otp_start_window_seconds, 300);
+        assert_eq!(config.otp_max_starts_per_ip, 10);
     }
 
     #[test]

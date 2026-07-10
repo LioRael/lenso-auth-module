@@ -111,6 +111,49 @@ impl PhoneAuthRepository {
 
         let phone_e164 = normalize_phone_e164(phone)?;
         ensure_otp_secret_configured(config)?;
+        let mut tx = self.pool.begin().await.map_err(map_sql_error)?;
+        acquire_otp_start_lock(&mut tx, &format!("auth-phone:phone:{phone_e164}")).await?;
+        if let Some(ip) = client.ip.as_deref() {
+            acquire_otp_start_lock(&mut tx, &format!("auth-phone:ip:{ip}")).await?;
+        }
+
+        let active_cooldown = sqlx::query_scalar::<_, DateTime<Utc>>(
+            r#"
+            select resend_after
+            from auth_phone.otp_challenges
+            where phone_e164 = $1
+            order by created_at desc
+            limit 1
+            "#,
+        )
+        .bind(&phone_e164)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_sql_error)?;
+        if active_cooldown.is_some_and(|resend_after| resend_after > now) {
+            return Err(otp_start_rate_limited());
+        }
+
+        if let Some(ip) = client.ip.as_deref() {
+            let window_started_at = now - Duration::seconds(config.otp_start_window_seconds);
+            let starts: i64 = sqlx::query_scalar(
+                r#"
+                select count(*)
+                from auth_phone.otp_challenges
+                where client_ip = $1
+                  and created_at > $2
+                "#,
+            )
+            .bind(ip)
+            .bind(window_started_at)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_sql_error)?;
+            if starts >= config.otp_max_starts_per_ip {
+                return Err(otp_start_rate_limited());
+            }
+        }
+
         let code = new_otp_code(config.otp_code_length);
         let code_hash = hash_otp_code(&code, &config.otp_secret);
         let expires_at = now + Duration::seconds(config.otp_ttl_seconds);
@@ -145,9 +188,10 @@ impl PhoneAuthRepository {
         .bind(resend_after)
         .bind(client.ip.as_deref())
         .bind(client.user_agent.as_deref())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(map_sql_error)?;
+        tx.commit().await.map_err(map_sql_error)?;
 
         Ok(PhoneOtpChallenge {
             id: challenge_id,
@@ -169,70 +213,13 @@ impl PhoneAuthRepository {
         let _ = &self.session_policy;
 
         let mut tx = self.pool.begin().await.map_err(map_sql_error)?;
-        let Some(row) = sqlx::query_as::<_, OtpChallengeRow>(
-            r#"
-            select id, phone_e164, purpose, code_hash, attempts, max_attempts, expires_at, resend_after, consumed_at
-            from auth_phone.otp_challenges
-            where id = $1
-            for update
-            "#,
-        )
-        .bind(challenge_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_sql_error)?
-        else {
-            tx.commit().await.map_err(map_sql_error)?;
-            return Ok(None);
-        };
-
-        let (
-            id,
-            phone_e164,
-            purpose,
-            code_hash,
-            attempts,
-            max_attempts,
-            expires_at,
-            resend_after,
-            consumed_at,
-        ) = row;
-
-        if consumed_at.is_some() || expires_at <= now || attempts >= max_attempts {
-            tx.commit().await.map_err(map_sql_error)?;
-            return Ok(None);
+        let challenge =
+            verify_otp_challenge_in_tx(&mut tx, challenge_id, code, now, config).await?;
+        if challenge.is_some() {
+            mark_otp_consumed(&mut tx, challenge_id, now).await?;
         }
-
-        ensure_otp_secret_configured(config)?;
-        if code_hash != hash_otp_code(code, &config.otp_secret) {
-            increment_otp_attempts(&mut tx, challenge_id).await?;
-            tx.commit().await.map_err(map_sql_error)?;
-            return Ok(None);
-        }
-
-        sqlx::query(
-            r#"
-            update auth_phone.otp_challenges
-            set consumed_at = $2
-            where id = $1
-            "#,
-        )
-        .bind(challenge_id)
-        .bind(now)
-        .execute(&mut *tx)
-        .await
-        .map_err(map_sql_error)?;
-
         tx.commit().await.map_err(map_sql_error)?;
-
-        Ok(Some(PhoneOtpChallenge {
-            id,
-            phone_e164,
-            purpose: PhoneOtpPurpose::from_db(&purpose)?,
-            expires_at,
-            resend_after,
-            debug_code: None,
-        }))
+        Ok(challenge)
     }
 
     pub async fn verify_otp_with_options(
@@ -253,11 +240,14 @@ impl PhoneAuthRepository {
             link_anonymous_user_id,
         } = input;
 
-        let Some(challenge) = self.consume_otp(challenge_id, code, now, config).await? else {
+        let mut tx = self.pool.begin().await.map_err(map_sql_error)?;
+        let Some(challenge) =
+            verify_otp_challenge_in_tx(&mut tx, challenge_id, code, now, config).await?
+        else {
+            tx.commit().await.map_err(map_sql_error)?;
             return Ok(None);
         };
 
-        let mut tx = self.pool.begin().await.map_err(map_sql_error)?;
         let identity =
             match find_active_phone_identity_in_tx(&mut tx, &challenge.phone_e164).await? {
                 Some(identity) => identity,
@@ -302,6 +292,7 @@ impl PhoneAuthRepository {
         )
         .await?;
 
+        mark_otp_consumed(&mut tx, challenge_id, now).await?;
         tx.commit().await.map_err(map_sql_error)?;
         Ok(Some(session))
     }
@@ -406,6 +397,18 @@ impl PhoneAuthRepository {
     }
 }
 
+async fn acquire_otp_start_lock(
+    tx: &mut Transaction<'_, Postgres>,
+    lock_key: &str,
+) -> AppResult<()> {
+    sqlx::query("select pg_advisory_xact_lock(hashtext($1)::bigint)")
+        .bind(lock_key)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_sql_error)?;
+    Ok(())
+}
+
 type OtpChallengeRow = (
     String,
     String,
@@ -417,6 +420,80 @@ type OtpChallengeRow = (
     DateTime<Utc>,
     Option<DateTime<Utc>>,
 );
+
+async fn verify_otp_challenge_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    challenge_id: &str,
+    code: &str,
+    now: DateTime<Utc>,
+    config: &AuthPhoneConfig,
+) -> AppResult<Option<PhoneOtpChallenge>> {
+    let Some(row) = sqlx::query_as::<_, OtpChallengeRow>(
+        r#"
+        select id, phone_e164, purpose, code_hash, attempts, max_attempts, expires_at, resend_after, consumed_at
+        from auth_phone.otp_challenges
+        where id = $1
+        for update
+        "#,
+    )
+    .bind(challenge_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_sql_error)?
+    else {
+        return Ok(None);
+    };
+
+    let (
+        id,
+        phone_e164,
+        purpose,
+        code_hash,
+        attempts,
+        max_attempts,
+        expires_at,
+        resend_after,
+        consumed_at,
+    ) = row;
+    if consumed_at.is_some() || expires_at <= now || attempts >= max_attempts {
+        return Ok(None);
+    }
+
+    ensure_otp_secret_configured(config)?;
+    if code_hash != hash_otp_code(code, &config.otp_secret) {
+        increment_otp_attempts(tx, challenge_id).await?;
+        return Ok(None);
+    }
+
+    Ok(Some(PhoneOtpChallenge {
+        id,
+        phone_e164,
+        purpose: PhoneOtpPurpose::from_db(&purpose)?,
+        expires_at,
+        resend_after,
+        debug_code: None,
+    }))
+}
+
+async fn mark_otp_consumed(
+    tx: &mut Transaction<'_, Postgres>,
+    challenge_id: &str,
+    now: DateTime<Utc>,
+) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        update auth_phone.otp_challenges
+        set consumed_at = $2
+        where id = $1
+        "#,
+    )
+    .bind(challenge_id)
+    .bind(now)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_sql_error)?;
+    Ok(())
+}
 
 async fn increment_otp_attempts(
     tx: &mut Transaction<'_, Postgres>,
@@ -531,6 +608,10 @@ fn identity_from_row(row: IdentityRow) -> public::AuthIdentity {
 
 fn invalid_phone_password_credentials() -> AppError {
     AppError::new(ErrorCode::Unauthorized, "Invalid phone or password")
+}
+
+fn otp_start_rate_limited() -> AppError {
+    AppError::new(ErrorCode::RateLimited, "Phone OTP start is rate limited")
 }
 
 fn ensure_otp_secret_configured(config: &AuthPhoneConfig) -> AppResult<()> {

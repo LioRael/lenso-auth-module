@@ -447,3 +447,68 @@ async fn successful_login_clears_previous_failures() {
 
     db.cleanup().await;
 }
+
+#[tokio::test]
+async fn concurrent_first_login_failures_are_both_counted() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+    let now = Utc::now();
+    const CONCURRENT_FAILURES: usize = 16;
+    let barrier = Arc::new(tokio::sync::Barrier::new(CONCURRENT_FAILURES));
+    let mut tasks = Vec::with_capacity(CONCURRENT_FAILURES);
+    for index in 0..CONCURRENT_FAILURES {
+        let repo = PasswordAuthRepository::new(db.pool.clone());
+        let barrier = barrier.clone();
+        tasks.push(tokio::spawn(async move {
+            barrier.wait().await;
+            repo.record_failed_login_for_provider(
+                "phone",
+                "+8613800050000",
+                now,
+                &ClientRequestMetadata {
+                    ip: Some(format!("203.0.113.{}", index + 20)),
+                    user_agent: Some(format!("concurrent-{index}")),
+                },
+            )
+            .await
+        }));
+    }
+    for task in tasks {
+        task.await
+            .expect("concurrent task joins")
+            .expect("concurrent failure is counted");
+    }
+    let failed_count: i32 = sqlx::query_scalar(
+        "select failed_count from auth_password.login_failures where provider = $1 and identifier = $2",
+    )
+    .bind("phone")
+    .bind("+8613800050000")
+    .fetch_one(&db.pool)
+    .await
+    .expect("failure row");
+    assert_eq!(failed_count, CONCURRENT_FAILURES as i32);
+
+    PasswordAuthRepository::new(db.pool.clone())
+        .record_failed_login_for_provider(
+            "phone",
+            "+8613800050000",
+            now + Duration::seconds(1),
+            &ClientRequestMetadata::default(),
+        )
+        .await
+        .expect("sequential failure remains supported");
+    let failed_count: i32 = sqlx::query_scalar(
+        "select failed_count from auth_password.login_failures where provider = $1 and identifier = $2",
+    )
+    .bind("phone")
+    .bind("+8613800050000")
+    .fetch_one(&db.pool)
+    .await
+    .expect("updated failure row");
+    assert_eq!(failed_count, CONCURRENT_FAILURES as i32 + 1);
+    db.cleanup().await;
+}

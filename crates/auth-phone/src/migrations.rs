@@ -17,4 +17,8 @@ pub const AUTH_PHONE_MIGRATIONS: &[Migration] = &[
         name: "auth-phone/0004_migrate_password_state_to_auth_password",
         sql: include_str!("../migrations/0004_migrate_password_state_to_auth_password.sql"),
     },
+    Migration {
+        name: "auth-phone/0005_add_otp_start_rate_limit_index",
+        sql: include_str!("../migrations/0005_add_otp_start_rate_limit_index.sql"),
+    },
 ];
