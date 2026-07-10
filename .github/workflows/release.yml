@@ -147,7 +147,6 @@ jobs:
         if: ${{ inputs.publish_npm }}
         run: |
           set -eu
-          test -n "$NODE_AUTH_TOKEN" || { echo "NPM_TOKEN is required when publishing npm packages" >&2; exit 1; }
 
           package_name() {
             package_dir="$1"
@@ -193,5 +192,3 @@ jobs:
           publish_package auth-device-console
           publish_package auth-provider-console
         working-directory: lenso-auth-module
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
