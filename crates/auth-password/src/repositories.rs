@@ -438,7 +438,30 @@ impl PasswordAuthRepository {
         client: &ClientRequestMetadata,
     ) -> AppResult<()> {
         let mut tx = self.pool.begin().await.map_err(map_sql_error)?;
-        let row = sqlx::query_as::<_, (i32, DateTime<Utc>)>(
+        let inserted = sqlx::query(
+            r#"
+            insert into auth_password.login_failures (
+                provider, identifier, failed_count, window_started_at,
+                last_failed_at, locked_until, last_failed_ip, last_failed_user_agent
+            )
+            values ($1, $2, 1, $3, $3, null, $4, $5)
+            on conflict (provider, identifier) do nothing
+            "#,
+        )
+        .bind(provider)
+        .bind(normalized_identifier)
+        .bind(now)
+        .bind(client.ip.as_deref())
+        .bind(client.user_agent.as_deref())
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sql_error)?;
+        if inserted.rows_affected() == 1 {
+            tx.commit().await.map_err(map_sql_error)?;
+            return Ok(());
+        }
+
+        let (failed_count, window_started_at) = sqlx::query_as::<_, (i32, DateTime<Utc>)>(
             r#"
             select failed_count, window_started_at
             from auth_password.login_failures
@@ -449,62 +472,35 @@ impl PasswordAuthRepository {
         )
         .bind(provider)
         .bind(normalized_identifier)
-        .fetch_optional(&mut *tx)
+        .fetch_one(&mut *tx)
         .await
         .map_err(map_sql_error)?;
 
-        if let Some((failed_count, window_started_at)) = row {
-            let update = failed_login_update(failed_count, window_started_at, now);
-            sqlx::query(
-                r#"
-                update auth_password.login_failures
-                set failed_count = $3,
-                    window_started_at = $4,
-                    last_failed_at = $5,
-                    locked_until = $6,
-                    last_failed_ip = $7,
-                    last_failed_user_agent = $8
-                where provider = $1
-                  and identifier = $2
-                "#,
-            )
-            .bind(provider)
-            .bind(normalized_identifier)
-            .bind(update.failed_count)
-            .bind(update.window_started_at)
-            .bind(now)
-            .bind(update.locked_until)
-            .bind(client.ip.as_deref())
-            .bind(client.user_agent.as_deref())
-            .execute(&mut *tx)
-            .await
-            .map_err(map_sql_error)?;
-        } else {
-            sqlx::query(
-                r#"
-                insert into auth_password.login_failures
-                    (
-                        provider,
-                        identifier,
-                        failed_count,
-                        window_started_at,
-                        last_failed_at,
-                        locked_until,
-                        last_failed_ip,
-                        last_failed_user_agent
-                    )
-                values ($1, $2, 1, $3, $3, null, $4, $5)
-                "#,
-            )
-            .bind(provider)
-            .bind(normalized_identifier)
-            .bind(now)
-            .bind(client.ip.as_deref())
-            .bind(client.user_agent.as_deref())
-            .execute(&mut *tx)
-            .await
-            .map_err(map_sql_error)?;
-        }
+        let update = failed_login_update(failed_count, window_started_at, now);
+        sqlx::query(
+            r#"
+            update auth_password.login_failures
+            set failed_count = $3,
+                window_started_at = $4,
+                last_failed_at = $5,
+                locked_until = $6,
+                last_failed_ip = $7,
+                last_failed_user_agent = $8
+            where provider = $1
+              and identifier = $2
+            "#,
+        )
+        .bind(provider)
+        .bind(normalized_identifier)
+        .bind(update.failed_count)
+        .bind(update.window_started_at)
+        .bind(now)
+        .bind(update.locked_until)
+        .bind(client.ip.as_deref())
+        .bind(client.user_agent.as_deref())
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sql_error)?;
 
         tx.commit().await.map_err(map_sql_error)?;
         Ok(())

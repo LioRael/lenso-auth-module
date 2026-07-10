@@ -9,10 +9,10 @@ use auth_phone::repositories::{
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use axum::middleware;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use platform_core::{
     AppConfig, AppResult, AuthConfig, ClientRequestMetadata, DatabaseConfig, DevActorResolver,
-    HttpConfig, LoggingEventPublisher, Migration, ModuleConfig, ModuleSourcesConfig,
+    ErrorCode, HttpConfig, LoggingEventPublisher, Migration, ModuleConfig, ModuleSourcesConfig,
     PLATFORM_MIGRATIONS, RedisConfig, ServiceConfig, TelemetryConfig, apply_migrations,
 };
 use platform_http::request_context_middleware;
@@ -310,6 +310,168 @@ async fn start_otp_hides_debug_code_by_default() {
 }
 
 #[tokio::test]
+async fn rate_limit_enforces_phone_cooldown_concurrently_and_per_ip_window() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+    let config = AuthPhoneConfig {
+        return_debug_otp_code: true,
+        ..AuthPhoneConfig::default()
+    };
+    let now = Utc::now();
+    let repo = PhoneAuthRepository::new(db.pool.clone());
+
+    repo.start_otp(StartOtpInput {
+        phone: "+8613800010000",
+        purpose: PhoneOtpPurpose::SignIn,
+        challenge_id: "phone_rate_first".to_owned(),
+        now,
+        config: &config,
+        client: ClientRequestMetadata::default(),
+    })
+    .await
+    .expect("first phone start");
+    let cooldown = repo
+        .start_otp(StartOtpInput {
+            phone: "+8613800010000",
+            purpose: PhoneOtpPurpose::PasswordReset,
+            challenge_id: "phone_rate_second".to_owned(),
+            now: now + Duration::seconds(1),
+            config: &config,
+            client: ClientRequestMetadata::default(),
+        })
+        .await
+        .expect_err("phone cooldown should apply across purposes");
+    assert_eq!(cooldown.code, ErrorCode::RateLimited);
+    repo.start_otp(StartOtpInput {
+        phone: "+8613800010000",
+        purpose: PhoneOtpPurpose::SignIn,
+        challenge_id: "phone_rate_after_cooldown".to_owned(),
+        now: now + Duration::seconds(config.otp_resend_cooldown_seconds),
+        config: &config,
+        client: ClientRequestMetadata::default(),
+    })
+    .await
+    .expect("start at resend boundary");
+
+    let repo_a = PhoneAuthRepository::new(db.pool.clone());
+    let repo_b = PhoneAuthRepository::new(db.pool.clone());
+    let input_a = StartOtpInput {
+        phone: "+8613800010001",
+        purpose: PhoneOtpPurpose::SignIn,
+        challenge_id: "phone_rate_concurrent_a".to_owned(),
+        now,
+        config: &config,
+        client: ClientRequestMetadata::default(),
+    };
+    let input_b = StartOtpInput {
+        phone: "+8613800010001",
+        purpose: PhoneOtpPurpose::SignIn,
+        challenge_id: "phone_rate_concurrent_b".to_owned(),
+        now,
+        config: &config,
+        client: ClientRequestMetadata::default(),
+    };
+    let (first, second) = tokio::join!(repo_a.start_otp(input_a), repo_b.start_otp(input_b));
+    assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
+    assert_eq!(
+        usize::from(
+            first
+                .as_ref()
+                .is_err_and(|error| error.code == ErrorCode::RateLimited)
+        ) + usize::from(
+            second
+                .as_ref()
+                .is_err_and(|error| error.code == ErrorCode::RateLimited)
+        ),
+        1
+    );
+    let concurrent_rows: i64 =
+        sqlx::query_scalar("select count(*) from auth_phone.otp_challenges where phone_e164 = $1")
+            .bind("+8613800010001")
+            .fetch_one(&db.pool)
+            .await
+            .expect("concurrent phone row count");
+    assert_eq!(concurrent_rows, 1);
+
+    for index in 0..10 {
+        repo.start_otp(StartOtpInput {
+            phone: &format!("+861380002{:04}", index),
+            purpose: PhoneOtpPurpose::SignIn,
+            challenge_id: format!("phone_rate_ip_{index}"),
+            now,
+            config: &config,
+            client: ClientRequestMetadata {
+                ip: Some("203.0.113.10".to_owned()),
+                user_agent: None,
+            },
+        })
+        .await
+        .expect("first ten starts from IP");
+    }
+    let ip_limited = repo
+        .start_otp(StartOtpInput {
+            phone: "+8613800029999",
+            purpose: PhoneOtpPurpose::SignIn,
+            challenge_id: "phone_rate_ip_limited".to_owned(),
+            now,
+            config: &config,
+            client: ClientRequestMetadata {
+                ip: Some("203.0.113.10".to_owned()),
+                user_agent: None,
+            },
+        })
+        .await
+        .expect_err("eleventh start from IP should be limited");
+    assert_eq!(ip_limited.code, ErrorCode::RateLimited);
+    repo.start_otp(StartOtpInput {
+        phone: "+8613800029999",
+        purpose: PhoneOtpPurpose::SignIn,
+        challenge_id: "phone_rate_other_ip".to_owned(),
+        now,
+        config: &config,
+        client: ClientRequestMetadata {
+            ip: Some("203.0.113.11".to_owned()),
+            user_agent: None,
+        },
+    })
+    .await
+    .expect("another IP remains available");
+
+    db.cleanup().await;
+}
+
+#[tokio::test]
+async fn rate_limit_route_returns_problem_details_429() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+    let app = test_app(db.pool.clone());
+    let body = r#"{"phone":"+8613800030000","purpose":"sign_in"}"#;
+    let first = app
+        .clone()
+        .oneshot(post_json("/v1/auth/phone/otp/start", body))
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+    let limited = app
+        .oneshot(post_json("/v1/auth/phone/otp/start", body))
+        .await
+        .unwrap();
+    assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
+    let json = response_json(limited).await;
+    assert_eq!(json["code"], "rate_limited");
+    assert_eq!(json["status"], 429);
+    db.cleanup().await;
+}
+
+#[tokio::test]
 async fn verify_otp_creates_phone_identity_and_session() {
     let Some(db) = TestDatabase::create().await else {
         return;
@@ -522,6 +684,92 @@ async fn verify_otp_with_options_uses_the_injected_session_policy() {
 
     assert_eq!(session.device_id.as_deref(), Some("device_from_policy"));
 
+    db.cleanup().await;
+}
+
+#[tokio::test]
+async fn correct_otp_rolls_back_consumption_when_session_policy_rejects() {
+    let Some(db) = TestDatabase::create().await else {
+        return;
+    };
+    apply_migrations(&db.pool, &migrations())
+        .await
+        .expect("migrations apply");
+    let config = AuthPhoneConfig {
+        return_debug_otp_code: true,
+        ..AuthPhoneConfig::default()
+    };
+    let now = Utc::now();
+    let challenge = PhoneAuthRepository::new(db.pool.clone())
+        .start_otp(StartOtpInput {
+            phone: "+8613800040000",
+            purpose: PhoneOtpPurpose::SignIn,
+            challenge_id: "phone_otp_policy_rollback".to_owned(),
+            now,
+            config: &config,
+            client: ClientRequestMetadata::default(),
+        })
+        .await
+        .expect("otp starts");
+    let code = challenge.debug_code.as_deref().expect("debug code");
+
+    let rejected =
+        PhoneAuthRepository::new_with_session_policy(db.pool.clone(), Arc::new(RejectingPolicy))
+            .verify_otp_with_options(VerifyOtpOptions {
+                challenge_id: "phone_otp_policy_rollback",
+                code,
+                session_id: "sess_phone_policy_rejected".to_owned(),
+                user_id: "usr_phone_policy_rejected".to_owned(),
+                identity_id: "auth_identity_phone_policy_rejected".to_owned(),
+                now: now + Duration::seconds(1),
+                expires_at: now + Duration::hours(1),
+                config: &config,
+                device_id: None,
+                client: ClientRequestMetadata::default(),
+                link_anonymous_user_id: None,
+            })
+            .await
+            .expect_err("session policy should reject");
+    assert_eq!(rejected.code, ErrorCode::Forbidden);
+    let consumed_at: Option<DateTime<Utc>> =
+        sqlx::query_scalar("select consumed_at from auth_phone.otp_challenges where id = $1")
+            .bind("phone_otp_policy_rollback")
+            .fetch_one(&db.pool)
+            .await
+            .expect("challenge state");
+    assert!(consumed_at.is_none());
+    let session_count: i64 = sqlx::query_scalar("select count(*) from auth.sessions where id = $1")
+        .bind("sess_phone_policy_rejected")
+        .fetch_one(&db.pool)
+        .await
+        .expect("session count");
+    assert_eq!(session_count, 0);
+
+    let session = PhoneAuthRepository::new(db.pool.clone())
+        .verify_otp_with_options(VerifyOtpOptions {
+            challenge_id: "phone_otp_policy_rollback",
+            code,
+            session_id: "sess_phone_policy_retry".to_owned(),
+            user_id: "usr_phone_policy_retry".to_owned(),
+            identity_id: "auth_identity_phone_policy_retry".to_owned(),
+            now: now + Duration::seconds(2),
+            expires_at: now + Duration::hours(1),
+            config: &config,
+            device_id: None,
+            client: ClientRequestMetadata::default(),
+            link_anonymous_user_id: None,
+        })
+        .await
+        .expect("retry verifies")
+        .expect("retry session");
+    assert_eq!(session.id, "sess_phone_policy_retry");
+    let consumed_at: Option<DateTime<Utc>> =
+        sqlx::query_scalar("select consumed_at from auth_phone.otp_challenges where id = $1")
+            .bind("phone_otp_policy_rollback")
+            .fetch_one(&db.pool)
+            .await
+            .expect("challenge consumed after retry");
+    assert!(consumed_at.is_some());
     db.cleanup().await;
 }
 
@@ -750,5 +998,21 @@ impl AuthSessionPolicy for FixedPolicy {
         Ok(SessionCreateDecision {
             device_id: Some("device_from_policy".to_owned()),
         })
+    }
+}
+
+#[derive(Debug)]
+struct RejectingPolicy;
+
+#[async_trait::async_trait]
+impl AuthSessionPolicy for RejectingPolicy {
+    async fn before_session_create(
+        &self,
+        _input: &SessionCreateInput,
+    ) -> AppResult<SessionCreateDecision> {
+        Err(platform_core::AppError::new(
+            ErrorCode::Forbidden,
+            "session rejected by test policy",
+        ))
     }
 }

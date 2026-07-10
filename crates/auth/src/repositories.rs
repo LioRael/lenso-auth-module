@@ -1,7 +1,7 @@
 use crate::models::{AuthSession, AuthSessionRecord, AuthUser, AuthUserId};
 use crate::resolver::{SessionCache, session_token_hash};
 use chrono::{DateTime, Utc};
-use platform_core::{AppError, AppResult, DbPool, ErrorCode};
+use platform_core::{AppContext, AppError, AppResult, DbPool, ErrorCode};
 use std::sync::Arc;
 
 #[async_trait::async_trait]
@@ -53,6 +53,20 @@ impl PostgresAuthUserRepository {
             pool,
             session_cache,
         }
+    }
+
+    #[must_use]
+    pub fn from_context(ctx: &AppContext) -> Self {
+        #[cfg(feature = "redis")]
+        {
+            return Self::new_with_session_cache(
+                ctx.db.clone(),
+                crate::redis_cache::session_cache_from_context(ctx),
+            );
+        }
+
+        #[cfg(not(feature = "redis"))]
+        Self::new(ctx.db.clone())
     }
 
     pub async fn create_dev_session(

@@ -67,6 +67,12 @@ pub fn router() -> ApiOpenApiRouter {
             content_type = "application/json"
         ),
         (
+            status = 429,
+            description = "Phone OTP start is rate limited",
+            body = ErrorResponse,
+            content_type = "application/problem+json"
+        ),
+        (
             status = 500,
             description = "Internal server error",
             body = ErrorResponse,

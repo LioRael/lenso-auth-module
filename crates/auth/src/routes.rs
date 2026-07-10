@@ -100,7 +100,7 @@ async fn create_dev_session(
     }
 
     let now = ctx.clock.now();
-    let session = PostgresAuthUserRepository::new(ctx.db.clone())
+    let session = PostgresAuthUserRepository::from_context(&ctx)
         .create_dev_session(
             AuthUserId(user_id.to_owned()),
             ctx.ids.new_id("sess"),
@@ -171,7 +171,7 @@ async fn revoke_session(
         ));
     };
 
-    let revoked = PostgresAuthUserRepository::new(ctx.db.clone())
+    let revoked = PostgresAuthUserRepository::from_context(&ctx)
         .revoke_session_token(&token, ctx.clock.now())
         .await
         .map_err(|error| ApiErrorResponse::with_context(error, &request_ctx))?;

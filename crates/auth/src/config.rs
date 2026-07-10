@@ -4,9 +4,12 @@ use platform_core::{
 };
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
+use std::time::Duration;
 
 const SESSION_CACHE_KEY: &str = "auth.session_cache";
 const CONSOLE_ADMIN_USER_SCOPES_KEY: &str = "auth.console_admin_user_scopes";
+
+pub const SESSION_CACHE_MAX_TTL: Duration = Duration::from_secs(12 * 60 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionCacheMode {
@@ -121,7 +124,12 @@ mod tests {
         stored.insert(
             ("*".to_owned(), CONSOLE_ADMIN_USER_SCOPES_KEY.to_owned()),
             json!({
-                "usr_admin": ["console.admin", "auth.users.read"]
+                "usr_admin": [
+                    "console.admin",
+                    "auth.users.read",
+                    "auth.users.manage",
+                    "auth.sessions.revoke"
+                ]
             }),
         );
         let snapshot = RuntimeConfigSnapshot::resolve(&registry, "api", &stored);
@@ -132,7 +140,9 @@ mod tests {
             config.console_admin_user_scopes.get("usr_admin"),
             Some(&vec![
                 "console.admin".to_owned(),
-                "auth.users.read".to_owned()
+                "auth.users.read".to_owned(),
+                "auth.users.manage".to_owned(),
+                "auth.sessions.revoke".to_owned()
             ])
         );
     }

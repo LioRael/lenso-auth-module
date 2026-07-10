@@ -148,8 +148,11 @@ pub fn normalize_return_to(value: Option<&str>) -> AppResult<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or("/");
+    let encoded = return_to.to_ascii_lowercase();
     let valid = return_to.starts_with('/')
         && !return_to.starts_with("//")
+        && !return_to.contains('\\')
+        && !encoded.contains("%5c")
         && !return_to.contains('#')
         && return_to
             .bytes()
@@ -160,7 +163,7 @@ pub fn normalize_return_to(value: Option<&str>) -> AppResult<String> {
 
     Err(validation(
         "return_to",
-        "return_to must be a safe relative path without a fragment",
+        "return_to must be a safe relative path without fragments or backslashes",
     ))
 }
 
@@ -231,6 +234,10 @@ mod tests {
         );
         assert!(normalize_return_to(Some("https://evil.example")).is_err());
         assert!(normalize_return_to(Some("//evil.example/path")).is_err());
+        assert!(normalize_return_to(Some("/\\evil.example/path")).is_err());
+        assert!(normalize_return_to(Some("/\\\\evil.example/path")).is_err());
+        assert!(normalize_return_to(Some("/%5cevil.example/path")).is_err());
+        assert!(normalize_return_to(Some("/%5Cevil.example/path")).is_err());
         assert!(normalize_return_to(Some("/console#token")).is_err());
         assert!(normalize_return_to(Some("/console\nLocation: https://evil.example")).is_err());
     }

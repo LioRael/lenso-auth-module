@@ -36,7 +36,7 @@ jobs:
       - name: Check Rust
         run: |
           cargo fmt --all --check
-          cargo test --locked -p lenso-module-auth -p lenso-module-auth-password
+          cargo test --locked --workspace
         working-directory: lenso-auth-module
 
       - name: Check npm packages

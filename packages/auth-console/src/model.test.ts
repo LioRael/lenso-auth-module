@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 
 import {
   CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY,
+  CONSOLE_ACCESS_PRESETS,
+  DEFAULT_CONSOLE_ADMIN_SCOPES,
   authSessionRows,
   authSessionsSummary,
   authUserRows,
@@ -154,7 +156,13 @@ describe("auth console model", () => {
         true
       )
     ).toEqual({
-      usr_admin: ["console.admin", "auth.users.read", "custom.scope"],
+      usr_admin: [
+        "console.admin",
+        "auth.users.read",
+        "auth.users.manage",
+        "auth.sessions.revoke",
+        "custom.scope",
+      ],
       usr_other: ["console.admin"],
     });
 
@@ -173,6 +181,25 @@ describe("auth console model", () => {
   });
 
   test("maps console access presets to exact scopes", () => {
+    expect(DEFAULT_CONSOLE_ADMIN_SCOPES).toEqual([
+      "console.admin",
+      "auth.users.read",
+      "auth.users.manage",
+      "auth.sessions.revoke",
+    ]);
+    expect(
+      CONSOLE_ACCESS_PRESETS.find((preset) => preset.id === "support")?.scopes
+    ).toEqual(["console.admin", "auth.users.read"]);
+    expect(
+      CONSOLE_ACCESS_PRESETS.find((preset) => preset.id === "admin")?.scopes
+    ).toEqual([
+      "console.admin",
+      "runtime.stories.read",
+      "auth.users.read",
+      "auth.users.manage",
+      "auth.sessions.revoke",
+      "identity.users.read",
+    ]);
     expect(consoleAccessPresetId([])).toBe("none");
     expect(consoleAccessPresetId(["auth.users.read", "console.admin"])).toBe(
       "support"
