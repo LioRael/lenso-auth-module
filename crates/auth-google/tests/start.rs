@@ -18,6 +18,7 @@ use tower::ServiceExt;
 fn migrations() -> Vec<Migration> {
     PLATFORM_MIGRATIONS
         .iter()
+        .chain(auth::migrations::AUTH_MIGRATIONS)
         .chain(AUTH_OAUTH_MIGRATIONS)
         .chain(AUTH_GOOGLE_MIGRATIONS)
         .copied()

@@ -26,6 +26,12 @@ async fn session_policy_can_attach_a_canonical_device_to_created_sessions() {
         .expect("migrations apply");
 
     let now = Utc::now();
+    sqlx::query("insert into auth.users (id, created_at) values ($1, $2)")
+        .bind("usr_device")
+        .bind(now)
+        .execute(&db.pool)
+        .await
+        .expect("auth user should insert");
     let session = create_session_with_policy(
         &db.pool,
         &AuthUserId("usr_device".to_owned()),

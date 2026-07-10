@@ -11,15 +11,15 @@ rust-version = "1.94"
 async-trait = "0.1"
 axum = "0.8"
 argon2 = "0.5.3"
-auth = { package = "lenso-module-auth", path = "crates/auth", version = "0.1.7" }
+auth = { package = "lenso-module-auth", path = "crates/auth", version = "0.1.8" }
 auth-anonymous = { package = "lenso-module-auth-anonymous", path = "crates/auth-anonymous", version = "0.1.0" }
 auth-device = { package = "lenso-module-auth-device", path = "crates/auth-device", version = "0.1.1" }
 auth-github = { package = "lenso-module-auth-github", path = "crates/auth-github", version = "0.1.0" }
 auth-google = { package = "lenso-module-auth-google", path = "crates/auth-google", version = "0.1.0" }
-auth-oauth = { package = "lenso-module-auth-oauth", path = "crates/auth-oauth", version = "0.1.0" }
+auth-oauth = { package = "lenso-module-auth-oauth", path = "crates/auth-oauth", version = "0.1.1" }
 auth-oidc = { package = "lenso-module-auth-oidc", path = "crates/auth-oidc", version = "0.1.1" }
-auth-password = { package = "lenso-module-auth-password", path = "crates/auth-password", version = "0.1.8" }
-auth-phone = { package = "lenso-module-auth-phone", path = "crates/auth-phone", version = "0.1.0" }
+auth-password = { package = "lenso-module-auth-password", path = "crates/auth-password", version = "0.1.9" }
+auth-phone = { package = "lenso-module-auth-phone", path = "crates/auth-phone", version = "0.1.1" }
 chrono = { version = "0.4", features = ["serde"] }
 getrandom = "0.4"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }

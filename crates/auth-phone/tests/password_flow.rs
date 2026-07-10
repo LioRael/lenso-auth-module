@@ -240,7 +240,7 @@ async fn password_login_route_returns_generic_failure() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let json = response_json(response).await;
     assert_eq!(
-        json["error"]["message"].as_str(),
+        json["detail"].as_str(),
         Some("Invalid phone or password")
     );
 
