@@ -49,3 +49,13 @@ jobs:
             )
           done
         working-directory: lenso-auth-module
+
+      - name: Verify reviewed release plan and exact packages
+        if: ${{ startsWith(github.head_ref, 'release/') }}
+        run: |
+          node scripts/release-plan.mjs --verify
+          jq -r '.packages[].id | select(startswith("cargo:")) | sub("^cargo:"; "")' .lenso-release/plan.json |
+            while read -r package; do cargo package --locked --allow-dirty -p "$package"; done
+          jq -r '.packages[].id | select(startswith("npm:")) | sub("^npm:"; "")' .lenso-release/plan.json |
+            while read -r package; do pnpm --filter "$package" exec npm publish --dry-run --access public --registry https://registry.npmjs.org/; done
+        working-directory: lenso-auth-module

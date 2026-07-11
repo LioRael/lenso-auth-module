@@ -1,0 +1,8 @@
+{
+  "schema": "lenso.repository-config.v1",
+  "repository": "LioRael/lenso-auth-module",
+  "ignore": [
+    "@lenso/auth-module-workspace",
+    "npm:@lenso/auth-module-workspace"
+  ]
+}
