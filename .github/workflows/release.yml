@@ -1,28 +1,7 @@
 name: Release
 
-on:
-  workflow_dispatch:
-    inputs:
-      publish_auth_crate:
-        description: Publish lenso-module-auth to crates.io
-        required: true
-        default: true
-        type: boolean
-      publish_password_crate:
-        description: Publish lenso-module-auth-password to crates.io
-        required: true
-        default: true
-        type: boolean
-      publish_provider_crates:
-        description: Publish first-party auth provider crates to crates.io
-        required: true
-        default: false
-        type: boolean
-      publish_npm:
-        description: Publish Runtime Console npm packages
-        required: true
-        default: true
-        type: boolean
+# Disabled after the reviewed plan publisher passed shadow validation. Kept until cutover cleanup.
+on: []
 
 permissions:
   contents: read
