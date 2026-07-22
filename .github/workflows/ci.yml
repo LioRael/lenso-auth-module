@@ -53,6 +53,7 @@ jobs:
       - name: Verify reviewed release plan and exact packages
         if: ${{ startsWith(github.head_ref, 'release/') }}
         run: |
+          cargo fetch --locked
           node scripts/release-plan.mjs --verify
           jq -r '.packages[].id | select(startswith("cargo:")) | sub("^cargo:"; "")' .lenso-release/plan.json |
             while read -r package; do cargo package --locked --allow-dirty -p "$package"; done
