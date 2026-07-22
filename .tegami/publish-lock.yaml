@@ -1,0 +1,57 @@
+core:changelogs:
+  - content: "---\npackages:\n  lenso-module-auth:\n    type: patch\n  lenso-module-auth-anonymous:\n    type: patch\n  lenso-module-auth-device:\n    type: patch\n  lenso-module-auth-github:\n    type: patch\n  lenso-module-auth-google:\n    type: patch\n  lenso-module-auth-oauth:\n    type: patch\n  lenso-module-auth-oidc:\n    type: patch\n  lenso-module-auth-password:\n    type: patch\n  lenso-module-auth-phone:\n    type: patch\n  \"@lenso/auth-console\":\n    type: patch\n  \"@lenso/auth-device-console\":\n    type: patch\n  \"@lenso/auth-provider-console\":\n    type: patch\n---\n\n### Maintenance\n\nPublish the reviewed Auth foundation set required by the M6 framework release\nthrough the shadow release path.\n"
+    filename: m6-auth-foundation.md
+    v: 0.0.0
+core:packages:
+  - changelogIds:
+      - m6-auth-foundation.md
+    id: npm:@lenso/auth-provider-console
+    updated: true
+  - changelogIds:
+      - m6-auth-foundation.md
+    id: npm:@lenso/auth-console
+    updated: true
+  - changelogIds:
+      - m6-auth-foundation.md
+    id: npm:@lenso/auth-device-console
+    updated: true
+  - changelogIds:
+      - m6-auth-foundation.md
+    id: cargo:lenso-module-auth-anonymous
+    updated: true
+  - changelogIds:
+      - m6-auth-foundation.md
+    id: cargo:lenso-module-auth
+    updated: true
+  - changelogIds:
+      - m6-auth-foundation.md
+    id: cargo:lenso-module-auth-github
+    updated: true
+  - changelogIds:
+      - m6-auth-foundation.md
+    id: cargo:lenso-module-auth-device
+    updated: true
+  - changelogIds:
+      - m6-auth-foundation.md
+    id: cargo:lenso-module-auth-google
+    updated: true
+  - changelogIds:
+      - m6-auth-foundation.md
+    id: cargo:lenso-module-auth-oidc
+    updated: true
+  - changelogIds:
+      - m6-auth-foundation.md
+    id: cargo:lenso-module-auth-password
+    updated: true
+  - changelogIds:
+      - m6-auth-foundation.md
+    id: cargo:lenso-module-auth-phone
+    updated: true
+  - changelogIds:
+      - m6-auth-foundation.md
+    id: cargo:lenso-module-auth-oauth
+    updated: true
+npm:packages:
+  - id: npm:@lenso/auth-provider-console
+  - id: npm:@lenso/auth-console
+  - id: npm:@lenso/auth-device-console

@@ -1,6 +1,6 @@
 {
   "name": "@lenso/auth-device-console",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Runtime Console surface for the Lenso auth-device module.",
   "license": "MIT",
   "type": "module",
@@ -36,7 +36,9 @@
     "console": {
       "bundle": "./dist/auth-device-console.js",
       "hostApi": "1",
-      "styles": ["./dist/auth-device-console.css"],
+      "styles": [
+        "./dist/auth-device-console.css"
+      ],
       "surface": "./console-surface.json"
     }
   },

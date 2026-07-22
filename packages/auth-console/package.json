@@ -1,6 +1,6 @@
 {
   "name": "@lenso/auth-console",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Runtime Console surface for the Lenso auth module.",
   "license": "MIT",
   "type": "module",
@@ -36,7 +36,9 @@
     "console": {
       "bundle": "./dist/auth-console.js",
       "hostApi": "1",
-      "styles": ["./dist/auth-console.css"],
+      "styles": [
+        "./dist/auth-console.css"
+      ],
       "surface": "./console-surface.json"
     }
   },
