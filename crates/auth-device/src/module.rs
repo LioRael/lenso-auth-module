@@ -5,9 +5,9 @@ use crate::repositories::PostgresAuthDeviceRepository;
 use auth::session_policy::{AuthHostExtension, AuthSessionPolicy};
 use platform_core::AppContext;
 use platform_module::{
-    AdminSchema, ConsoleArea, ConsoleNavigation, ConsolePackage, ConsoleSurface,
-    ConsoleWorkspaceRef, EntitySchema, FieldSchema, FieldType, HostLinkedModule, LinkedBinding,
-    Module, ModuleManifest,
+    AdminSchema, CONSOLE_BRIDGE_PROTOCOL, ConsoleNavigation, ConsoleSurface,
+    ConsoleSurfacePresentation, ConsoleWorkspaceRef, EntitySchema, FieldSchema, FieldType,
+    HostLinkedModule, LinkedBinding, Module, ModuleManifest,
 };
 use std::sync::Arc;
 
@@ -86,11 +86,11 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
     vec![ConsoleSurface {
         name: "devices".to_owned(),
         label: "Devices".to_owned(),
-        area: ConsoleArea::Data,
         route: "/data/auth/devices".to_owned(),
-        package: ConsolePackage {
-            name: "@lenso/auth-device-console".to_owned(),
-            export: "authDeviceConsoleModule".to_owned(),
+        presentation: ConsoleSurfacePresentation::Isolated {
+            entry: "authDeviceConsoleModule".to_owned(),
+
+            bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
         },
         icon: Some("network".to_owned()),
         required_capabilities: vec![AUTH_DEVICE_READ.to_owned()],
@@ -131,22 +131,30 @@ fn auth_session_policy(ctx: &AppContext) -> Arc<dyn AuthSessionPolicy> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use platform_module::{AdminSurface, ModuleManifestLintSeverity, ModuleSource};
+    use platform_module::{AdminSurface, ModuleManifestLintSeverity};
 
     #[test]
     fn manifest_declares_device_admin_and_console_surface() {
         let manifest = manifest();
 
-        assert_eq!(manifest.name, MODULE_NAME);
+        assert_eq!(manifest.module_id, format!("lenso/{MODULE_NAME}"));
         assert_eq!(
-            manifest.dependencies,
+            manifest
+                .requires
+                .iter()
+                .map(|requirement| requirement
+                    .module_id
+                    .strip_prefix("lenso/")
+                    .unwrap_or(&requirement.module_id)
+                    .to_owned())
+                .collect::<Vec<_>>(),
             vec![auth::module::MODULE_NAME.to_owned()]
         );
         assert_eq!(manifest.capabilities, vec![AUTH_DEVICE_READ.to_owned()]);
         assert_eq!(manifest.admin, Some(AdminSurface::Schema(device_schema())));
         assert_eq!(manifest.console, console_surfaces());
 
-        let lints = platform_module::lint_module_manifest(ModuleSource::Linked, &manifest);
+        let lints = platform_module::lint_module_manifest(&manifest);
         assert!(
             lints
                 .iter()

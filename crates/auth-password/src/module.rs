@@ -151,14 +151,14 @@ mod tests {
     use super::*;
     use platform_module::{
         AdminSurface, ConsoleActionInputBinding, ConsoleActionInputValue, ConsoleContribution,
-        ConsoleContributionAction, ModuleManifestLintSeverity, ModuleSource, lint_module_manifest,
+        ConsoleContributionAction, ModuleManifestLintSeverity, lint_module_manifest,
     };
 
     #[test]
     fn manifest_declares_password_routes() {
         let manifest = manifest();
 
-        assert_eq!(manifest.name, MODULE_NAME);
+        assert_eq!(manifest.module_id, format!("lenso/{MODULE_NAME}"));
         assert_eq!(manifest.http_routes, http_routes());
         assert_eq!(
             manifest.admin,
@@ -167,7 +167,7 @@ mod tests {
         assert_eq!(manifest.capabilities, vec![AUTH_PASSWORD_CREDENTIALS_WRITE]);
         assert_eq!(manifest.console_contributions, console_contributions());
 
-        let lints = lint_module_manifest(ModuleSource::Linked, &manifest);
+        let lints = lint_module_manifest(&manifest);
         assert!(
             lints
                 .iter()
