@@ -6,6 +6,7 @@ use platform_module::{
 };
 
 pub const MODULE_NAME: &str = "auth-oauth";
+pub const AUTH_PROVIDERS_READ: &str = "auth.providers.read";
 
 fn auth_workspace() -> ConsoleWorkspaceRef {
     ConsoleWorkspaceRef {
@@ -21,12 +22,12 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
         label: "Providers".to_owned(),
         route: "/data/auth/providers".to_owned(),
         presentation: ConsoleSurfacePresentation::Isolated {
-            entry: "authProviderConsoleModule".to_owned(),
+            entry: "index.html?surface=providers".to_owned(),
 
             bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
         },
         icon: Some("network".to_owned()),
-        required_capabilities: Vec::new(),
+        required_capabilities: vec![AUTH_PROVIDERS_READ.to_owned()],
         navigation: Some(ConsoleNavigation {
             workspace: auth_workspace(),
             group: None,
@@ -38,6 +39,7 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
 pub fn manifest() -> ModuleManifest {
     ModuleManifest::builder(MODULE_NAME)
         .dependencies(vec![auth::module::MODULE_NAME.to_owned()])
+        .capabilities(vec![AUTH_PROVIDERS_READ.to_owned()])
         .console(console_surfaces())
         .build()
 }

@@ -620,7 +620,6 @@ mod tests {
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
     use axum::middleware;
-    use platform_core::config::ConsoleConfig;
     use platform_core::{
         AppConfig, AuthConfig, DatabaseConfig, HttpConfig, LoggingEventPublisher, ModuleConfig,
         ModuleSourcesConfig, RedisConfig, ServiceConfig, TelemetryConfig,
@@ -760,7 +759,6 @@ mod tests {
 
         AppConfig {
             auth: AuthConfig::default(),
-            console: ConsoleConfig::default(),
             database: DatabaseConfig {
                 max_connections: 1,
                 url: "postgres://lenso:lenso@127.0.0.1:5432/lenso".to_owned(),

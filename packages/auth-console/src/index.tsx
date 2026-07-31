@@ -1,48 +1,20 @@
-import { defineConsoleModule } from "@lenso/runtime-console-api";
+import { configureConsoleBridge } from "@lenso/auth-console-ui-client";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
 
 import "./styles.css";
-import { authConsoleManifest } from "./manifest";
 import { AuthSessionsPage, AuthUsersPage } from "./page";
 
-const legacySurface = authConsoleManifest.surfaces.find(
-  (surface) => surface.surfaceName === "auth"
-)!;
-const sessionsSurface = authConsoleManifest.surfaces.find(
-  (surface) => surface.surfaceName === "sessions"
-)!;
-const usersSurface = authConsoleManifest.surfaces.find(
-  (surface) => surface.surfaceName === "users"
-)!;
+const surface = new URLSearchParams(window.location.search).get("surface") ?? "sessions";
+configureConsoleBridge("auth", surface);
 
-export const authConsoleModule = defineConsoleModule({
-  id: authConsoleManifest.id,
-  surfaces: [
-    {
-      area: legacySurface.area,
-      component: AuthSessionsPage,
-      icon: legacySurface.icon,
-      label: legacySurface.label,
-      navigation: legacySurface.navigation,
-      path: legacySurface.route,
-    },
-    {
-      area: sessionsSurface.area,
-      component: AuthSessionsPage,
-      icon: sessionsSurface.icon,
-      label: sessionsSurface.label,
-      navigation: sessionsSurface.navigation,
-      path: sessionsSurface.route,
-    },
-    {
-      area: usersSurface.area,
-      component: AuthUsersPage,
-      icon: usersSurface.icon,
-      label: usersSurface.label,
-      navigation: usersSurface.navigation,
-      path: usersSurface.route,
-    },
-  ],
-});
+const root = document.getElementById("root");
+if (!root) {
+  throw new Error("Auth Console root is missing");
+}
 
-export { authConsoleManifest } from "./manifest";
-export { AuthSessionsPage, AuthUsersPage } from "./page";
+createRoot(root).render(
+  <StrictMode>
+    {surface === "users" ? <AuthUsersPage /> : <AuthSessionsPage />}
+  </StrictMode>
+);

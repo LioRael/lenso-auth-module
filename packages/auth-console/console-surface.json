@@ -1,61 +1,26 @@
 {
-  "exportName": "authConsoleModule",
   "id": "auth",
-  "bundle": {
-    "hostApi": "1",
-    "path": "dist/auth-console.js",
-    "styles": ["dist/auth-console.css"]
-  },
-  "packageName": "@lenso/auth-console",
-  "source": "runtime_bundle",
+  "source": "isolated_ui_artifact",
+  "bridgeProtocol": "lenso.console-bridge.v1",
+  "artifact": { "entry": "index.html" },
   "surfaces": [
     {
-      "area": "data",
-      "icon": "shield",
+      "surfaceName": "sessions",
       "label": "Sessions",
-      "navigation": {
-        "order": 50,
-        "workspace": {
-          "icon": "shield",
-          "id": "auth",
-          "label": "Auth"
-        }
-      },
-      "requiredCapabilities": ["auth.users.read"],
-      "route": "/data/auth",
-      "surfaceName": "auth"
-    },
-    {
-      "area": "data",
-      "icon": "key-round",
-      "label": "Sessions",
-      "navigation": {
-        "order": 50,
-        "workspace": {
-          "icon": "shield",
-          "id": "auth",
-          "label": "Auth"
-        }
-      },
-      "requiredCapabilities": ["auth.users.read"],
       "route": "/data/auth/sessions",
-      "surfaceName": "sessions"
+      "entry": "index.html?surface=sessions",
+      "icon": "key-round",
+      "requiredCapabilities": ["auth.users.read", "auth.users.manage"],
+      "navigation": { "order": 50, "workspace": { "id": "auth", "label": "Auth", "icon": "shield" } }
     },
     {
-      "area": "data",
-      "icon": "users",
+      "surfaceName": "users",
       "label": "Users",
-      "navigation": {
-        "order": 60,
-        "workspace": {
-          "icon": "shield",
-          "id": "auth",
-          "label": "Auth"
-        }
-      },
-      "requiredCapabilities": ["auth.users.read"],
       "route": "/data/auth/users",
-      "surfaceName": "users"
+      "entry": "index.html?surface=users",
+      "icon": "users",
+      "requiredCapabilities": ["auth.users.read", "auth.users.manage", "auth_password.credentials.write"],
+      "navigation": { "order": 60, "workspace": { "id": "auth", "label": "Auth", "icon": "shield" } }
     }
   ],
   "version": "workspace"

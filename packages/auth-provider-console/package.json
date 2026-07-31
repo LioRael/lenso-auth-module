@@ -1,7 +1,7 @@
 {
   "name": "@lenso/auth-provider-console",
   "version": "0.1.1",
-  "description": "Runtime Console surfaces for Lenso auth provider modules.",
+  "description": "Isolated Console UI artifact for Lenso auth provider modules.",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -15,10 +15,6 @@
   },
   "files": [
     "dist",
-    "src/index.tsx",
-    "src/manifest.ts",
-    "src/model.ts",
-    "src/page.tsx",
     "console-surface.json",
     "package.json"
   ],
@@ -27,28 +23,20 @@
     "prepack": "pnpm build"
   },
   "exports": {
-    ".": "./src/index.tsx",
-    "./bundle": "./dist/auth-provider-console.js",
-    "./style": "./dist/auth-provider-console.css",
+    ".": "./dist/index.html",
+    "./artifact": "./dist/",
     "./console-surface": "./console-surface.json"
   },
   "lenso": {
     "console": {
-      "bundle": "./dist/auth-provider-console.js",
-      "hostApi": "1",
-      "styles": [
-        "./dist/auth-provider-console.css"
-      ],
+      "artifact": "./dist/",
+      "bridgeProtocol": "lenso.console-bridge.v1",
       "surface": "./console-surface.json"
     }
   },
-  "peerDependencies": {
-    "@lenso/runtime-console-api": "^0.1.0",
-    "react": "^19.1.0"
-  },
-  "peerDependenciesMeta": {
-    "@lenso/runtime-console-api": {
-      "optional": true
-    }
+  "dependencies": {
+    "@lenso/auth-console-ui-client": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
   }
 }

@@ -23,6 +23,7 @@
   "include": [
     "packages/auth-console/src",
     "packages/auth-device-console/src",
-    "packages/auth-provider-console/src"
+    "packages/auth-provider-console/src",
+    "packages/console-ui-client/src"
   ]
 }

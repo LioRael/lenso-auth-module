@@ -44,12 +44,12 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
         label: "GitHub".to_owned(),
         route: "/data/auth/providers/github".to_owned(),
         presentation: ConsoleSurfacePresentation::Isolated {
-            entry: "authProviderConsoleModule".to_owned(),
+            entry: "index.html?surface=github".to_owned(),
 
             bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
         },
         icon: Some("network".to_owned()),
-        required_capabilities: Vec::new(),
+        required_capabilities: vec![auth_oauth::module::AUTH_PROVIDERS_READ.to_owned()],
         navigation: Some(ConsoleNavigation {
             workspace: auth_workspace(),
             group: None,
@@ -64,6 +64,7 @@ pub fn manifest() -> ModuleManifest {
             auth::module::MODULE_NAME.to_owned(),
             auth_oauth::module::MODULE_NAME.to_owned(),
         ])
+        .capabilities(vec![auth_oauth::module::AUTH_PROVIDERS_READ.to_owned()])
         .http_routes(http_routes())
         .console(console_surfaces())
         .build()

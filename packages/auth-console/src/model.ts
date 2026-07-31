@@ -1,4 +1,4 @@
-import type { ConsoleAdminRecord } from "@lenso/runtime-console-api";
+type ConsoleAdminRecord = Record<string, unknown>;
 
 export const CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY =
   "auth.console_admin_user_scopes";
