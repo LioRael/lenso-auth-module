@@ -151,16 +151,24 @@ mod tests {
     use super::*;
     use platform_module::{
         AdminSurface, ConsoleContribution, ConsoleContributionAction, ModuleManifestLintSeverity,
-        ModuleSource, lint_module_manifest,
+        lint_module_manifest,
     };
 
     #[test]
     fn manifest_declares_phone_routes_and_auth_dependency() {
         let manifest = manifest();
 
-        assert_eq!(manifest.name, MODULE_NAME);
+        assert_eq!(manifest.module_id, format!("lenso/{MODULE_NAME}"));
         assert_eq!(
-            manifest.dependencies,
+            manifest
+                .requires
+                .iter()
+                .map(|requirement| requirement
+                    .module_id
+                    .strip_prefix("lenso/")
+                    .unwrap_or(&requirement.module_id)
+                    .to_owned())
+                .collect::<Vec<_>>(),
             vec![
                 auth::module::MODULE_NAME.to_owned(),
                 auth_password::module::MODULE_NAME.to_owned(),
@@ -183,7 +191,7 @@ mod tests {
             ]
         );
 
-        let lints = lint_module_manifest(ModuleSource::Linked, &manifest);
+        let lints = lint_module_manifest(&manifest);
         assert!(
             lints
                 .iter()

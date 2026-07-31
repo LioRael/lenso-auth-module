@@ -51,20 +51,28 @@ pub fn linked_module() -> HostLinkedModule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use platform_module::{ModuleManifestLintSeverity, ModuleSource, lint_module_manifest};
+    use platform_module::{ModuleManifestLintSeverity, lint_module_manifest};
 
     #[test]
     fn manifest_declares_anonymous_route_and_auth_dependency() {
         let manifest = manifest();
 
-        assert_eq!(manifest.name, MODULE_NAME);
+        assert_eq!(manifest.module_id, format!("lenso/{MODULE_NAME}"));
         assert_eq!(
-            manifest.dependencies,
+            manifest
+                .requires
+                .iter()
+                .map(|requirement| requirement
+                    .module_id
+                    .strip_prefix("lenso/")
+                    .unwrap_or(&requirement.module_id)
+                    .to_owned())
+                .collect::<Vec<_>>(),
             vec![auth::module::MODULE_NAME.to_owned()]
         );
         assert_eq!(manifest.http_routes, http_routes());
 
-        let lints = lint_module_manifest(ModuleSource::Linked, &manifest);
+        let lints = lint_module_manifest(&manifest);
         assert!(
             lints
                 .iter()
