@@ -65,5 +65,5 @@ pnpm check
 
 The Console UI artifacts use `@lenso/console-bridge` for the sandboxed host
 protocol. Local development resolves that package from the sibling
-`lenso-runtime-console` repository; release builds consume its published npm
+`lenso-console` repository; release builds consume its published npm
 package.

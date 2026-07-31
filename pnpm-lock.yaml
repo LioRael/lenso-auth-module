@@ -5,15 +5,15 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@lenso/console-bridge': link:../lenso-runtime-console/packages/console-bridge
+  '@lenso/console-bridge': link:../lenso-console/packages/console-bridge
 
 importers:
 
   .:
     devDependencies:
       '@lenso/console-bridge':
-        specifier: link:../lenso-runtime-console/packages/console-bridge
-        version: link:../lenso-runtime-console/packages/console-bridge
+        specifier: link:../lenso-console/packages/console-bridge
+        version: link:../lenso-console/packages/console-bridge
       '@tailwindcss/vite':
         specifier: ^4.3.1
         version: 4.3.1(vite@8.0.16(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.0))
@@ -84,8 +84,8 @@ importers:
   packages/console-ui-client:
     dependencies:
       '@lenso/console-bridge':
-        specifier: link:../../../lenso-runtime-console/packages/console-bridge
-        version: link:../../../lenso-runtime-console/packages/console-bridge
+        specifier: link:../../../lenso-console/packages/console-bridge
+        version: link:../../../lenso-console/packages/console-bridge
       react:
         specifier: ^19.1.0
         version: 19.2.7
