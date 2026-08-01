@@ -111,8 +111,8 @@ mod tests {
     use super::*;
     use chrono::Duration as ChronoDuration;
     use platform_core::config::{
-        AppConfig, AuthConfig, ConsoleConfig, DatabaseConfig, HttpConfig, ModuleSourcesConfig,
-        RedisConfig, ServiceConfig, TelemetryConfig,
+        AppConfig, AuthConfig, DatabaseConfig, HttpConfig, ModuleSourcesConfig, RedisConfig,
+        ServiceConfig, TelemetryConfig,
     };
     use platform_core::{AppContext, LoggingEventPublisher};
     use std::collections::BTreeMap;
@@ -152,7 +152,6 @@ mod tests {
         let ctx = AppContext::new(
             AppConfig {
                 auth: AuthConfig::default(),
-                console: ConsoleConfig::default(),
                 database: DatabaseConfig {
                     max_connections: 1,
                     url: "postgres://localhost/lenso_test".to_owned(),

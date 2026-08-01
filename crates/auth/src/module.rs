@@ -364,9 +364,9 @@ mod tests {
         assert_eq!(
             manifest.capabilities,
             vec![
-                "auth.users.read",
+                "auth.sessions.revoke",
                 "auth.users.manage",
-                "auth.sessions.revoke"
+                "auth.users.read"
             ]
         );
         assert_eq!(manifest.http_routes, http_routes());

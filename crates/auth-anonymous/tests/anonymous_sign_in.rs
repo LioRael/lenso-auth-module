@@ -121,7 +121,6 @@ fn test_app(db: platform_core::DbPool) -> axum::Router {
 fn test_config() -> AppConfig {
     AppConfig {
         auth: AuthConfig::default(),
-        console: platform_core::config::ConsoleConfig::default(),
         database: DatabaseConfig {
             max_connections: 1,
             url: "postgres://lenso:lenso@127.0.0.1:5432/lenso".to_owned(),
