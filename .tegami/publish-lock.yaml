@@ -5,7 +5,7 @@ core:changelogs:
 core:packages:
   - changelogIds:
       - system-plane-auth.md
-    id: cargo:lenso-module-auth
+    id: cargo:lenso-module-auth-anonymous
     updated: true
   - changelogIds:
       - system-plane-auth.md
@@ -17,7 +17,7 @@ core:packages:
     updated: true
   - changelogIds:
       - system-plane-auth.md
-    id: cargo:lenso-module-auth-anonymous
+    id: cargo:lenso-module-auth-google
     updated: true
   - changelogIds:
       - system-plane-auth.md
@@ -25,15 +25,15 @@ core:packages:
     updated: true
   - changelogIds:
       - system-plane-auth.md
-    id: cargo:lenso-module-auth-password
-    updated: true
-  - changelogIds:
-      - system-plane-auth.md
-    id: cargo:lenso-module-auth-google
+    id: cargo:lenso-module-auth
     updated: true
   - changelogIds:
       - system-plane-auth.md
     id: cargo:lenso-module-auth-oidc
+    updated: true
+  - changelogIds:
+      - system-plane-auth.md
+    id: cargo:lenso-module-auth-password
     updated: true
   - changelogIds:
       - system-plane-auth.md
