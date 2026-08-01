@@ -1,3 +1,10 @@
+## lenso-module-auth@0.1.10
+
+### Maintenance
+
+Align the Auth modules with the current Linked Module declarations and System
+Plane contracts while Console UI packages remain explicitly deferred.
+
 ## lenso-module-auth@0.1.9
 
 ### Maintenance
