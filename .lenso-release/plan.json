@@ -1,7 +1,7 @@
 {
   "schema": "lenso.release-plan.v1",
   "repository": "LioRael/lenso-auth-module",
-  "sourceCommit": "9f3c4feb15f917ea1f62e0322acb4beb9be13cdd",
+  "sourceCommit": "bd7a240822636684b211152b75fc9047977ffe81",
   "tegamiVersion": "1.2.5",
   "publisher": {
     "workflow": ".github/workflows/publish.yml",
@@ -16,90 +16,90 @@
   "generatedFiles": [
     {
       "path": ".tegami/publish-lock.yaml",
-      "sha256": "sha256:56bf8b98e23453ed11f05b14919104fdcac53fd1826b5431bcadbc887587873f"
+      "sha256": "sha256:4b9088af4903c1db4f02cdf5d4b96224e7eab26faafbded9224b6af30a9ba510"
     },
     {
       "path": "Cargo.lock",
-      "sha256": "sha256:975bcb4d4a21800eaac2fc253ce40239c4f091714bb16bc670d5c9aaf59c799e"
+      "sha256": "sha256:8168ffdc34b1a3ed24baa803454fb2571365c667e8bb8ea0e51e57360dc53b7f"
     },
     {
       "path": "crates/auth-anonymous/CHANGELOG.md",
-      "sha256": "sha256:08e4f851a9d9502daaf2298a4932202f9c5d41d854abb227f582750044ab440d"
+      "sha256": "sha256:aab9068b99027ca2d6162007963bad40f2be31998fea2fec4dae96b30faf6029"
     },
     {
       "path": "crates/auth-anonymous/Cargo.toml",
-      "sha256": "sha256:4ff8da8213b4b5122aea3ec84757a0a743c4cfb22ff54b7373f0df1d6f835284"
+      "sha256": "sha256:e43196fbbc37795b92cb0305b08b66a73804bf237a8e24d40e06cce7e1674381"
     },
     {
       "path": "crates/auth-device/CHANGELOG.md",
-      "sha256": "sha256:b2a93b5bb82b81848e6070ea63ca165070b625133bd6fc24cac5a5242536a648"
+      "sha256": "sha256:4881bb840eea7da7444d43d03511ff018d5e3161c0db0dd2db052c1359138516"
     },
     {
       "path": "crates/auth-device/Cargo.toml",
-      "sha256": "sha256:fa24682369384c115127fb1b1abb0a5b5ffff917e56758b7b20558c0825c45a0"
+      "sha256": "sha256:dbc5de2d58f5f37fc0ec0b7d8838ac4eeda192f48e59222bfd618d8b109042be"
     },
     {
       "path": "crates/auth-github/CHANGELOG.md",
-      "sha256": "sha256:b9af95e3bde158d2404fef39b2f39fe0aedbd3f4a75288f7acea21296ef3afe2"
+      "sha256": "sha256:31ffce94b855f55424c108c3321c50dc8f1f5a98e4cae45f99027e14800aef99"
     },
     {
       "path": "crates/auth-github/Cargo.toml",
-      "sha256": "sha256:001ccafde01f9d0d84ebef0310b721aeefc13f8ed919077574836dc1d8844e10"
+      "sha256": "sha256:f3c86c6987aebd44bcc1d442b5bf4ed2582c083482eaca138896a5a522131c8c"
     },
     {
       "path": "crates/auth-google/CHANGELOG.md",
-      "sha256": "sha256:b7d70fd3216e7338a787e83db0c25173448c179353a4962ace791ffcfb4f86ff"
+      "sha256": "sha256:563e7ebd4b9feeca19d300b591827670fa18a034ebf5df9f1f717dc372476571"
     },
     {
       "path": "crates/auth-google/Cargo.toml",
-      "sha256": "sha256:cb50bfe37138f47665d2952e7c5283fa99b9da3a19b7e663219e8db0f0a0a7f7"
+      "sha256": "sha256:03e5eab66489c5c829de90342f6dc57f563fe877075d53381ef3e24b914d7ef6"
     },
     {
       "path": "crates/auth-oauth/CHANGELOG.md",
-      "sha256": "sha256:a3795a3aeb660fc126b0c501d7ce6dad5fd9e262361b8712b1f28bcf2f2f92fc"
+      "sha256": "sha256:1d2ee951b3dc2d90721fada5ef5f556cbd5ef0365936def48f20566571d5b0d3"
     },
     {
       "path": "crates/auth-oauth/Cargo.toml",
-      "sha256": "sha256:1e1ef20e9ca2ed9054d94eab4ee5e7c1350724de55f441d06bf6785264f29647"
+      "sha256": "sha256:746fe8f0a3a17fdfce79116eefa30e1cf3bb77c4cc77bb00ace5b8307a74170c"
     },
     {
       "path": "crates/auth-oidc/CHANGELOG.md",
-      "sha256": "sha256:e0bfdd25c2036b8b66a2e6911c7a4422ddb0333e39d9969648bf56d643814418"
+      "sha256": "sha256:b4305382640b3ba0b25593c79452936e79d1adc2fcf51a333e8f9a946d337517"
     },
     {
       "path": "crates/auth-oidc/Cargo.toml",
-      "sha256": "sha256:6eb53f47d5cb65619238cd8f13c98741ce09c53358edcf05d1f3bf1bd570d41a"
+      "sha256": "sha256:be5efe182d7e4b438c4d42f8abd80536bc0ecfa1a536fffce82dd3da14e50599"
     },
     {
       "path": "crates/auth-password/CHANGELOG.md",
-      "sha256": "sha256:a4ffe6bf96b73beff9f9f0b3cff7639c4c6e322ceb05384b8dd1380b5f4f866c"
+      "sha256": "sha256:5428fd7010b0850228634bf1ca05666e6b963898fd9d4a5a8da7862a3a9d7330"
     },
     {
       "path": "crates/auth-password/Cargo.toml",
-      "sha256": "sha256:489f42ac42cd325a821508777606859884b7b512da6248c94b8140cbe3363f4c"
+      "sha256": "sha256:ccfb993ebff6626227d25a034c7117d0d11ef0aef0a089996edcc1e1ca1185bf"
     },
     {
       "path": "crates/auth-phone/CHANGELOG.md",
-      "sha256": "sha256:1c50045137cc597b1a1a2c2e771712bed45516530ca8d1fc8a88921d4dc75f74"
+      "sha256": "sha256:338ca47b2b1ab952d377be44fed0839b821bfdb57513766ca56737cd8eefcd2d"
     },
     {
       "path": "crates/auth-phone/Cargo.toml",
-      "sha256": "sha256:b2a8bd513cff6fc96d66e0ff1c85c83e88d6fb517135897d88117d1603f42cc3"
+      "sha256": "sha256:0b1bc22505aca2c714aef54e8288a4520747373827ec44dfc8de1d0658845660"
     },
     {
       "path": "crates/auth/CHANGELOG.md",
-      "sha256": "sha256:53ea6792536fafe9e20fe464e2fccd6b83f606148325ead61117ad028ed0f56c"
+      "sha256": "sha256:58c8599eb19796699f366c6855338bf1d448ed3f069b80d163bff1b011ed77ec"
     },
     {
       "path": "crates/auth/Cargo.toml",
-      "sha256": "sha256:732f585647dfdb99187b0e7e9abd1e66a79b04ec9be99f9550debe159c9781f4"
+      "sha256": "sha256:69781ec39a66f98eb02d04b77d5605226fb5a5a5362be7b0cb912ee93c8a1dac"
     }
   ],
   "packages": [
     {
       "id": "cargo:lenso-module-auth",
-      "previousVersion": "0.1.10",
-      "nextVersion": "0.1.11",
+      "previousVersion": "0.1.11",
+      "nextVersion": "0.1.12",
       "bump": "patch",
       "releaseGroup": "modules",
       "userFacing": true,
@@ -126,16 +126,16 @@
     },
     {
       "id": "cargo:lenso-module-auth-anonymous",
-      "previousVersion": "0.1.2",
-      "nextVersion": "0.1.3",
+      "previousVersion": "0.1.3",
+      "nextVersion": "0.1.4",
       "bump": "patch",
       "releaseGroup": "modules",
       "userFacing": true,
       "dependencies": [
         {
           "id": "cargo:lenso-module-auth",
-          "requirement": "^0.1.11",
-          "resolvedVersion": "0.1.11",
+          "requirement": "^0.1.12",
+          "resolvedVersion": "0.1.12",
           "source": "plan"
         },
         {
@@ -160,16 +160,16 @@
     },
     {
       "id": "cargo:lenso-module-auth-device",
-      "previousVersion": "0.1.3",
-      "nextVersion": "0.1.4",
+      "previousVersion": "0.1.4",
+      "nextVersion": "0.1.5",
       "bump": "patch",
       "releaseGroup": "modules",
       "userFacing": true,
       "dependencies": [
         {
           "id": "cargo:lenso-module-auth",
-          "requirement": "^0.1.11",
-          "resolvedVersion": "0.1.11",
+          "requirement": "^0.1.12",
+          "resolvedVersion": "0.1.12",
           "source": "plan"
         },
         {
@@ -188,22 +188,22 @@
     },
     {
       "id": "cargo:lenso-module-auth-github",
-      "previousVersion": "0.1.2",
-      "nextVersion": "0.1.3",
+      "previousVersion": "0.1.3",
+      "nextVersion": "0.1.4",
       "bump": "patch",
       "releaseGroup": "modules",
       "userFacing": true,
       "dependencies": [
         {
           "id": "cargo:lenso-module-auth",
-          "requirement": "^0.1.11",
-          "resolvedVersion": "0.1.11",
+          "requirement": "^0.1.12",
+          "resolvedVersion": "0.1.12",
           "source": "plan"
         },
         {
           "id": "cargo:lenso-module-auth-oauth",
-          "requirement": "^0.1.4",
-          "resolvedVersion": "0.1.4",
+          "requirement": "^0.1.5",
+          "resolvedVersion": "0.1.5",
           "source": "plan"
         },
         {
@@ -228,22 +228,22 @@
     },
     {
       "id": "cargo:lenso-module-auth-google",
-      "previousVersion": "0.1.2",
-      "nextVersion": "0.1.3",
+      "previousVersion": "0.1.3",
+      "nextVersion": "0.1.4",
       "bump": "patch",
       "releaseGroup": "modules",
       "userFacing": true,
       "dependencies": [
         {
           "id": "cargo:lenso-module-auth",
-          "requirement": "^0.1.11",
-          "resolvedVersion": "0.1.11",
+          "requirement": "^0.1.12",
+          "resolvedVersion": "0.1.12",
           "source": "plan"
         },
         {
           "id": "cargo:lenso-module-auth-oauth",
-          "requirement": "^0.1.4",
-          "resolvedVersion": "0.1.4",
+          "requirement": "^0.1.5",
+          "resolvedVersion": "0.1.5",
           "source": "plan"
         },
         {
@@ -268,16 +268,16 @@
     },
     {
       "id": "cargo:lenso-module-auth-oauth",
-      "previousVersion": "0.1.3",
-      "nextVersion": "0.1.4",
+      "previousVersion": "0.1.4",
+      "nextVersion": "0.1.5",
       "bump": "patch",
       "releaseGroup": "modules",
       "userFacing": true,
       "dependencies": [
         {
           "id": "cargo:lenso-module-auth",
-          "requirement": "^0.1.11",
-          "resolvedVersion": "0.1.11",
+          "requirement": "^0.1.12",
+          "resolvedVersion": "0.1.12",
           "source": "plan"
         },
         {
@@ -296,16 +296,16 @@
     },
     {
       "id": "cargo:lenso-module-auth-oidc",
-      "previousVersion": "0.1.3",
-      "nextVersion": "0.1.4",
+      "previousVersion": "0.1.4",
+      "nextVersion": "0.1.5",
       "bump": "patch",
       "releaseGroup": "modules",
       "userFacing": true,
       "dependencies": [
         {
           "id": "cargo:lenso-module-auth",
-          "requirement": "^0.1.11",
-          "resolvedVersion": "0.1.11",
+          "requirement": "^0.1.12",
+          "resolvedVersion": "0.1.12",
           "source": "plan"
         },
         {
@@ -330,16 +330,16 @@
     },
     {
       "id": "cargo:lenso-module-auth-password",
-      "previousVersion": "0.1.11",
-      "nextVersion": "0.1.12",
+      "previousVersion": "0.1.12",
+      "nextVersion": "0.1.13",
       "bump": "patch",
       "releaseGroup": "modules",
       "userFacing": true,
       "dependencies": [
         {
           "id": "cargo:lenso-module-auth",
-          "requirement": "^0.1.11",
-          "resolvedVersion": "0.1.11",
+          "requirement": "^0.1.12",
+          "resolvedVersion": "0.1.12",
           "source": "plan"
         },
         {
@@ -364,22 +364,22 @@
     },
     {
       "id": "cargo:lenso-module-auth-phone",
-      "previousVersion": "0.1.3",
-      "nextVersion": "0.1.4",
+      "previousVersion": "0.1.4",
+      "nextVersion": "0.1.5",
       "bump": "patch",
       "releaseGroup": "modules",
       "userFacing": true,
       "dependencies": [
         {
           "id": "cargo:lenso-module-auth",
-          "requirement": "^0.1.11",
-          "resolvedVersion": "0.1.11",
+          "requirement": "^0.1.12",
+          "resolvedVersion": "0.1.12",
           "source": "plan"
         },
         {
           "id": "cargo:lenso-module-auth-password",
-          "requirement": "^0.1.12",
-          "resolvedVersion": "0.1.12",
+          "requirement": "^0.1.13",
+          "resolvedVersion": "0.1.13",
           "source": "plan"
         },
         {
@@ -403,5 +403,5 @@
       ]
     }
   ],
-  "planId": "sha256:a3a9728556d7caec79ff6127fb98b5a1102c35510d944cd1262402aafdaba452"
+  "planId": "sha256:1d70624c43c0943d9179a51c70fad1cb9bc3616f92f290903fcadc595dceb4c4"
 }
