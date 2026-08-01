@@ -1,3 +1,10 @@
+## lenso-module-auth-phone@0.1.3
+
+### Maintenance
+
+Align the Auth modules with the current Linked Module declarations and System
+Plane contracts while Console UI packages remain explicitly deferred.
+
 ## lenso-module-auth-phone@0.1.2
 
 ### Maintenance

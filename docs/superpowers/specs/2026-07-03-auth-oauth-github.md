@@ -148,4 +148,4 @@ token endpoint and loads the user profile from the OIDC userinfo endpoint.
 - No encrypted third-party access-token storage in v1.
 - No generalized OIDC client until two or more inbound OIDC providers share
   enough ID-token validation logic to justify it.
-- No remote-module OAuth hook in v1; these are first-party linked auth modules.
+- No third-party OAuth extension hook in v1; these are first-party Linked Modules.

@@ -5,11 +5,11 @@ use platform_http::ApiOpenApiRouter;
 use platform_module::{
     AdminAction, AdminActionDangerLevel, AdminActionInputField, AdminActionInputSchema,
     AdminDeclarativeComponent, AdminDeclarativePage, AdminDeclarativeSection,
-    AdminDeclarativeSurface, AdminSchema, ConsoleArea, ConsoleContributionKind, ConsoleNavigation,
-    ConsolePackage, ConsoleSlot, ConsoleSlotContext, ConsoleSlotContextField,
-    ConsoleSlotContextFieldType, ConsoleSurface, ConsoleWorkspaceRef, EntitySchema, FieldSchema,
-    FieldType, LinkedBinding, LinkedHttpContribution, Module, ModuleHttpMethod, ModuleHttpRoute,
-    ModuleManifest,
+    AdminDeclarativeSurface, AdminSchema, CONSOLE_BRIDGE_PROTOCOL, ConsoleContributionKind,
+    ConsoleNavigation, ConsoleSlot, ConsoleSlotContext, ConsoleSlotContextField,
+    ConsoleSlotContextFieldType, ConsoleSurface, ConsoleSurfacePresentation, ConsoleWorkspaceRef,
+    EntitySchema, FieldSchema, FieldType, LinkedBinding, LinkedHttpContribution, Module,
+    ModuleHttpMethod, ModuleHttpRoute, ModuleManifest,
 };
 use std::sync::Arc;
 
@@ -264,11 +264,11 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
         ConsoleSurface {
             name: "sessions".to_owned(),
             label: "Sessions".to_owned(),
-            area: ConsoleArea::Data,
             route: "/data/auth/sessions".to_owned(),
-            package: ConsolePackage {
-                name: "@lenso/auth-console".to_owned(),
-                export: "authConsoleModule".to_owned(),
+            presentation: ConsoleSurfacePresentation::Isolated {
+                entry: "authConsoleModule".to_owned(),
+
+                bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
             },
             icon: Some("shield".to_owned()),
             required_capabilities: vec![AUTH_USERS_READ.to_owned()],
@@ -281,11 +281,11 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
         ConsoleSurface {
             name: "users".to_owned(),
             label: "Users".to_owned(),
-            area: ConsoleArea::Data,
             route: "/data/auth/users".to_owned(),
-            package: ConsolePackage {
-                name: "@lenso/auth-console".to_owned(),
-                export: "authConsoleModule".to_owned(),
+            presentation: ConsoleSurfacePresentation::Isolated {
+                entry: "authConsoleModule".to_owned(),
+
+                bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
             },
             icon: Some("shield".to_owned()),
             required_capabilities: vec![AUTH_USERS_READ.to_owned()],
@@ -354,19 +354,19 @@ pub fn module(ctx: &AppContext) -> Module {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use platform_module::{ModuleManifestLintSeverity, ModuleSource, lint_module_manifest};
+    use platform_module::{ModuleManifestLintSeverity, lint_module_manifest};
 
     #[test]
     fn manifest_declares_auth_user_anchor() {
         let manifest = manifest();
 
-        assert_eq!(manifest.name, MODULE_NAME);
+        assert_eq!(manifest.module_id, format!("lenso/{MODULE_NAME}"));
         assert_eq!(
             manifest.capabilities,
             vec![
-                "auth.users.read",
+                "auth.sessions.revoke",
                 "auth.users.manage",
-                "auth.sessions.revoke"
+                "auth.users.read"
             ]
         );
         assert_eq!(manifest.http_routes, http_routes());
@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(manifest.console, console_surfaces());
         assert_eq!(manifest.console_slots, console_slots());
 
-        let lints = lint_module_manifest(ModuleSource::Linked, &manifest);
+        let lints = lint_module_manifest(&manifest);
         assert!(
             lints
                 .iter()

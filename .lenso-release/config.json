@@ -2,7 +2,13 @@
   "schema": "lenso.repository-config.v1",
   "repository": "LioRael/lenso-auth-module",
   "ignore": [
+    "@lenso/auth-console",
+    "@lenso/auth-device-console",
     "@lenso/auth-module-workspace",
-    "npm:@lenso/auth-module-workspace"
+    "@lenso/auth-provider-console",
+    "npm:@lenso/auth-console",
+    "npm:@lenso/auth-device-console",
+    "npm:@lenso/auth-module-workspace",
+    "npm:@lenso/auth-provider-console"
   ]
 }
