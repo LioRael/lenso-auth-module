@@ -1,3 +1,10 @@
+## lenso-module-auth@0.1.12
+
+### Maintenance
+
+Publish the Linked Module and System Plane alignment through the restored
+shadow-only release policy while Console UI packages remain deferred.
+
 ## lenso-module-auth@0.1.11
 
 ### Maintenance
