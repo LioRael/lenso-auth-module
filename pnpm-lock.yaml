@@ -4,13 +4,16 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@lenso/console-bridge': link:../lenso-runtime-console/packages/console-bridge
+
 importers:
 
   .:
     devDependencies:
-      '@lenso/runtime-console-api':
-        specifier: ^0.1.0
-        version: 0.1.0(react@19.2.7)
+      '@lenso/console-bridge':
+        specifier: link:../lenso-runtime-console/packages/console-bridge
+        version: link:../lenso-runtime-console/packages/console-bridge
       '@tailwindcss/vite':
         specifier: ^4.3.1
         version: 4.3.1(vite@8.0.16(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.0))
@@ -20,9 +23,15 @@ importers:
       '@types/react':
         specifier: ^19.1.0
         version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.1.0
+        version: 19.2.3(@types/react@19.2.17)
       react:
         specifier: ^19.1.0
         version: 19.2.7
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.8(react@19.2.7)
       tegami:
         specifier: 1.2.5
         version: 1.2.5
@@ -38,27 +47,45 @@ importers:
 
   packages/auth-console:
     dependencies:
-      '@lenso/runtime-console-api':
-        specifier: ^0.1.0
-        version: 0.1.0(react@19.2.7)
+      '@lenso/auth-console-ui-client':
+        specifier: workspace:*
+        version: link:../console-ui-client
       react:
         specifier: ^19.1.0
         version: 19.2.7
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.8(react@19.2.7)
 
   packages/auth-device-console:
     dependencies:
-      '@lenso/runtime-console-api':
-        specifier: ^0.1.0
-        version: 0.1.0(react@19.2.7)
+      '@lenso/auth-console-ui-client':
+        specifier: workspace:*
+        version: link:../console-ui-client
       react:
         specifier: ^19.1.0
         version: 19.2.7
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.8(react@19.2.7)
 
   packages/auth-provider-console:
     dependencies:
-      '@lenso/runtime-console-api':
-        specifier: ^0.1.0
-        version: 0.1.0(react@19.2.7)
+      '@lenso/auth-console-ui-client':
+        specifier: workspace:*
+        version: link:../console-ui-client
+      react:
+        specifier: ^19.1.0
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.8(react@19.2.7)
+
+  packages/console-ui-client:
+    dependencies:
+      '@lenso/console-bridge':
+        specifier: link:../../../lenso-runtime-console/packages/console-bridge
+        version: link:../../../lenso-runtime-console/packages/console-bridge
       react:
         specifier: ^19.1.0
         version: 19.2.7
@@ -97,11 +124,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
-
-  '@lenso/runtime-console-api@0.1.0':
-    resolution: {integrity: sha512-JctCly0aUbSSboikcCJBuf4WXaA2XKVKIEFG7hBYI2PKP9URtKCQ3hMeedyyWwFgCLYteJ+YlEcgAzayRiSYXg==}
-    peerDependencies:
-      react: ^19.1.0
 
   '@napi-rs/wasm-runtime@1.1.5':
     resolution: {integrity: sha512-AWPoBRJ9tsnVhor4sjO7rkni+7p+2IAEFj6cx06UgP10jkQHqay/36uRV/bFkgrh18D9vb4cr8Q0Pthskgzy+Q==}
@@ -325,6 +347,11 @@ packages:
   '@types/node@25.9.3':
     resolution: {integrity: sha512-603BddQMv3pUcr4U2dhujk83N2tTDVr/34wII2B6bJy6g+8WD6yUb11jszNs0gdi4PesVWl7ABt8nYMVpnLUcg==}
 
+  '@types/react-dom@19.2.3':
+    resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
+    peerDependencies:
+      '@types/react': ^19.2.0
+
   '@types/react@19.2.17':
     resolution: {integrity: sha512-MXfmqaVPEVgkBT/aY0aGCkRWWtByiYQXo3xdQ8r5RzuFrPiRn8Gar2tQdXSUQ2GKV3bkXckek89V8wQBY2Q/Aw==}
 
@@ -519,6 +546,11 @@ packages:
     resolution: {integrity: sha512-FfR8sjd4em2T6fb3I2MwAJU7HWVMr9zba+enmQeeWFfCbm+UOC/0X4DS8XtpUTMwWMGbjKYP7xjfNekzyGmB3A==}
     engines: {node: ^10 || ^12 || >=14}
 
+  react-dom@19.2.8:
+    resolution: {integrity: sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ==}
+    peerDependencies:
+      react: ^19.2.8
+
   react@19.2.7:
     resolution: {integrity: sha512-HNe9WslTbXmFK8o8cmwgAeJFSBvt1bPdHCVKtaaV+WlAN36mpT4hcRpwbf3fY56ar2oIXzsBpOAiIRHAdY0OlQ==}
     engines: {node: '>=0.10.0'}
@@ -527,6 +559,9 @@ packages:
     resolution: {integrity: sha512-i00lAJ2ks1BYr7rjNjKC7BcqAS7nVfiT3QX1SI5aY+AFHblCmaUf9OE9dbdzDvW6dJxbi2ZCZiy9v3CcwOiX3g==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
+
+  scheduler@0.27.0:
+    resolution: {integrity: sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==}
 
   semver@7.8.5:
     resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
@@ -728,10 +763,6 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@lenso/runtime-console-api@0.1.0(react@19.2.7)':
-    dependencies:
-      react: 19.2.7
-
   '@napi-rs/wasm-runtime@1.1.5(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
       '@emnapi/core': 1.10.0
@@ -881,6 +912,10 @@ snapshots:
   '@types/node@25.9.3':
     dependencies:
       undici-types: 7.24.6
+
+  '@types/react-dom@19.2.3(@types/react@19.2.17)':
+    dependencies:
+      '@types/react': 19.2.17
 
   '@types/react@19.2.17':
     dependencies:
@@ -1040,6 +1075,11 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
+  react-dom@19.2.8(react@19.2.7):
+    dependencies:
+      react: 19.2.7
+      scheduler: 0.27.0
+
   react@19.2.7: {}
 
   rolldown@1.0.3:
@@ -1062,6 +1102,8 @@ snapshots:
       '@rolldown/binding-wasm32-wasi': 1.0.3
       '@rolldown/binding-win32-arm64-msvc': 1.0.3
       '@rolldown/binding-win32-x64-msvc': 1.0.3
+
+  scheduler@0.27.0: {}
 
   semver@7.8.5: {}
 

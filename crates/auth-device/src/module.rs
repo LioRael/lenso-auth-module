@@ -88,7 +88,7 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
         label: "Devices".to_owned(),
         route: "/data/auth/devices".to_owned(),
         presentation: ConsoleSurfacePresentation::Isolated {
-            entry: "authDeviceConsoleModule".to_owned(),
+            entry: "devices".to_owned(),
 
             bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
         },

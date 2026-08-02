@@ -15,8 +15,5 @@ export default {
     "lenso-module-auth-oidc": {},
     "lenso-module-auth-password": {},
     "lenso-module-auth-phone": {},
-    "@lenso/auth-console": {},
-    "@lenso/auth-device-console": {},
-    "@lenso/auth-provider-console": {},
   },
 };

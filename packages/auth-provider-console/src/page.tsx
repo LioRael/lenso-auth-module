@@ -1,4 +1,4 @@
-import { runtimeConsoleHostApi } from "@lenso/runtime-console-api";
+import { consoleHostApi } from "@lenso/auth-console-ui-client";
 import type { ReactNode } from "react";
 
 import {
@@ -11,7 +11,7 @@ import {
   type ProviderSummary,
 } from "./model";
 
-type ProviderConsoleHostApi = typeof runtimeConsoleHostApi & {
+type ProviderConsoleHostApi = {
   modules: {
     useMetadata: () => {
       data?: { modules: ProviderModuleMetadataLike[] };
@@ -22,10 +22,10 @@ type ProviderConsoleHostApi = typeof runtimeConsoleHostApi & {
   };
 };
 
-const consoleHostApi = runtimeConsoleHostApi as ProviderConsoleHostApi;
+const configuredHostApi = consoleHostApi as unknown as ProviderConsoleHostApi;
 
 export const AuthProvidersPage = () => {
-  const modulesQuery = consoleHostApi.modules.useMetadata();
+  const modulesQuery = configuredHostApi.modules.useMetadata();
   const summaries = providerSummaries(modulesQuery.data?.modules ?? []);
 
   return (
@@ -83,7 +83,7 @@ function ProviderDetailPage({
   kind: ProviderKind;
   title: string;
 }) {
-  const modulesQuery = consoleHostApi.modules.useMetadata();
+  const modulesQuery = configuredHostApi.modules.useMetadata();
   const detail = providerDetail(modulesQuery.data?.modules ?? [], kind);
 
   return (
