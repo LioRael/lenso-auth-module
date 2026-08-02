@@ -1,4 +1,4 @@
-import type { ConsoleAdminRecord } from "@lenso/runtime-console-api";
+type ConsoleAdminRecord = Record<string, unknown>;
 
 export type AuthDeviceRow = {
   createdAt: string;

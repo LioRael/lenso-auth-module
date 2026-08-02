@@ -266,12 +266,12 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
             label: "Sessions".to_owned(),
             route: "/data/auth/sessions".to_owned(),
             presentation: ConsoleSurfacePresentation::Isolated {
-                entry: "authConsoleModule".to_owned(),
+                entry: "sessions".to_owned(),
 
                 bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
             },
             icon: Some("shield".to_owned()),
-            required_capabilities: vec![AUTH_USERS_READ.to_owned()],
+            required_capabilities: vec![AUTH_USERS_READ.to_owned(), AUTH_USERS_MANAGE.to_owned()],
             navigation: Some(ConsoleNavigation {
                 workspace: auth_workspace(),
                 group: None,
@@ -283,12 +283,12 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
             label: "Users".to_owned(),
             route: "/data/auth/users".to_owned(),
             presentation: ConsoleSurfacePresentation::Isolated {
-                entry: "authConsoleModule".to_owned(),
+                entry: "users".to_owned(),
 
                 bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
             },
             icon: Some("shield".to_owned()),
-            required_capabilities: vec![AUTH_USERS_READ.to_owned()],
+            required_capabilities: vec![AUTH_USERS_READ.to_owned(), AUTH_USERS_MANAGE.to_owned()],
             navigation: Some(ConsoleNavigation {
                 workspace: auth_workspace(),
                 group: None,

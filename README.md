@@ -1,6 +1,6 @@
 # Lenso Auth Module
 
-First-party Lenso auth modules and Runtime Console surface.
+First-party Lenso auth modules and isolated Console UI artifacts.
 
 - `crates/auth`: Rust linked auth module.
 - `crates/auth-anonymous`: Rust anonymous auth provider module.
@@ -11,7 +11,9 @@ First-party Lenso auth modules and Runtime Console surface.
 - `crates/auth-oidc`: Rust OIDC provider module.
 - `crates/auth-password`: Rust password credential module and identifier/password provider.
 - `auth-phone`: first-party phone provider with SMS OTP flows and phone password routes backed by `auth-password` (`crates/auth-phone`).
-- `packages/auth-console`: Runtime Console surface loaded as a runtime bundle.
+- `packages/auth-console`: isolated sessions and users Console UI artifact.
+- `packages/auth-device-console`: isolated device-policy Console UI artifact.
+- `packages/auth-provider-console`: isolated provider Console UI artifact.
 
 ## Packages
 
@@ -24,7 +26,6 @@ First-party Lenso auth modules and Runtime Console surface.
 - Rust: `lenso-module-auth-oidc`
 - Rust: `lenso-module-auth-password`
 - Rust: `lenso-module-auth-phone`
-- npm: `@lenso/auth-console`
 
 ## Redis Session Cache
 
@@ -61,6 +62,6 @@ pnpm install --frozen-lockfile
 pnpm check
 ```
 
-The console package treats `@lenso/runtime-console-api` as a peer dependency.
-Local development resolves it from the sibling `lenso-runtime-console`
-repository.
+The Console UI workspaces are private build inputs. Their outputs are bound to
+the owning Module Release and have no independent npm identity or version. They
+use `@lenso/console-bridge` for the sandboxed host protocol.

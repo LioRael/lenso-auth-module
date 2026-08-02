@@ -1,3 +1,11 @@
+## lenso-module-auth-device@0.1.6
+
+### Changed
+
+Bind every Auth Console UI surface to a semantic entry in its owning Module
+Release, use canonical Module IDs in the Console Bridge, and retire independent
+npm identities for Auth UI artifacts.
+
 ## lenso-module-auth-device@0.1.5
 
 ### Maintenance

@@ -8,6 +8,7 @@ use platform_module::{
 };
 
 pub const MODULE_NAME: &str = "auth-oidc";
+const AUTH_PROVIDERS_READ: &str = "auth.providers.read";
 
 fn auth_workspace() -> ConsoleWorkspaceRef {
     ConsoleWorkspaceRef {
@@ -60,12 +61,12 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
         label: "OIDC Provider".to_owned(),
         route: "/data/auth/providers/oidc".to_owned(),
         presentation: ConsoleSurfacePresentation::Isolated {
-            entry: "authProviderConsoleModule".to_owned(),
+            entry: "oidc-provider".to_owned(),
 
             bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
         },
         icon: Some("shield".to_owned()),
-        required_capabilities: Vec::new(),
+        required_capabilities: vec![AUTH_PROVIDERS_READ.to_owned()],
         navigation: Some(ConsoleNavigation {
             workspace: auth_workspace(),
             group: None,
@@ -77,6 +78,7 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
 pub fn manifest() -> ModuleManifest {
     ModuleManifest::builder(MODULE_NAME)
         .dependencies(vec![auth::module::MODULE_NAME.to_owned()])
+        .capabilities(vec![AUTH_PROVIDERS_READ.to_owned()])
         .http_routes(http_routes())
         .console(console_surfaces())
         .build()

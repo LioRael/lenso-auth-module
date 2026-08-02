@@ -1,4 +1,4 @@
-import { runtimeConsoleHostApi } from "@lenso/runtime-console-api";
+import { consoleHostApi } from "@lenso/auth-console-ui-client";
 import { useState, type FormEvent } from "react";
 
 import {
@@ -19,7 +19,7 @@ import {
   type ConsoleConfigValueLike,
 } from "./model";
 
-type ConsoleConfigHostApi = typeof runtimeConsoleHostApi & {
+type ConsoleConfigHostApi = {
   contributions: {
     useSlot: (
       slotId: string,
@@ -57,7 +57,7 @@ type ConsoleResolvedContributionLike = {
   requiredCapabilities?: readonly string[];
 };
 
-const consoleHostApi = runtimeConsoleHostApi as ConsoleConfigHostApi;
+const configuredHostApi = consoleHostApi as unknown as ConsoleConfigHostApi;
 const AUTH_USERS_DETAIL_ACTIONS_SLOT = "auth.users.detail.actions";
 const RESET_PASSWORD_ACTION = "reset_password";
 
@@ -192,14 +192,14 @@ const AuthSessionsTable = ({
 };
 
 const AuthUsersSurfacePage = () => {
-  const usersQuery = runtimeConsoleHostApi.adminData.useRecords({
+  const usersQuery = consoleHostApi.adminData.useRecords({
     entityName: "users",
     moduleName: "auth",
   });
-  const userAction = runtimeConsoleHostApi.adminData.useInvokeAction();
-  const resetPasswordAction = runtimeConsoleHostApi.adminData.useInvokeAction();
-  const configValuesQuery = consoleHostApi.config.useValues();
-  const writeConfigValue = consoleHostApi.config.useWriteValue();
+  const userAction = consoleHostApi.adminData.useInvokeAction();
+  const resetPasswordAction = consoleHostApi.adminData.useInvokeAction();
+  const configValuesQuery = configuredHostApi.config.useValues();
+  const writeConfigValue = configuredHostApi.config.useWriteValue();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const userRows = authUserRows(usersQuery.data?.data ?? []);
   const summary = authUsersSummary(usersQuery.data?.data ?? []);
@@ -209,7 +209,7 @@ const AuthUsersSurfacePage = () => {
   const selectedConsoleAccess = selectedUser
     ? consoleAdminAccessForUser(selectedUser.id, configValues)
     : null;
-  const detailActions = consoleHostApi.contributions.useSlot(
+  const detailActions = configuredHostApi.contributions.useSlot(
     AUTH_USERS_DETAIL_ACTIONS_SLOT,
     { selected_user: selectedUser }
   );
@@ -414,11 +414,11 @@ const AuthUsersSurfacePage = () => {
 };
 
 const AuthSessionsSurfacePage = () => {
-  const sessionsQuery = runtimeConsoleHostApi.adminData.useRecords({
+  const sessionsQuery = consoleHostApi.adminData.useRecords({
     entityName: "sessions",
     moduleName: "auth",
   });
-  const revokeSession = runtimeConsoleHostApi.adminData.useInvokeAction();
+  const revokeSession = consoleHostApi.adminData.useInvokeAction();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
     null
   );

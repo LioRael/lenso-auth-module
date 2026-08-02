@@ -1,4 +1,4 @@
-@reference "@lenso/runtime-console-api/theme.css";
+@reference "./runtime-console-theme.css";
 
 @layer utilities;
 

@@ -1,4 +1,4 @@
-import { runtimeConsoleHostApi } from "@lenso/runtime-console-api";
+import { consoleHostApi } from "@lenso/auth-console-ui-client";
 import { useState } from "react";
 
 import {
@@ -11,7 +11,7 @@ const DEVICE_MODULE_NAME = "auth-device";
 const DEVICE_ENTITY_NAME = "devices";
 
 export const AuthDevicesPage = () => {
-  const devicesQuery = runtimeConsoleHostApi.adminData.useRecords({
+  const devicesQuery = consoleHostApi.adminData.useRecords({
     entityName: DEVICE_ENTITY_NAME,
     moduleName: DEVICE_MODULE_NAME,
   });
