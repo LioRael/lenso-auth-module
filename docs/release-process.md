@@ -22,6 +22,12 @@ Before enabling the first live publish, configure a crates.io Trusted Publisher
 for each public crate in this repository and verify the repository and workflow
 claims match `.github/workflows/release-plz.yml`.
 
+The release job uses the repository `RELEASE_PLZ_TOKEN` secret because this
+repository's immutable tag ruleset protects package tags from the default
+GitHub Actions token. The token is used only for GitHub tag and release
+metadata; crate publication still uses crates.io Trusted Publishing through
+the workflow's OIDC identity.
+
 ## Local checks
 
 Run the Rust checks and build the private Console artifacts when their source
