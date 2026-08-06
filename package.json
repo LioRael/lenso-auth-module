@@ -6,9 +6,6 @@
   "scripts": {
     "build": "pnpm --dir packages/auth-console build && pnpm --dir packages/auth-device-console build && pnpm --dir packages/auth-provider-console build",
     "check": "pnpm test && pnpm typecheck && pnpm build",
-    "release:intent-check": "node scripts/release-plan.mjs --check-intent",
-    "release:plan": "node scripts/release-plan.mjs",
-    "release:verify": "pnpm check && node scripts/release-plan.mjs --verify",
     "test": "vitest run packages/auth-console/src packages/auth-device-console/src packages/auth-provider-console/src",
     "typecheck": "tsc -b --pretty false"
   },
