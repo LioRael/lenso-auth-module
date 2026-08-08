@@ -1373,9 +1373,9 @@ dependencies = [
 
 [[package]]
 name = "lenso-contracts"
-version = "0.3.20"
+version = "0.3.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "163b019b411b23f3d0f665049d1a29f44c3a8289919c736116cfb2a35ac2eb7a"
+checksum = "0a2ce5203f51c20cde69cf721c41a8aa604044e6bf687441a806966352cecf54"
 dependencies = [
  "chrono",
  "schemars",
@@ -1578,9 +1578,9 @@ dependencies = [
 
 [[package]]
 name = "lenso-platform-core"
-version = "0.1.20"
+version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b89a89a08eb8c80a62acdaa765c425bf2e0c1efb64b1072d96715d13da49419c"
+checksum = "6e3e5a1030c0998e49a54697ff14ac641d6bbb8759fc585b9301473f2117819a"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -1606,9 +1606,9 @@ dependencies = [
 
 [[package]]
 name = "lenso-platform-http"
-version = "0.1.19"
+version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00af529ebb1af2d8050badbe68a8b59d525b75c31c74d0646631bf8996299652"
+checksum = "65fa2df2b45390a8ada6b9e6004cdc64afa735998adde5d6128924226deb29ea"
 dependencies = [
  "async-trait",
  "axum",
@@ -1627,9 +1627,9 @@ dependencies = [
 
 [[package]]
 name = "lenso-platform-module"
-version = "0.1.20"
+version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fae1b1847a712ee1758fdf1db96099fb8be8d05186638a16d00509ca86dcec3b"
+checksum = "834859b821e4c27c274e60ceb8863ed731c4c7a161fd9658172f269d3f2ccfd5"
 dependencies = [
  "async-trait",
  "lenso-contracts",
@@ -1643,9 +1643,9 @@ dependencies = [
 
 [[package]]
 name = "lenso-platform-runtime"
-version = "0.1.17"
+version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b3ccd6dca1cae0f38750ac26206e2137aea2af1003f7212467c8dcf841af8fd"
+checksum = "d80ad2cf83d9dc675365a10d695671bfc0256d1d155bb187a3e18d08a1548255"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1660,9 +1660,9 @@ dependencies = [
 
 [[package]]
 name = "lenso-platform-testing"
-version = "0.1.16"
+version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90fe9f95588bb06854c30ddfc78376a7851adbec822f357e5c7f93b9f9e56f2c"
+checksum = "37ef4d299bd35d233013573e7b78e3032e817fce7ebcb213523eaca11be42eb4"
 dependencies = [
  "chrono",
  "lenso-platform-core",
