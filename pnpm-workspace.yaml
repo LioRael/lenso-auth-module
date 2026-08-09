@@ -1,6 +1,5 @@
 packages:
   - "packages/*"
 minimumReleaseAgeExclude:
-  - '@lenso/console-bridge@0.1.0'
-overrides:
-  '@lenso/console-bridge': 'link:../lenso-runtime-console/packages/console-bridge'
+  - '@lenso/console-module-api@0.1.1'
+  - '@lenso/console-ui@0.2.0'

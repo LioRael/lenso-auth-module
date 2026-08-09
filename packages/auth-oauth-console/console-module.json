@@ -1,0 +1,20 @@
+{
+  "protocol": "lenso.console-module.v1",
+  "moduleId": "lenso/auth-oauth",
+  "hostApi": "^1.0.0",
+  "consoleUi": "^2.0.0",
+  "surfaces": [
+    {
+      "id": "providers",
+      "path": "/data/auth/providers",
+      "label": "Providers",
+      "area": "data",
+      "requiredCapabilities": ["auth.providers.read"],
+      "icon": "network",
+      "navigation": {
+        "workspace": { "id": "auth", "label": "Auth", "icon": "shield" },
+        "order": 80
+      }
+    }
+  ]
+}

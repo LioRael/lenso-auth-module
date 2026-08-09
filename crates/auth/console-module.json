@@ -1,0 +1,10 @@
+{
+  "protocol": "lenso.console-module.v1",
+  "moduleId": "lenso/auth",
+  "hostApi": "^1.0.0",
+  "consoleUi": "^2.0.0",
+  "surfaces": [
+    { "id": "sessions", "path": "/data/auth/sessions", "label": "Sessions", "area": "data", "requiredCapabilities": ["auth.sessions.read"], "icon": "shield", "navigation": { "workspace": { "id": "auth", "label": "Auth", "icon": "shield" }, "order": 50 } },
+    { "id": "users", "path": "/data/auth/users", "label": "Users", "area": "data", "requiredCapabilities": ["auth.users.read"], "icon": "shield", "navigation": { "workspace": { "id": "auth", "label": "Auth", "icon": "shield" }, "order": 60 } }
+  ]
+}

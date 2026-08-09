@@ -1,0 +1,9 @@
+{
+  "protocol": "lenso.console-module.v1",
+  "moduleId": "lenso/auth-github",
+  "hostApi": "^1.0.0",
+  "consoleUi": "^2.0.0",
+  "surfaces": [
+    { "id": "github-provider", "path": "/data/auth/providers/github", "label": "GitHub", "area": "data", "requiredCapabilities": ["auth.providers.read"], "icon": "network", "navigation": { "workspace": { "id": "auth", "label": "Auth", "icon": "shield" }, "order": 81 } }
+  ]
+}

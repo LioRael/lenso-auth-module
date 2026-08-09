@@ -1,28 +1,31 @@
 export type ProviderKind = "github" | "google" | "oidc";
 
 export type ModuleHttpRouteLike = {
-  display_name?: string | null;
-  method?: string;
-  path?: string;
-  story_title?: string | null;
+  capability?: string;
+  method: string;
+  path: string;
 };
 
 export type ProviderModuleMetadataLike = {
-  dependencies?: readonly string[];
-  error?: string | null;
-  http_routes?: readonly ModuleHttpRouteLike[];
-  module_name?: string;
-  status?: "loaded" | "error";
+  delivery: "linked" | "service";
+  dependencyModuleIds?: readonly string[];
+  moduleId: string;
+  releaseDigest: string;
+  routes?: readonly ModuleHttpRouteLike[];
+  runtimeStatus: "active" | "disabled" | "degraded" | "failed";
+  version: string;
 };
 
 export type ProviderSummary = {
   dependencies: readonly string[];
-  error: string;
+  delivery: ProviderModuleMetadataLike["delivery"] | "missing";
   kind: ProviderKind;
   label: string;
   moduleName: string;
   routeCount: number;
   status: "loaded" | "error" | "missing";
+  runtimeStatus: ProviderModuleMetadataLike["runtimeStatus"] | "missing";
+  version: string;
 };
 
 export const providerDefinitions = [
@@ -48,16 +51,23 @@ export function providerSummaries(
 ): ProviderSummary[] {
   return providerDefinitions.map((provider) => {
     const metadata = modules.find(
-      (module) => module.module_name === provider.moduleName
+      (module) => module.moduleId.replace(/^lenso\//u, "") === provider.moduleName
     );
+    const status = metadata
+      ? metadata.runtimeStatus === "active"
+        ? "loaded"
+        : "error"
+      : "missing";
     return {
-      dependencies: metadata?.dependencies ?? [],
-      error: metadata?.error ?? "-",
+      dependencies: metadata?.dependencyModuleIds ?? [],
+      delivery: metadata?.delivery ?? "missing",
       kind: provider.kind,
       label: provider.label,
       moduleName: provider.moduleName,
-      routeCount: metadata?.http_routes?.length ?? 0,
-      status: metadata?.status ?? "missing",
+      routeCount: metadata?.routes?.length ?? 0,
+      runtimeStatus: metadata?.runtimeStatus ?? "missing",
+      status,
+      version: metadata?.version ?? "-",
     };
   });
 }
@@ -70,14 +80,15 @@ export function providerDetail(
     (provider) => provider.kind === kind
   );
   const metadata = modules.find(
-    (module) => module.module_name === summary?.moduleName
+    (module) =>
+      module.moduleId.replace(/^lenso\//u, "") === summary?.moduleName
   );
   return {
-    routes: metadata?.http_routes ?? [],
+    routes: metadata?.routes ?? [],
     summary: summary ?? null,
   };
 }
 
 export function routeLabel(route: ModuleHttpRouteLike): string {
-  return route.display_name || route.story_title || route.path || "-";
+  return route.path;
 }

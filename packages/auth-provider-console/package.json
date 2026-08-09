@@ -1,7 +1,7 @@
 {
-  "name": "@lenso/auth-provider-console",
+  "name": "@lenso/auth-provider-console-ui",
   "version": "0.0.0",
-  "description": "Private build input for auth provider Module Release Console UI artifacts.",
+  "description": "Shared source components for the owning Auth provider Console artifacts.",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -11,29 +11,12 @@
     "directory": "packages/auth-provider-console"
   },
   "homepage": "https://github.com/LioRael/lenso-auth-module#readme",
-  "files": [
-    "dist",
-    "console-surface.json",
-    "package.json"
-  ],
-  "scripts": {
-    "build": "vite build"
-  },
   "exports": {
-    ".": "./dist/index.html",
-    "./artifact": "./dist/",
-    "./console-surface": "./console-surface.json"
-  },
-  "lenso": {
-    "console": {
-      "artifact": "./dist/",
-      "bridgeProtocol": "lenso.console-bridge.v1",
-      "surface": "./console-surface.json"
-    }
+    ".": "./src/index.ts"
   },
   "dependencies": {
-    "@lenso/auth-console-ui-client": "workspace:*",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "@lenso/auth-console-shared": "workspace:*",
+    "@lenso/console-ui": "^0.2.0",
+    "react": "^19.1.0"
   }
 }

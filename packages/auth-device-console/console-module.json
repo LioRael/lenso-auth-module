@@ -1,0 +1,20 @@
+{
+  "protocol": "lenso.console-module.v1",
+  "moduleId": "lenso/auth-device",
+  "hostApi": "^1.0.0",
+  "consoleUi": "^2.0.0",
+  "surfaces": [
+    {
+      "id": "devices",
+      "path": "/data/auth/devices",
+      "label": "Devices",
+      "area": "data",
+      "requiredCapabilities": ["auth_device.devices.read"],
+      "icon": "network",
+      "navigation": {
+        "workspace": { "id": "auth", "label": "Auth", "icon": "shield" },
+        "order": 70
+      }
+    }
+  ]
+}

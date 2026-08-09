@@ -5,9 +5,9 @@ use crate::repositories::PostgresAuthDeviceRepository;
 use auth::session_policy::{AuthHostExtension, AuthSessionPolicy};
 use platform_core::AppContext;
 use platform_module::{
-    AdminSchema, CONSOLE_BRIDGE_PROTOCOL, ConsoleNavigation, ConsoleSurface,
-    ConsoleSurfacePresentation, ConsoleWorkspaceRef, EntitySchema, FieldSchema, FieldType,
-    HostLinkedModule, LinkedBinding, Module, ModuleManifest,
+    AdminSchema, ConsoleNavigation, ConsoleSurface, ConsoleSurfacePresentation,
+    ConsoleWorkspaceRef, EntitySchema, FieldSchema, FieldType, HostLinkedModule, LinkedBinding,
+    Module, ModuleManifest,
 };
 use std::sync::Arc;
 
@@ -87,10 +87,8 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
         name: "devices".to_owned(),
         label: "Devices".to_owned(),
         route: "/data/auth/devices".to_owned(),
-        presentation: ConsoleSurfacePresentation::Isolated {
+        presentation: ConsoleSurfacePresentation::Esm {
             entry: "devices".to_owned(),
-
-            bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
         },
         icon: Some("network".to_owned()),
         required_capabilities: vec![AUTH_DEVICE_READ.to_owned()],
@@ -161,5 +159,17 @@ mod tests {
                 .all(|lint| lint.severity == ModuleManifestLintSeverity::Ok),
             "auth-device manifest should not have warning/error lints: {lints:?}"
         );
+    }
+
+    #[test]
+    fn generated_console_manifest_matches_checked_in_artifact_manifest() {
+        let generated =
+            serde_json::to_value(manifest().console_module_manifest("^1.0.0", "^2.0.0"))
+                .expect("console module manifest should serialize");
+        let checked_in: serde_json::Value =
+            serde_json::from_str(include_str!("../console-module.json"))
+                .expect("console module manifest fixture should be valid JSON");
+
+        assert_eq!(generated, checked_in);
     }
 }

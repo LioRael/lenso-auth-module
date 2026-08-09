@@ -1,7 +1,7 @@
 {
   "name": "@lenso/auth-console",
   "version": "0.0.0",
-  "description": "Private build input for the auth Module Release Console UI artifact.",
+  "description": "Auth Console UI ESM artifact for the owning auth Module Release.",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -13,26 +13,30 @@
   "homepage": "https://github.com/LioRael/lenso-auth-module#readme",
   "files": [
     "dist",
-    "console-surface.json",
+    "console-module.json",
     "package.json"
   ],
   "scripts": {
-    "build": "vite build"
+    "build": "vite build",
+    "test": "vitest run src"
   },
   "exports": {
-    ".": "./dist/index.html",
+    ".": "./dist/index.js",
     "./artifact": "./dist/",
-    "./console-surface": "./console-surface.json"
+    "./manifest": "./console-module.json"
   },
   "lenso": {
     "console": {
       "artifact": "./dist/",
-      "bridgeProtocol": "lenso.console-bridge.v1",
-      "surface": "./console-surface.json"
+      "format": "console_ui_esm",
+      "entry": "index.js",
+      "manifest": "./console-module.json"
     }
   },
   "dependencies": {
-    "@lenso/auth-console-ui-client": "workspace:*",
+    "@lenso/auth-console-shared": "workspace:*",
+    "@lenso/console-module-api": ">=0.1.1 <0.3.0",
+    "@lenso/console-ui": "^0.2.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   }

@@ -4,13 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "pnpm --dir packages/auth-console build && pnpm --dir packages/auth-device-console build && pnpm --dir packages/auth-provider-console build",
-    "check": "pnpm test && pnpm typecheck && pnpm build",
-    "test": "vitest run packages/auth-console/src packages/auth-device-console/src packages/auth-provider-console/src",
+    "build": "pnpm --dir packages/auth-console build && pnpm --dir packages/auth-device-console build && pnpm --dir packages/auth-oauth-console build && pnpm --dir packages/auth-github-console build && pnpm --dir packages/auth-google-console build && pnpm --dir packages/auth-oidc-console build",
+    "check": "pnpm check:manifests && pnpm test && pnpm typecheck && pnpm build",
+    "check:manifests": "node scripts/verify-console-manifests.mjs",
+    "test": "vitest run packages/auth-console/src packages/auth-device-console/src packages/auth-provider-console/src packages/auth-oauth-console/src packages/auth-github-console/src packages/auth-google-console/src packages/auth-oidc-console/src",
     "typecheck": "tsc -b --pretty false"
   },
   "devDependencies": {
-    "@lenso/console-bridge": "^0.1.0",
+    "@lenso/console-module-api": ">=0.1.1 <0.3.0",
+    "@lenso/console-ui": "^0.2.0",
     "@tailwindcss/vite": "^4.3.1",
     "@types/node": "^25.9.2",
     "@types/react": "^19.1.0",

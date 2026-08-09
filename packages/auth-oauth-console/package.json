@@ -1,0 +1,30 @@
+{
+  "name": "@lenso/auth-oauth-console",
+  "version": "0.0.0",
+  "description": "Auth OAuth Console UI ESM artifact for the owning auth-oauth Module Release.",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "files": ["dist", "console-module.json", "package.json"],
+  "scripts": { "build": "vite build", "test": "vitest run src" },
+  "exports": {
+    ".": "./dist/index.js",
+    "./artifact": "./dist/",
+    "./manifest": "./console-module.json"
+  },
+  "lenso": {
+    "console": {
+      "artifact": "./dist/",
+      "format": "console_ui_esm",
+      "entry": "index.js",
+      "manifest": "./console-module.json"
+    }
+  },
+  "dependencies": {
+    "@lenso/auth-console-shared": "workspace:*",
+    "@lenso/auth-provider-console-ui": "workspace:*",
+    "@lenso/console-module-api": ">=0.1.1 <0.3.0",
+    "@lenso/console-ui": "^0.2.0",
+    "react": "^19.1.0"
+  }
+}
