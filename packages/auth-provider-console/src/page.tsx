@@ -1,4 +1,4 @@
-import { consoleHostApi } from "@lenso/auth-console-ui-client";
+import { useManagedServiceInventory } from "@lenso/auth-console-shared";
 import type { ReactNode } from "react";
 
 import {
@@ -11,21 +11,8 @@ import {
   type ProviderSummary,
 } from "./model";
 
-type ProviderConsoleHostApi = {
-  modules: {
-    useMetadata: () => {
-      data?: { modules: ProviderModuleMetadataLike[] };
-      error: unknown;
-      isError: boolean;
-      isPending: boolean;
-    };
-  };
-};
-
-const configuredHostApi = consoleHostApi as unknown as ProviderConsoleHostApi;
-
 export const AuthProvidersPage = () => {
-  const modulesQuery = configuredHostApi.modules.useMetadata();
+  const modulesQuery = useManagedServiceInventory();
   const summaries = providerSummaries(modulesQuery.data?.modules ?? []);
 
   return (
@@ -83,7 +70,7 @@ function ProviderDetailPage({
   kind: ProviderKind;
   title: string;
 }) {
-  const modulesQuery = configuredHostApi.modules.useMetadata();
+  const modulesQuery = useManagedServiceInventory();
   const detail = providerDetail(modulesQuery.data?.modules ?? [], kind);
 
   return (
@@ -110,7 +97,12 @@ function ProviderDetailPage({
               label="dependencies"
               value={detail.summary.dependencies.join(", ") || "-"}
             />
-            <Metric label="error" value={detail.summary.error} />
+            <Metric label="version" value={detail.summary.version} />
+            <Metric label="delivery" value={detail.summary.delivery} />
+            <Metric
+              label="runtime"
+              value={detail.summary.runtimeStatus}
+            />
           </aside>
         </div>
       ) : (
@@ -169,7 +161,7 @@ function ProviderShell({
 
 function ProviderSummaryRow({ provider }: { provider: ProviderSummary }) {
   return (
-    <div className="grid min-h-11 min-w-180 grid-cols-[minmax(180px,1fr)_120px_120px_minmax(180px,0.8fr)] items-center border-b border-(--border-subtle) px-3 py-2 font-mono text-[11px]">
+    <div className="grid min-h-11 min-w-220 grid-cols-[minmax(180px,1fr)_120px_120px_minmax(180px,0.8fr)_100px] items-center border-b border-(--border-subtle) px-3 py-2 font-mono text-[11px]">
       <span className="truncate text-(--foreground)">{provider.label}</span>
       <StatusPill status={provider.status} />
       <span className="truncate text-(--muted)">
@@ -178,6 +170,7 @@ function ProviderSummaryRow({ provider }: { provider: ProviderSummary }) {
       <span className="truncate text-(--muted)">
         {provider.dependencies.join(", ") || "-"}
       </span>
+      <span className="truncate text-(--muted)">{provider.version}</span>
     </div>
   );
 }
@@ -195,7 +188,7 @@ function ProviderRoutesTable({
       <div className="grid min-w-210 grid-cols-[80px_minmax(220px,1fr)_minmax(180px,0.8fr)] border-b border-(--border-subtle) bg-(--surface) px-3 py-1.5 font-mono text-[10px] text-(--muted)">
         <span>Method</span>
         <span>Path</span>
-        <span>Name</span>
+        <span>Capability</span>
       </div>
       {routes.map((route, index) => (
         <div
@@ -206,7 +199,9 @@ function ProviderRoutesTable({
             {route.method ?? "-"}
           </span>
           <span className="truncate text-(--muted)">{route.path ?? "-"}</span>
-          <span className="truncate text-(--muted)">{routeLabel(route)}</span>
+          <span className="truncate text-(--muted)">
+            {route.capability ?? routeLabel(route)}
+          </span>
         </div>
       ))}
     </div>

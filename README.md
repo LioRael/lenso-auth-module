@@ -1,6 +1,6 @@
 # Lenso Auth Module
 
-First-party Lenso auth modules and isolated Console UI artifacts.
+First-party Lenso auth modules and verified Console UI ESM artifacts.
 
 - `crates/auth`: Rust linked auth module.
 - `crates/auth-anonymous`: Rust anonymous auth provider module.
@@ -11,9 +11,13 @@ First-party Lenso auth modules and isolated Console UI artifacts.
 - `crates/auth-oidc`: Rust OIDC provider module.
 - `crates/auth-password`: Rust password credential module and identifier/password provider.
 - `auth-phone`: first-party phone provider with SMS OTP flows and phone password routes backed by `auth-password` (`crates/auth-phone`).
-- `packages/auth-console`: isolated sessions and users Console UI artifact.
-- `packages/auth-device-console`: isolated device-policy Console UI artifact.
-- `packages/auth-provider-console`: isolated provider Console UI artifact.
+- `packages/auth-console`: `lenso/auth` Console UI ESM artifact.
+- `packages/auth-device-console`: `lenso/auth-device` Console UI ESM artifact.
+- `packages/auth-oauth-console`: `lenso/auth-oauth` Console UI ESM artifact.
+- `packages/auth-github-console`: `lenso/auth-github` Console UI ESM artifact.
+- `packages/auth-google-console`: `lenso/auth-google` Console UI ESM artifact.
+- `packages/auth-oidc-console`: `lenso/auth-oidc` Console UI ESM artifact.
+- `packages/auth-provider-console`: shared provider surface source used by the four owning artifacts; it is not a Module Release artifact.
 
 ## Packages
 
@@ -62,6 +66,9 @@ pnpm install --frozen-lockfile
 pnpm check
 ```
 
-The Console UI workspaces are private build inputs. Their outputs are bound to
-the owning Module Release and have no independent npm identity or version. They
-use `@lenso/console-bridge` for the sandboxed host protocol.
+Each Console UI package emits an immutable `console_ui_esm` entry point and its
+Rust-owned `console-module.json` manifest. The artifact is bound to the owning
+Module Release; shared provider source does not create a family-level release
+identity. Runtime data, actions, inventory, and contributions use the public
+Console Module API and the explicit Managed Service Context supplied by the
+Console host.

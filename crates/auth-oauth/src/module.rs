@@ -1,8 +1,8 @@
 use crate::migrations::AUTH_OAUTH_MIGRATIONS;
 use platform_core::AppContext;
 use platform_module::{
-    CONSOLE_BRIDGE_PROTOCOL, ConsoleNavigation, ConsoleSurface, ConsoleSurfacePresentation,
-    ConsoleWorkspaceRef, HostLinkedModule, LinkedBinding, Module, ModuleManifest,
+    ConsoleNavigation, ConsoleSurface, ConsoleSurfacePresentation, ConsoleWorkspaceRef,
+    HostLinkedModule, LinkedBinding, Module, ModuleManifest,
 };
 
 pub const MODULE_NAME: &str = "auth-oauth";
@@ -21,10 +21,8 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
         name: "providers".to_owned(),
         label: "Providers".to_owned(),
         route: "/data/auth/providers".to_owned(),
-        presentation: ConsoleSurfacePresentation::Isolated {
+        presentation: ConsoleSurfacePresentation::Esm {
             entry: "providers".to_owned(),
-
-            bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
         },
         icon: Some("network".to_owned()),
         required_capabilities: vec![AUTH_PROVIDERS_READ.to_owned()],
@@ -83,5 +81,17 @@ mod tests {
                 .all(|lint| lint.severity == ModuleManifestLintSeverity::Ok),
             "auth-oauth manifest should not have warning/error lints: {lints:?}"
         );
+    }
+
+    #[test]
+    fn generated_console_manifest_matches_checked_in_artifact_manifest() {
+        let generated =
+            serde_json::to_value(manifest().console_module_manifest("^1.0.0", "^2.0.0"))
+                .expect("console module manifest should serialize");
+        let checked_in: serde_json::Value =
+            serde_json::from_str(include_str!("../console-module.json"))
+                .expect("console module manifest fixture should be valid JSON");
+
+        assert_eq!(generated, checked_in);
     }
 }

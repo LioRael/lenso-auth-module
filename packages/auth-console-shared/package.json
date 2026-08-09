@@ -1,0 +1,14 @@
+{
+  "name": "@lenso/auth-console-shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@lenso/console-module-api": ">=0.1.1 <0.3.0",
+    "@lenso/console-ui": "^0.2.0",
+    "react": "^19.1.0"
+  }
+}

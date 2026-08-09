@@ -1,65 +1,29 @@
-import { consoleHostApi } from "@lenso/auth-console-ui-client";
+import {
+  hasCapabilities,
+  useConsoleAction,
+  useConsoleRecords,
+  useUserActionContributions,
+  type ManagedActionContribution,
+} from "@lenso/auth-console-shared";
+import {
+  ConsolePage,
+  SurfaceRoot,
+  useConsoleClient,
+} from "@lenso/console-ui";
 import { useState, type FormEvent } from "react";
 
 import {
-  CONSOLE_ACCESS_PRESETS,
-  CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY,
-  CONSOLE_ADMIN_USER_SCOPES_SERVICE,
   authSessionRows,
   authSessionsSummary,
   authUserRows,
   authUsersSummary,
-  consoleAccessPresetId,
-  consoleAdminAccessForUser,
-  consoleAdminUserScopes,
-  setConsoleUserScopes,
   type AuthSessionRow,
   type AuthUserRow,
-  type ConsoleAdminAccess,
-  type ConsoleConfigValueLike,
 } from "./model";
 
-type ConsoleConfigHostApi = {
-  contributions: {
-    useSlot: (
-      slotId: string,
-      context: Record<string, unknown>
-    ) => ConsoleResolvedContributionLike[];
-  };
-  config: {
-    useValues: () => {
-      data?: { data: ConsoleConfigValueLike[] };
-      error: unknown;
-      isError: boolean;
-      isPending: boolean;
-    };
-    useWriteValue: () => {
-      error: unknown;
-      isError: boolean;
-      isPending: boolean;
-      mutate: (request: {
-        key: string;
-        service: string;
-        value: unknown;
-      }) => void;
-    };
-  };
-};
-
-type ConsoleResolvedContributionLike = {
-  kind: "admin_action";
-  key: string;
-  label: string;
-  moduleName: string;
-  actionName: string;
-  input: Record<string, unknown>;
-  icon?: string | null;
-  requiredCapabilities?: readonly string[];
-};
-
-const configuredHostApi = consoleHostApi as unknown as ConsoleConfigHostApi;
-const AUTH_USERS_DETAIL_ACTIONS_SLOT = "auth.users.detail.actions";
-const RESET_PASSWORD_ACTION = "reset_password";
+const AUTH_MODULE = "auth";
+const AUTH_USERS_MANAGE = "auth.users.manage";
+const AUTH_SESSIONS_REVOKE = "auth.sessions.revoke";
 
 const AuthUsersTable = ({
   error,
@@ -77,12 +41,7 @@ const AuthUsersTable = ({
   selectedUser: AuthUserRow | null;
 }) => {
   if (isError) {
-    return (
-      <PanelMessage
-        tone="error"
-        value={String((error as Error | undefined)?.message)}
-      />
-    );
+    return <PanelMessage tone="error" value={errorMessage(error)} />;
   }
   if (isPending) {
     return <PanelMessage value="Loading auth users" />;
@@ -143,12 +102,7 @@ const AuthSessionsTable = ({
   selectedSession: AuthSessionRow | null;
 }) => {
   if (isError) {
-    return (
-      <PanelMessage
-        tone="error"
-        value={String((error as Error | undefined)?.message)}
-      />
-    );
+    return <PanelMessage tone="error" value={errorMessage(error)} />;
   }
   if (isPending) {
     return <PanelMessage value="Loading auth sessions" />;
@@ -181,8 +135,12 @@ const AuthSessionsTable = ({
           >
             <span className="truncate text-(--foreground)">{session.id}</span>
             <span className="truncate text-(--muted)">{session.userId}</span>
-            <span className="truncate text-(--muted)">{session.createdAt}</span>
-            <span className="truncate text-(--muted)">{session.expiresAt}</span>
+            <span className="truncate text-(--muted)">
+              {session.createdAt}
+            </span>
+            <span className="truncate text-(--muted)">
+              {session.expiresAt}
+            </span>
             <StatusPill status={session.status} />
           </button>
         );
@@ -192,56 +150,36 @@ const AuthSessionsTable = ({
 };
 
 const AuthUsersSurfacePage = () => {
-  const usersQuery = consoleHostApi.adminData.useRecords({
-    entityName: "users",
-    moduleName: "auth",
-  });
-  const userAction = consoleHostApi.adminData.useInvokeAction();
-  const resetPasswordAction = consoleHostApi.adminData.useInvokeAction();
-  const configValuesQuery = configuredHostApi.config.useValues();
-  const writeConfigValue = configuredHostApi.config.useWriteValue();
+  const client = useConsoleClient();
+  const usersQuery = useConsoleRecords("users");
+  const userAction = useConsoleAction();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const userRows = authUserRows(usersQuery.data?.data ?? []);
   const summary = authUsersSummary(usersQuery.data?.data ?? []);
-  const configValues = configValuesQuery.data?.data ?? [];
   const selectedUser =
     userRows.find((user) => user.id === selectedUserId) ?? userRows[0] ?? null;
-  const selectedConsoleAccess = selectedUser
-    ? consoleAdminAccessForUser(selectedUser.id, configValues)
-    : null;
-  const detailActions = configuredHostApi.contributions.useSlot(
-    AUTH_USERS_DETAIL_ACTIONS_SLOT,
-    { selected_user: selectedUser }
+  const contributionsQuery = useUserActionContributions(
+    selectedUser?.id ?? null
   );
-  const resetPasswordContribution =
-    detailActions.find(
-      (contribution) =>
-        contribution.kind === "admin_action" &&
-        contribution.actionName === RESET_PASSWORD_ACTION
-    ) ?? null;
-  const updateConsoleScopes = (scopes: readonly string[]) => {
-    if (!selectedUser) {
-      return;
-    }
-    writeConfigValue.mutate({
-      key: CONSOLE_ADMIN_USER_SCOPES_CONFIG_KEY,
-      service: CONSOLE_ADMIN_USER_SCOPES_SERVICE,
-      value: setConsoleUserScopes(
-        consoleAdminUserScopes(configValues),
-        selectedUser.id,
-        scopes
-      ),
-    });
-  };
+  const resetContribution = contributionsQuery.data?.find(
+    (contribution) =>
+      contribution.action.name === "reset_password" ||
+      contribution.action.name === "reset_phone_password"
+  );
+  const canManage = client.capabilities.has(AUTH_USERS_MANAGE);
+  const canReset = resetContribution
+    ? hasCapabilities(client, resetContribution.requiredCapabilities)
+    : false;
+
   const disableUser = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedUser) {
+    if (!selectedUser || !canManage) {
       return;
     }
     const form = new FormData(event.currentTarget);
     const reason = String(form.get("reason") ?? "").trim();
     const until = String(form.get("disabled_until") ?? "").trim();
-    const input: Record<string, string> = { user_id: selectedUser.id };
+    const input: Record<string, unknown> = { user_id: selectedUser.id };
     if (reason.length > 0) {
       input.reason = reason;
     }
@@ -251,12 +189,13 @@ const AuthUsersSurfacePage = () => {
     userAction.mutate({
       actionName: "disable_user",
       input,
-      moduleName: "auth",
+      moduleName: AUTH_MODULE,
     });
   };
+
   const resetPassword = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedUser || !resetPasswordContribution) {
+    if (!selectedUser || !resetContribution || !canReset) {
       return;
     }
     const form = new FormData(event.currentTarget);
@@ -264,161 +203,147 @@ const AuthUsersSurfacePage = () => {
     if (newPassword.length === 0) {
       return;
     }
-    resetPasswordAction.mutate({
-      actionName: resetPasswordContribution.actionName,
-      input: {
-        ...resetPasswordContribution.input,
-        new_password: newPassword,
-      },
-      moduleName: resetPasswordContribution.moduleName,
+    userAction.mutate({
+      actionName: resetContribution.action.name,
+      input: contributionInput(resetContribution, selectedUser.id, newPassword),
+      moduleName: resetContribution.action.module,
     });
     event.currentTarget.reset();
   };
 
   return (
-    <main className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden bg-(--background) text-(--foreground)">
-      <header className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <h1 className="font-mono text-[13px] font-semibold">Users</h1>
-          <span className="ml-auto font-mono text-[10px] text-(--muted)">
-            {userRows.length} records
-          </span>
-        </div>
-      </header>
-
-      <div className="grid border-b border-(--border-subtle) bg-(--surface) md:grid-cols-3">
-        {[
-          ["total", summary.total],
-          ["active", summary.active],
-          ["disabled", summary.disabled],
-        ].map(([label, value]) => (
-          <div
-            className="grid grid-cols-[minmax(0,1fr)_auto] border-r border-(--border-subtle) px-3 py-2 font-mono text-[10px] last:border-r-0"
-            key={label}
-          >
-            <span className="text-(--muted)">{label}</span>
-            <span className="text-[13px] font-semibold text-(--foreground)">
-              {value}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_clamp(280px,28vw,380px)] overflow-hidden">
-        <section className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-r border-(--border-subtle)">
-          <SectionHeader meta={`${userRows.length} records`} title="Users" />
-          <AuthUsersTable
-            error={usersQuery.error}
-            isError={usersQuery.isError}
-            isPending={usersQuery.isPending}
-            onSelect={setSelectedUserId}
-            rows={userRows}
-            selectedUser={selectedUser}
-          />
-        </section>
-
-        <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-(--sidebar)">
-          <SectionHeader
-            meta={selectedUser ? selectedUser.status : "no selection"}
-            title={selectedUser?.id ?? "User"}
-          />
-          {selectedUser ? (
-            <div className="min-h-0 overflow-auto">
-              <Metric label="created" value={selectedUser.createdAt} />
-              <Metric label="disabled" value={selectedUser.disabledAt} />
-              <Metric label="reason" value={selectedUser.disabledReason} />
-              <Metric label="until" value={selectedUser.disabledUntil} />
-              <Metric label="status" value={selectedUser.status} />
-              <ConsoleAccessPanel
-                access={selectedConsoleAccess}
-                error={configValuesQuery.error}
-                isError={configValuesQuery.isError}
-                isPending={configValuesQuery.isPending}
-                isWriting={writeConfigValue.isPending}
-                onChange={updateConsoleScopes}
-                writeError={writeConfigValue.error}
-                writeIsError={writeConfigValue.isError}
-              />
-              {resetPasswordContribution ? (
-                <UserActionContributionPanel
-                  contribution={resetPasswordContribution}
-                  error={resetPasswordAction.error}
-                  isError={resetPasswordAction.isError}
-                  isPending={resetPasswordAction.isPending}
-                  onSubmit={resetPassword}
-                />
-              ) : null}
-              <div className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
-                {selectedUser.status === "active" ? (
-                  <form
-                    className="grid gap-2"
-                    key={selectedUser.id}
-                    onSubmit={disableUser}
-                  >
-                    <label className="grid gap-1 font-mono text-[10px] text-(--muted)">
-                      Reason
-                      <input
-                        aria-label="Disable reason"
-                        className="h-7 border border-(--border-subtle) bg-(--bg-control) px-2 text-[11px] text-(--foreground)"
-                        name="reason"
-                        type="text"
-                      />
-                    </label>
-                    <label className="grid gap-1 font-mono text-[10px] text-(--muted)">
-                      Until
-                      <input
-                        aria-label="Disable until"
-                        className="h-7 border border-(--border-subtle) bg-(--bg-control) px-2 text-[11px] text-(--foreground)"
-                        name="disabled_until"
-                        type="datetime-local"
-                      />
-                    </label>
-                    <button
-                      className="h-7 justify-self-start border border-[var(--tone-error-border)] bg-[var(--tone-error-bg)] px-2 font-mono text-[11px] font-semibold text-(--tone-error-fg) disabled:opacity-45"
-                      disabled={userAction.isPending}
-                      type="submit"
-                    >
-                      {userAction.isPending ? "Disabling" : "Disable"}
-                    </button>
-                  </form>
-                ) : (
-                  <button
-                    className="h-7 border border-[var(--tone-success-border)] bg-[var(--tone-success-bg)] px-2 font-mono text-[11px] font-semibold text-(--tone-success-fg) disabled:opacity-45"
-                    disabled={userAction.isPending}
-                    onClick={() =>
-                      userAction.mutate({
-                        actionName: "enable_user",
-                        input: { user_id: selectedUser.id },
-                        moduleName: "auth",
-                      })
-                    }
-                    type="button"
-                  >
-                    {userAction.isPending ? "Enabling" : "Enable"}
-                  </button>
-                )}
-                {userAction.isError ? (
-                  <div className="mt-1 truncate font-mono text-[10px] text-(--error)">
-                    {String((userAction.error as Error).message)}
-                  </div>
-                ) : null}
-              </div>
+    <SurfaceRoot moduleId={AUTH_MODULE} surfaceId="users">
+      <ConsolePage scroll={false}>
+        <main className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden bg-(--background) text-(--foreground)">
+          <header className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="font-mono text-[13px] font-semibold">Users</h1>
+              <span className="ml-auto font-mono text-[10px] text-(--muted)">
+                {userRows.length} records
+              </span>
             </div>
-          ) : (
-            <PanelMessage value="Select a user" />
-          )}
-        </aside>
-      </div>
-    </main>
+          </header>
+
+          <SummaryStrip
+            values={[
+              ["total", summary.total],
+              ["active", summary.active],
+              ["disabled", summary.disabled],
+            ]}
+          />
+
+          <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_clamp(280px,28vw,380px)] overflow-hidden">
+            <section className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-r border-(--border-subtle)">
+              <SectionHeader meta={`${userRows.length} records`} title="Users" />
+              <AuthUsersTable
+                error={usersQuery.error}
+                isError={usersQuery.isError}
+                isPending={usersQuery.isPending}
+                onSelect={setSelectedUserId}
+                rows={userRows}
+                selectedUser={selectedUser}
+              />
+            </section>
+
+            <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-(--sidebar)">
+              <SectionHeader
+                meta={selectedUser ? selectedUser.status : "no selection"}
+                title={selectedUser?.id ?? "User"}
+              />
+              {selectedUser ? (
+                <div className="min-h-0 overflow-auto">
+                  <Metric label="created" value={selectedUser.createdAt} />
+                  <Metric label="disabled" value={selectedUser.disabledAt} />
+                  <Metric label="reason" value={selectedUser.disabledReason} />
+                  <Metric label="until" value={selectedUser.disabledUntil} />
+                  <Metric label="status" value={selectedUser.status} />
+                  {resetContribution && canReset ? (
+                    <UserActionContributionPanel
+                      contribution={resetContribution}
+                      error={userAction.error}
+                      isError={userAction.isError}
+                      isPending={userAction.isPending}
+                      onSubmit={resetPassword}
+                    />
+                  ) : null}
+                  <div className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
+                    {selectedUser.status === "active" ? (
+                      <form
+                        className="grid gap-2"
+                        key={selectedUser.id}
+                        onSubmit={disableUser}
+                      >
+                        <label className="grid gap-1 font-mono text-[10px] text-(--muted)">
+                          Reason
+                          <input
+                            aria-label="Disable reason"
+                            className="h-7 border border-(--border-subtle) bg-(--bg-control) px-2 text-[11px] text-(--foreground)"
+                            disabled={!canManage}
+                            name="reason"
+                            type="text"
+                          />
+                        </label>
+                        <label className="grid gap-1 font-mono text-[10px] text-(--muted)">
+                          Until
+                          <input
+                            aria-label="Disable until"
+                            className="h-7 border border-(--border-subtle) bg-(--bg-control) px-2 text-[11px] text-(--foreground)"
+                            disabled={!canManage}
+                            name="disabled_until"
+                            type="datetime-local"
+                          />
+                        </label>
+                        <button
+                          className="h-7 justify-self-start border border-[var(--tone-error-border)] bg-[var(--tone-error-bg)] px-2 font-mono text-[11px] font-semibold text-(--tone-error-fg) disabled:opacity-45"
+                          disabled={!canManage || userAction.isPending}
+                          type="submit"
+                        >
+                          {userAction.isPending ? "Disabling" : "Disable"}
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        className="h-7 border border-[var(--tone-success-border)] bg-[var(--tone-success-bg)] px-2 font-mono text-[11px] font-semibold text-(--tone-success-fg) disabled:opacity-45"
+                        disabled={!canManage || userAction.isPending}
+                        onClick={() =>
+                          userAction.mutate({
+                            actionName: "enable_user",
+                            input: { user_id: selectedUser.id },
+                            moduleName: AUTH_MODULE,
+                          })
+                        }
+                        type="button"
+                      >
+                        {userAction.isPending ? "Enabling" : "Enable"}
+                      </button>
+                    )}
+                    {userAction.isError ? (
+                      <div className="mt-1 truncate font-mono text-[10px] text-(--error)">
+                        {errorMessage(userAction.error)}
+                      </div>
+                    ) : null}
+                    {contributionsQuery.isError ? (
+                      <div className="mt-1 truncate font-mono text-[10px] text-(--error)">
+                        {errorMessage(contributionsQuery.error)}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <PanelMessage value="Select a user" />
+              )}
+            </aside>
+          </div>
+        </main>
+      </ConsolePage>
+    </SurfaceRoot>
   );
 };
 
 const AuthSessionsSurfacePage = () => {
-  const sessionsQuery = consoleHostApi.adminData.useRecords({
-    entityName: "sessions",
-    moduleName: "auth",
-  });
-  const revokeSession = consoleHostApi.adminData.useInvokeAction();
+  const client = useConsoleClient();
+  const sessionsQuery = useConsoleRecords("sessions");
+  const revokeSession = useConsoleAction();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
     null
   );
@@ -428,101 +353,131 @@ const AuthSessionsSurfacePage = () => {
     sessionRows.find((session) => session.id === selectedSessionId) ??
     sessionRows[0] ??
     null;
+  const canRevoke = client.capabilities.has(AUTH_SESSIONS_REVOKE);
 
   return (
-    <main className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden bg-(--background) text-(--foreground)">
-      <header className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <h1 className="font-mono text-[13px] font-semibold">Sessions</h1>
-          <span className="ml-auto font-mono text-[10px] text-(--muted)">
-            {sessionRows.length} records
-          </span>
-        </div>
-      </header>
+    <SurfaceRoot moduleId={AUTH_MODULE} surfaceId="sessions">
+      <ConsolePage scroll={false}>
+        <main className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden bg-(--background) text-(--foreground)">
+          <header className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="font-mono text-[13px] font-semibold">Sessions</h1>
+              <span className="ml-auto font-mono text-[10px] text-(--muted)">
+                {sessionRows.length} records
+              </span>
+            </div>
+          </header>
 
-      <div className="grid border-b border-(--border-subtle) bg-(--surface) md:grid-cols-4">
-        {[
-          ["total", summary.total],
-          ["active", summary.active],
-          ["expired", summary.expired],
-          ["revoked", summary.revoked],
-        ].map(([label, value]) => (
-          <div
-            className="grid grid-cols-[minmax(0,1fr)_auto] border-r border-(--border-subtle) px-3 py-2 font-mono text-[10px] last:border-r-0"
-            key={label}
-          >
-            <span className="text-(--muted)">{label}</span>
-            <span className="text-[13px] font-semibold text-(--foreground)">
-              {value}
-            </span>
-          </div>
-        ))}
-      </div>
+          <SummaryStrip
+            values={[
+              ["total", summary.total],
+              ["active", summary.active],
+              ["expired", summary.expired],
+              ["revoked", summary.revoked],
+            ]}
+          />
 
-      <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_clamp(280px,28vw,380px)] overflow-hidden">
-        <section className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-r border-(--border-subtle)">
-          <SectionHeader
-            meta={`${sessionRows.length} records`}
-            title="Sessions"
-          />
-          <AuthSessionsTable
-            error={sessionsQuery.error}
-            isError={sessionsQuery.isError}
-            isPending={sessionsQuery.isPending}
-            onSelect={setSelectedSessionId}
-            rows={sessionRows}
-            selectedSession={selectedSession}
-          />
-        </section>
+          <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_clamp(280px,28vw,380px)] overflow-hidden">
+            <section className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-r border-(--border-subtle)">
+              <SectionHeader
+                meta={`${sessionRows.length} records`}
+                title="Sessions"
+              />
+              <AuthSessionsTable
+                error={sessionsQuery.error}
+                isError={sessionsQuery.isError}
+                isPending={sessionsQuery.isPending}
+                onSelect={setSelectedSessionId}
+                rows={sessionRows}
+                selectedSession={selectedSession}
+              />
+            </section>
 
-        <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-(--sidebar)">
-          <SectionHeader
-            meta={selectedSession ? selectedSession.status : "no selection"}
-            title={selectedSession?.id ?? "Session"}
-          />
-          {selectedSession ? (
-            <div className="min-h-0 overflow-auto">
-              <Metric label="user" value={selectedSession.userId} />
-              <Metric label="created" value={selectedSession.createdAt} />
-              <Metric label="expires" value={selectedSession.expiresAt} />
-              <Metric label="revoked" value={selectedSession.revokedAt} />
-              <Metric label="status" value={selectedSession.status} />
-              {selectedSession.status === "active" ? (
-                <div className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
-                  <button
-                    className="h-7 border border-[var(--tone-error-border)] bg-[var(--tone-error-bg)] px-2 font-mono text-[11px] font-semibold text-(--tone-error-fg) disabled:opacity-45"
-                    disabled={revokeSession.isPending}
-                    onClick={() =>
-                      revokeSession.mutate({
-                        actionName: "revoke_session",
-                        input: { session_id: selectedSession.id },
-                        moduleName: "auth",
-                      })
-                    }
-                    type="button"
-                  >
-                    {revokeSession.isPending ? "Revoking" : "Revoke"}
-                  </button>
-                  {revokeSession.isError ? (
-                    <div className="mt-1 truncate font-mono text-[10px] text-(--error)">
-                      {String((revokeSession.error as Error).message)}
+            <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-(--sidebar)">
+              <SectionHeader
+                meta={selectedSession ? selectedSession.status : "no selection"}
+                title={selectedSession?.id ?? "Session"}
+              />
+              {selectedSession ? (
+                <div className="min-h-0 overflow-auto">
+                  <Metric label="user" value={selectedSession.userId} />
+                  <Metric label="created" value={selectedSession.createdAt} />
+                  <Metric label="expires" value={selectedSession.expiresAt} />
+                  <Metric label="revoked" value={selectedSession.revokedAt} />
+                  <Metric label="status" value={selectedSession.status} />
+                  {selectedSession.status === "active" ? (
+                    <div className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
+                      <button
+                        className="h-7 border border-[var(--tone-error-border)] bg-[var(--tone-error-bg)] px-2 font-mono text-[11px] font-semibold text-(--tone-error-fg) disabled:opacity-45"
+                        disabled={!canRevoke || revokeSession.isPending}
+                        onClick={() =>
+                          revokeSession.mutate({
+                            actionName: "revoke_session",
+                            input: { session_id: selectedSession.id },
+                            moduleName: AUTH_MODULE,
+                          })
+                        }
+                        type="button"
+                      >
+                        {revokeSession.isPending ? "Revoking" : "Revoke"}
+                      </button>
+                      {revokeSession.isError ? (
+                        <div className="mt-1 truncate font-mono text-[10px] text-(--error)">
+                          {errorMessage(revokeSession.error)}
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
-              ) : null}
-            </div>
-          ) : (
-            <PanelMessage value="Select a session" />
-          )}
-        </aside>
-      </div>
-    </main>
+              ) : (
+                <PanelMessage value="Select a session" />
+              )}
+            </aside>
+          </div>
+        </main>
+      </ConsolePage>
+    </SurfaceRoot>
   );
 };
 
 export const AuthSessionsPage = AuthSessionsSurfacePage;
-
 export const AuthUsersPage = AuthUsersSurfacePage;
+
+function contributionInput(
+  contribution: ManagedActionContribution,
+  userId: string,
+  newPassword: string
+): Record<string, unknown> {
+  const input: Record<string, unknown> = { new_password: newPassword };
+  for (const binding of contribution.action.inputBindings ?? []) {
+    if (binding.value.path === "selected_user.id") {
+      input[binding.input] = userId;
+    }
+  }
+  return input;
+}
+
+function SummaryStrip({
+  values,
+}: {
+  values: readonly (readonly [string, number])[];
+}) {
+  return (
+    <div className="grid border-b border-(--border-subtle) bg-(--surface) md:grid-cols-4">
+      {values.map(([label, value]) => (
+        <div
+          className="grid grid-cols-[minmax(0,1fr)_auto] border-r border-(--border-subtle) px-3 py-2 font-mono text-[10px] last:border-r-0"
+          key={label}
+        >
+          <span className="text-(--muted)">{label}</span>
+          <span className="text-[13px] font-semibold text-(--foreground)">
+            {value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function SectionHeader({ meta, title }: { meta: string; title: string }) {
   return (
@@ -548,78 +503,6 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ConsoleAccessPanel({
-  access,
-  error,
-  isError,
-  isPending,
-  isWriting,
-  onChange,
-  writeError,
-  writeIsError,
-}: {
-  access: ConsoleAdminAccess | null;
-  error: unknown;
-  isError: boolean;
-  isPending: boolean;
-  isWriting: boolean;
-  onChange: (scopes: readonly string[]) => void;
-  writeError: unknown;
-  writeIsError: boolean;
-}) {
-  const enabled = access?.enabled ?? false;
-  const presetId = consoleAccessPresetId(access?.scopes ?? []);
-  const status = access
-    ? `${enabled ? "enabled" : "disabled"}${
-        access.pendingRestart ? ", pending restart" : ""
-      }`
-    : "-";
-  const scopes =
-    access && access.scopes.length > 0 ? access.scopes.join(", ") : "-";
-
-  return (
-    <div className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2 font-mono">
-      <div className="text-[10px] text-(--muted)">console access</div>
-      <div className="mt-1 truncate text-[12px] font-semibold text-(--foreground)">
-        {isPending ? "loading" : status}
-      </div>
-      <div className="mt-1 truncate text-[10px] text-(--muted)">
-        {isPending ? "-" : scopes}
-      </div>
-      <select
-        aria-label="Console access preset"
-        className="mt-2 h-7 w-full border border-(--border-subtle) bg-(--bg-control) px-2 text-[11px] text-(--foreground) disabled:opacity-45"
-        disabled={isPending || isWriting || isError}
-        onChange={(event) => {
-          const nextPreset = CONSOLE_ACCESS_PRESETS.find(
-            (preset) => preset.id === event.currentTarget.value
-          );
-          onChange(nextPreset?.scopes ?? []);
-        }}
-        value={isPending ? "none" : presetId}
-      >
-        <option value="none">No access</option>
-        {CONSOLE_ACCESS_PRESETS.map((preset) => (
-          <option key={preset.id} value={preset.id}>
-            {preset.label}
-          </option>
-        ))}
-        {presetId === "custom" ? <option value="custom">Custom</option> : null}
-      </select>
-      {isError ? (
-        <div className="mt-1 truncate text-[10px] text-(--error)">
-          {String((error as Error | undefined)?.message)}
-        </div>
-      ) : null}
-      {writeIsError ? (
-        <div className="mt-1 truncate text-[10px] text-(--error)">
-          {String((writeError as Error | undefined)?.message)}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function UserActionContributionPanel({
   contribution,
   error,
@@ -627,7 +510,7 @@ function UserActionContributionPanel({
   isPending,
   onSubmit,
 }: {
-  contribution: ConsoleResolvedContributionLike;
+  contribution: ManagedActionContribution;
   error: unknown;
   isError: boolean;
   isPending: boolean;
@@ -654,7 +537,7 @@ function UserActionContributionPanel({
         </button>
         {isError ? (
           <div className="truncate font-mono text-[10px] text-(--error)">
-            {String((error as Error | undefined)?.message)}
+            {errorMessage(error)}
           </div>
         ) : null}
       </form>
@@ -708,4 +591,8 @@ function statusClassName(
     return "border-(--border-subtle) bg-(--bg-control) text-(--muted)";
   }
   return "border-[var(--tone-error-border)] bg-[var(--tone-error-bg)] text-(--tone-error-fg)";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error ?? "Unknown error");
 }

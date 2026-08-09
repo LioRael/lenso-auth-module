@@ -1,4 +1,5 @@
-import { consoleHostApi } from "@lenso/auth-console-ui-client";
+import { useConsoleRecords } from "@lenso/auth-console-shared";
+import { ConsolePage, SurfaceRoot } from "@lenso/console-ui";
 import { useState } from "react";
 
 import {
@@ -7,14 +8,10 @@ import {
   type AuthDeviceRow,
 } from "./model";
 
-const DEVICE_MODULE_NAME = "auth-device";
 const DEVICE_ENTITY_NAME = "devices";
 
 export const AuthDevicesPage = () => {
-  const devicesQuery = consoleHostApi.adminData.useRecords({
-    entityName: DEVICE_ENTITY_NAME,
-    moduleName: DEVICE_MODULE_NAME,
-  });
+  const devicesQuery = useConsoleRecords(DEVICE_ENTITY_NAME);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const deviceRows = authDeviceRows(devicesQuery.data?.data ?? []);
   const summary = authDevicesSummary(devicesQuery.data?.data ?? []);
@@ -24,7 +21,9 @@ export const AuthDevicesPage = () => {
     null;
 
   return (
-    <main className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden bg-(--background) text-(--foreground)">
+    <SurfaceRoot moduleId="auth-device" surfaceId="devices">
+      <ConsolePage scroll={false}>
+        <main className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden bg-(--background) text-(--foreground)">
       <header className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <h1 className="font-mono text-[13px] font-semibold">Devices</h1>
@@ -89,7 +88,9 @@ export const AuthDevicesPage = () => {
           )}
         </aside>
       </div>
-    </main>
+        </main>
+      </ConsolePage>
+    </SurfaceRoot>
   );
 };
 

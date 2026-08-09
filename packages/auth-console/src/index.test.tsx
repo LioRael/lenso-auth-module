@@ -3,12 +3,15 @@ import { describe, expect, test } from "vitest";
 import { authConsoleManifest } from "./manifest";
 
 describe("auth console UI artifact", () => {
-  test("declares only isolated bridge entries", () => {
-    expect(authConsoleManifest.source).toBe("isolated_ui_artifact");
-    expect(authConsoleManifest.bridgeProtocol).toBe("lenso.console-bridge.v1");
-    expect(authConsoleManifest.surfaces.map((surface) => surface.entry)).toEqual([
+  test("declares release-owned ESM surfaces", () => {
+    expect(authConsoleManifest.moduleId).toBe("lenso/auth");
+    expect(authConsoleManifest.surfaces.map((surface) => surface.id)).toEqual([
       "sessions",
       "users",
+    ]);
+    expect(authConsoleManifest.surfaces.map((surface) => surface.path)).toEqual([
+      "/data/auth/sessions",
+      "/data/auth/users",
     ]);
   });
 });

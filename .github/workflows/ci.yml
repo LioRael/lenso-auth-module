@@ -42,7 +42,7 @@ jobs:
       - name: Check npm packages
         run: |
           set -eu
-          for package_dir in auth-console auth-device-console auth-provider-console; do
+          for package_dir in auth-console auth-device-console auth-oauth-console auth-github-console auth-google-console auth-oidc-console; do
             (
               cd "packages/$package_dir"
               npm pack --dry-run --registry https://registry.npmjs.org/

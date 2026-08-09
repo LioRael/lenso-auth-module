@@ -5,17 +5,18 @@ use platform_http::ApiOpenApiRouter;
 use platform_module::{
     AdminAction, AdminActionDangerLevel, AdminActionInputField, AdminActionInputSchema,
     AdminDeclarativeComponent, AdminDeclarativePage, AdminDeclarativeSection,
-    AdminDeclarativeSurface, AdminSchema, CONSOLE_BRIDGE_PROTOCOL, ConsoleContributionKind,
-    ConsoleNavigation, ConsoleSlot, ConsoleSlotContext, ConsoleSlotContextField,
-    ConsoleSlotContextFieldType, ConsoleSurface, ConsoleSurfacePresentation, ConsoleWorkspaceRef,
-    EntitySchema, FieldSchema, FieldType, LinkedBinding, LinkedHttpContribution, Module,
-    ModuleHttpMethod, ModuleHttpRoute, ModuleManifest,
+    AdminDeclarativeSurface, AdminSchema, ConsoleContributionKind, ConsoleNavigation, ConsoleSlot,
+    ConsoleSlotContext, ConsoleSlotContextField, ConsoleSlotContextFieldType, ConsoleSurface,
+    ConsoleSurfacePresentation, ConsoleWorkspaceRef, EntitySchema, FieldSchema, FieldType,
+    LinkedBinding, LinkedHttpContribution, Module, ModuleHttpMethod, ModuleHttpRoute,
+    ModuleManifest,
 };
 use std::sync::Arc;
 
 pub const MODULE_NAME: &str = "auth";
 pub const AUTH_USERS_READ: &str = "auth.users.read";
 pub const AUTH_USERS_MANAGE: &str = "auth.users.manage";
+pub const AUTH_SESSIONS_READ: &str = "auth.sessions.read";
 pub const AUTH_SESSIONS_REVOKE: &str = "auth.sessions.revoke";
 pub const AUTH_USERS_DETAIL_ACTIONS_SLOT: &str = "auth.users.detail.actions";
 pub const AUTH_USERS_DETAIL_ACTIONS_SLOT_VERSION: u32 = 1;
@@ -96,7 +97,7 @@ pub fn user_schema() -> AdminSchema {
             EntitySchema {
                 name: "sessions".to_owned(),
                 label: "Sessions".to_owned(),
-                read_capability: AUTH_USERS_READ.to_owned(),
+                read_capability: AUTH_SESSIONS_READ.to_owned(),
                 fields: vec![
                     FieldSchema {
                         name: "id".to_owned(),
@@ -265,13 +266,11 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
             name: "sessions".to_owned(),
             label: "Sessions".to_owned(),
             route: "/data/auth/sessions".to_owned(),
-            presentation: ConsoleSurfacePresentation::Isolated {
+            presentation: ConsoleSurfacePresentation::Esm {
                 entry: "sessions".to_owned(),
-
-                bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
             },
             icon: Some("shield".to_owned()),
-            required_capabilities: vec![AUTH_USERS_READ.to_owned(), AUTH_USERS_MANAGE.to_owned()],
+            required_capabilities: vec![AUTH_SESSIONS_READ.to_owned()],
             navigation: Some(ConsoleNavigation {
                 workspace: auth_workspace(),
                 group: None,
@@ -282,13 +281,11 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
             name: "users".to_owned(),
             label: "Users".to_owned(),
             route: "/data/auth/users".to_owned(),
-            presentation: ConsoleSurfacePresentation::Isolated {
+            presentation: ConsoleSurfacePresentation::Esm {
                 entry: "users".to_owned(),
-
-                bridge_protocol: CONSOLE_BRIDGE_PROTOCOL.to_owned(),
             },
             icon: Some("shield".to_owned()),
-            required_capabilities: vec![AUTH_USERS_READ.to_owned(), AUTH_USERS_MANAGE.to_owned()],
+            required_capabilities: vec![AUTH_USERS_READ.to_owned()],
             navigation: Some(ConsoleNavigation {
                 workspace: auth_workspace(),
                 group: None,
@@ -320,6 +317,7 @@ pub fn manifest() -> ModuleManifest {
         .capabilities(vec![
             AUTH_USERS_READ.to_owned(),
             AUTH_USERS_MANAGE.to_owned(),
+            AUTH_SESSIONS_READ.to_owned(),
             AUTH_SESSIONS_REVOKE.to_owned(),
         ])
         .http_routes(http_routes())
@@ -364,6 +362,7 @@ mod tests {
         assert_eq!(
             manifest.capabilities,
             vec![
+                "auth.sessions.read",
                 "auth.sessions.revoke",
                 "auth.users.manage",
                 "auth.users.read"
@@ -416,5 +415,17 @@ mod tests {
                 .capability,
             "auth.users.manage"
         );
+    }
+
+    #[test]
+    fn generated_console_manifest_matches_checked_in_artifact_manifest() {
+        let generated =
+            serde_json::to_value(manifest().console_module_manifest("^1.0.0", "^2.0.0"))
+                .expect("console module manifest should serialize");
+        let checked_in: serde_json::Value =
+            serde_json::from_str(include_str!("../console-module.json"))
+                .expect("console module manifest fixture should be valid JSON");
+
+        assert_eq!(generated, checked_in);
     }
 }

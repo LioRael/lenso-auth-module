@@ -1,19 +1,13 @@
-import { configureConsoleBridge } from "@lenso/auth-console-ui-client";
-import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
+import { defineConsoleUiModule } from "@lenso/console-ui";
 
 import "./styles.css";
 import { AuthDevicesPage } from "./page";
+import { authDeviceConsoleManifest } from "./manifest";
 
-configureConsoleBridge("lenso/auth-device", "devices");
+const authDeviceConsoleUiModule = defineConsoleUiModule({
+  manifest: authDeviceConsoleManifest,
+  surfaces: { devices: AuthDevicesPage },
+});
 
-const root = document.getElementById("root");
-if (!root) {
-  throw new Error("Auth Device Console root is missing");
-}
-
-createRoot(root).render(
-  <StrictMode>
-    <AuthDevicesPage />
-  </StrictMode>
-);
+export { AuthDevicesPage };
+export default authDeviceConsoleUiModule;
