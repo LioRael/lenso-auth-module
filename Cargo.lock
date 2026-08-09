@@ -1390,7 +1390,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-module-auth"
-version = "0.1.13"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -1413,7 +1413,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-module-auth-anonymous"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "axum",
  "chrono",
@@ -1432,7 +1432,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-module-auth-device"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1449,7 +1449,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-module-auth-github"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "async-trait",
  "axum",
@@ -1472,7 +1472,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-module-auth-google"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "async-trait",
  "axum",
@@ -1495,7 +1495,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-module-auth-oauth"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "chrono",
  "getrandom 0.4.3",
@@ -1511,7 +1511,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-module-auth-oidc"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "axum",
  "chrono",
@@ -1533,7 +1533,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-module-auth-password"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "argon2",
  "async-trait",
@@ -1556,7 +1556,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-module-auth-phone"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "async-trait",
  "axum",
