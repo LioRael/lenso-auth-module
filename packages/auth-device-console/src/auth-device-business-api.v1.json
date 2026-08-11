@@ -1,0 +1,88 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Auth Device Business API",
+    "version": "v1"
+  },
+  "x-lenso-contract-id": "auth-device-http",
+  "x-lenso-contract-version": "v1",
+  "x-lenso-module-id": "auth-device",
+  "paths": {
+    "/devices": {
+      "get": {
+        "operationId": "auth-device/http/GET:/devices",
+        "summary": "List Auth devices",
+        "x-lenso-capability": "auth_device.devices.read",
+        "x-lenso-idempotency": "idempotent",
+        "x-lenso-connected-route": {
+          "method": "GET",
+          "path": "/v1/auth/device/console/devices"
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 200 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "minLength": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Auth device page",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DevicePage" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Device": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "user_id",
+          "created_at",
+          "updated_at",
+          "trusted_at",
+          "primary_at",
+          "last_seen_ip",
+          "last_seen_user_agent"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "user_id": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "trusted_at": { "type": ["string", "null"], "format": "date-time" },
+          "primary_at": { "type": ["string", "null"], "format": "date-time" },
+          "last_seen_ip": { "type": ["string", "null"] },
+          "last_seen_user_agent": { "type": ["string", "null"] }
+        }
+      },
+      "DevicePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["records", "next_cursor"],
+        "properties": {
+          "records": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Device" }
+          },
+          "next_cursor": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

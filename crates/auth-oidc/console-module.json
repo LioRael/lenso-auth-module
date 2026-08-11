@@ -1,7 +1,7 @@
 {
   "protocol": "lenso.console-module.v1",
   "moduleId": "lenso/auth-oidc",
-  "hostApi": "^1.0.0",
+  "hostApi": "^2.1.0",
   "consoleUi": "^2.0.0",
   "surfaces": [
     { "id": "oidc-provider", "path": "/data/auth/providers/oidc", "label": "OIDC Provider", "area": "data", "requiredCapabilities": ["auth.providers.read"], "icon": "shield", "navigation": { "workspace": { "id": "auth", "label": "Auth", "icon": "shield" }, "order": 83 } }

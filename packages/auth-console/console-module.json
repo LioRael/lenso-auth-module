@@ -1,31 +1,33 @@
 {
   "protocol": "lenso.console-module.v1",
   "moduleId": "lenso/auth",
-  "hostApi": "^1.0.0",
+  "hostApi": "^2.1.0",
   "consoleUi": "^2.0.0",
   "surfaces": [
     {
       "id": "sessions",
-      "path": "/data/auth/sessions",
+      "path": "/auth/sessions",
       "label": "Sessions",
-      "area": "data",
+      "area": "runtime",
       "requiredCapabilities": ["auth.sessions.read"],
       "icon": "shield",
       "navigation": {
         "workspace": { "id": "auth", "label": "Auth", "icon": "shield" },
-        "order": 50
+        "group": { "id": "directory", "label": "Directory", "order": 10 },
+        "order": 60
       }
     },
     {
       "id": "users",
-      "path": "/data/auth/users",
+      "path": "/auth/users",
       "label": "Users",
-      "area": "data",
+      "area": "runtime",
       "requiredCapabilities": ["auth.users.read"],
       "icon": "shield",
       "navigation": {
         "workspace": { "id": "auth", "label": "Auth", "icon": "shield" },
-        "order": 60
+        "group": { "id": "directory", "label": "Directory", "order": 10 },
+        "order": 50
       }
     }
   ]

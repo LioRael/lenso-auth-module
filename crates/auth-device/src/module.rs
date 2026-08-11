@@ -3,16 +3,35 @@ use crate::migrations::AUTH_DEVICE_MIGRATIONS;
 use crate::policy::AuthDevicePolicy;
 use crate::repositories::PostgresAuthDeviceRepository;
 use auth::session_policy::{AuthHostExtension, AuthSessionPolicy};
+use contracts::{ServiceOperationIdempotency, ServiceOperationMetadata};
 use platform_core::AppContext;
+use platform_http::ApiOpenApiRouter;
 use platform_module::{
     AdminSchema, ConsoleNavigation, ConsoleSurface, ConsoleSurfacePresentation,
     ConsoleWorkspaceRef, EntitySchema, FieldSchema, FieldType, HostLinkedModule, LinkedBinding,
-    Module, ModuleManifest,
+    LinkedHttpContribution, Module, ModuleHttpMethod, ModuleHttpRoute, ModuleManifest,
 };
 use std::sync::Arc;
 
 pub const MODULE_NAME: &str = "auth-device";
 pub const AUTH_DEVICE_READ: &str = "auth_device.devices.read";
+
+pub fn http_routes() -> Vec<ModuleHttpRoute> {
+    vec![ModuleHttpRoute {
+        method: ModuleHttpMethod::Get,
+        path: "/v1/auth/device/console/devices".to_owned(),
+        capability: Some(AUTH_DEVICE_READ.to_owned()),
+        display_name: Some("List Auth Devices".to_owned()),
+        story_title: Some("List Auth Devices".to_owned()),
+        operation: Some(ServiceOperationMetadata {
+            operation_id: Some(crate::console_api::LIST_DEVICES_OPERATION.to_owned()),
+            summary: Some("List Auth Devices".to_owned()),
+            idempotency: Some(ServiceOperationIdempotency::Idempotent),
+            timeout_ms: Some(10_000),
+            ..ServiceOperationMetadata::default()
+        }),
+    }]
+}
 
 fn auth_workspace() -> ConsoleWorkspaceRef {
     ConsoleWorkspaceRef {
@@ -106,12 +125,26 @@ pub fn manifest() -> ModuleManifest {
         .capabilities(vec![AUTH_DEVICE_READ.to_owned()])
         .admin(device_schema())
         .console(console_surfaces())
+        .http_routes(http_routes())
+        .build()
+}
+
+pub fn merge_http(base: ApiOpenApiRouter) -> ApiOpenApiRouter {
+    base.merge(crate::console_api::router())
+}
+
+pub fn binding() -> LinkedBinding {
+    LinkedBinding::builder()
+        .http(LinkedHttpContribution {
+            public_prefixes: &["/v1/auth/device/console/"],
+            merge: merge_http,
+        })
         .build()
 }
 
 pub fn module(ctx: &AppContext) -> Module {
     let repository = Arc::new(PostgresAuthDeviceRepository::new(ctx.db.clone()));
-    Module::linked(manifest(), LinkedBinding::builder().build())
+    Module::linked(manifest(), binding())
         .with_admin_data(Arc::new(AuthDeviceAdminData::new(repository)))
 }
 
@@ -164,7 +197,7 @@ mod tests {
     #[test]
     fn generated_console_manifest_matches_checked_in_artifact_manifest() {
         let generated =
-            serde_json::to_value(manifest().console_module_manifest("^1.0.0", "^2.0.0"))
+            serde_json::to_value(manifest().console_module_manifest("^2.1.0", "^2.0.0"))
                 .expect("console module manifest should serialize");
         let checked_in: serde_json::Value =
             serde_json::from_str(include_str!("../console-module.json"))

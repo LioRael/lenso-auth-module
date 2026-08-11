@@ -1,4 +1,4 @@
-type ConsoleAdminRecord = Record<string, unknown>;
+import type { AuthDeviceRecord } from "./business-api";
 
 export type AuthDeviceRow = {
   createdAt: string;
@@ -23,7 +23,7 @@ const fieldText = (value: unknown): string =>
   typeof value === "string" && value.length > 0 ? value : "-";
 
 export const authDeviceRows = (
-  records: readonly ConsoleAdminRecord[]
+  records: readonly AuthDeviceRecord[]
 ): AuthDeviceRow[] =>
   records.map((record) => {
     const primaryAt = fieldText(record.primary_at);
@@ -44,7 +44,7 @@ export const authDeviceRows = (
   });
 
 export const authDevicesSummary = (
-  records: readonly ConsoleAdminRecord[]
+  records: readonly AuthDeviceRecord[]
 ): AuthDevicesSummary => {
   const summary: AuthDevicesSummary = {
     primary: 0,

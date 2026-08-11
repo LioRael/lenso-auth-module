@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn generated_console_manifest_matches_checked_in_artifact_manifest() {
         let generated =
-            serde_json::to_value(manifest().console_module_manifest("^1.0.0", "^2.0.0"))
+            serde_json::to_value(manifest().console_module_manifest("^2.1.0", "^2.0.0"))
                 .expect("console module manifest should serialize");
         let checked_in: serde_json::Value =
             serde_json::from_str(include_str!("../console-module.json"))

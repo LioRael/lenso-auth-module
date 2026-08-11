@@ -18,16 +18,21 @@ path = "src/lib.rs"
 [dependencies]
 async-trait.workspace = true
 auth.workspace = true
+axum.workspace = true
 chrono.workspace = true
+contracts.workspace = true
 platform-core.workspace = true
+platform-http.workspace = true
 platform-module.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+utoipa.workspace = true
 
 [dev-dependencies]
 platform-runtime.workspace = true
 platform-testing.workspace = true
+sha2.workspace = true
 tokio.workspace = true
 
 [lints]

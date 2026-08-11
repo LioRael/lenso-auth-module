@@ -1396,6 +1396,7 @@ dependencies = [
  "axum",
  "chrono",
  "getrandom 0.4.3",
+ "lenso-contracts",
  "lenso-platform-core",
  "lenso-platform-http",
  "lenso-platform-module",
@@ -1435,16 +1436,21 @@ name = "lenso-module-auth-device"
 version = "0.1.7"
 dependencies = [
  "async-trait",
+ "axum",
  "chrono",
+ "lenso-contracts",
  "lenso-module-auth",
  "lenso-platform-core",
+ "lenso-platform-http",
  "lenso-platform-module",
  "lenso-platform-runtime",
  "lenso-platform-testing",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "sqlx",
  "tokio",
+ "utoipa",
 ]
 
 [[package]]
