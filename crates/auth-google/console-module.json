@@ -4,6 +4,29 @@
   "hostApi": "^2.1.0",
   "consoleUi": "^2.0.0",
   "surfaces": [
-    { "id": "google-provider", "path": "/data/auth/providers/google", "label": "Google", "area": "data", "requiredCapabilities": ["auth.providers.read"], "icon": "network", "navigation": { "workspace": { "id": "auth", "label": "Auth", "icon": "shield" }, "order": 82 } }
+    {
+      "id": "google-provider",
+      "path": "/auth/providers/google",
+      "label": "Google",
+      "area": "runtime",
+      "requiredCapabilities": [
+        "auth.providers.read"
+      ],
+      "icon": "chrome",
+      "navigation": {
+        "workspace": {
+          "id": "auth",
+          "label": "Auth",
+          "icon": "shield"
+        },
+        "group": {
+          "id": "sign-in",
+          "label": "Sign-in",
+          "icon": "git-compare-arrows",
+          "order": 20
+        },
+        "order": 82
+      }
+    }
   ]
 }

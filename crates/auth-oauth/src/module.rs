@@ -1,8 +1,8 @@
 use crate::migrations::AUTH_OAUTH_MIGRATIONS;
 use platform_core::AppContext;
 use platform_module::{
-    ConsoleNavigation, ConsoleSurface, ConsoleSurfacePresentation, ConsoleWorkspaceRef,
-    HostLinkedModule, LinkedBinding, Module, ModuleManifest,
+    ConsoleNavigation, ConsoleNavigationGroup, ConsoleSurface, ConsoleSurfacePresentation,
+    ConsoleWorkspaceRef, HostLinkedModule, LinkedBinding, Module, ModuleManifest,
 };
 
 pub const MODULE_NAME: &str = "auth-oauth";
@@ -16,19 +16,28 @@ fn auth_workspace() -> ConsoleWorkspaceRef {
     }
 }
 
+fn auth_sign_in_group() -> ConsoleNavigationGroup {
+    ConsoleNavigationGroup {
+        id: "sign-in".to_owned(),
+        label: "Sign-in".to_owned(),
+        icon: Some("git-compare-arrows".to_owned()),
+        order: Some(20),
+    }
+}
+
 pub fn console_surfaces() -> Vec<ConsoleSurface> {
     vec![ConsoleSurface {
         name: "providers".to_owned(),
         label: "Providers".to_owned(),
-        route: "/data/auth/providers".to_owned(),
+        route: "/auth/providers".to_owned(),
         presentation: ConsoleSurfacePresentation::Esm {
             entry: "providers".to_owned(),
         },
-        icon: Some("network".to_owned()),
+        icon: Some("blocks".to_owned()),
         required_capabilities: vec![AUTH_PROVIDERS_READ.to_owned()],
         navigation: Some(ConsoleNavigation {
             workspace: auth_workspace(),
-            group: None,
+            group: Some(auth_sign_in_group()),
             order: Some(80),
         }),
     }]

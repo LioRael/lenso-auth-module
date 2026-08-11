@@ -2,9 +2,9 @@ use crate::migrations::AUTH_OIDC_MIGRATIONS;
 use platform_core::AppContext;
 use platform_http::ApiOpenApiRouter;
 use platform_module::{
-    ConsoleNavigation, ConsoleSurface, ConsoleSurfacePresentation, ConsoleWorkspaceRef,
-    HostLinkedModule, LinkedBinding, LinkedHttpContribution, Module, ModuleHttpMethod,
-    ModuleHttpRoute, ModuleManifest,
+    ConsoleNavigation, ConsoleNavigationGroup, ConsoleSurface, ConsoleSurfacePresentation,
+    ConsoleWorkspaceRef, HostLinkedModule, LinkedBinding, LinkedHttpContribution, Module,
+    ModuleHttpMethod, ModuleHttpRoute, ModuleManifest,
 };
 
 pub const MODULE_NAME: &str = "auth-oidc";
@@ -15,6 +15,15 @@ fn auth_workspace() -> ConsoleWorkspaceRef {
         id: "auth".to_owned(),
         label: "Auth".to_owned(),
         icon: Some("shield".to_owned()),
+    }
+}
+
+fn auth_sign_in_group() -> ConsoleNavigationGroup {
+    ConsoleNavigationGroup {
+        id: "sign-in".to_owned(),
+        label: "Sign-in".to_owned(),
+        icon: Some("git-compare-arrows".to_owned()),
+        order: Some(20),
     }
 }
 
@@ -59,15 +68,15 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
     vec![ConsoleSurface {
         name: "oidc-provider".to_owned(),
         label: "OIDC Provider".to_owned(),
-        route: "/data/auth/providers/oidc".to_owned(),
+        route: "/auth/providers/oidc".to_owned(),
         presentation: ConsoleSurfacePresentation::Esm {
             entry: "oidc-provider".to_owned(),
         },
-        icon: Some("shield".to_owned()),
+        icon: Some("settings".to_owned()),
         required_capabilities: vec![AUTH_PROVIDERS_READ.to_owned()],
         navigation: Some(ConsoleNavigation {
             workspace: auth_workspace(),
-            group: None,
+            group: Some(auth_sign_in_group()),
             order: Some(83),
         }),
     }]

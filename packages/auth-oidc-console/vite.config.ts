@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import tailwindcss from "@tailwindcss/vite";
+import stylex from "@stylexjs/unplugin/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -8,6 +8,7 @@ export default defineConfig({
   build: {
     emptyOutDir: true,
     lib: {
+      cssFileName: "stylex",
       entry: resolve(import.meta.dirname, "src/index.tsx"),
       fileName: "index.js",
       formats: ["es"],
@@ -20,6 +21,6 @@ export default defineConfig({
       },
     },
   },
-  plugins: [tailwindcss()],
+  plugins: [stylex({ devMode: "off", useCSSLayers: true })],
   root: resolve(import.meta.dirname),
 });

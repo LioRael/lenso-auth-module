@@ -6,13 +6,25 @@
   "surfaces": [
     {
       "id": "devices",
-      "path": "/data/auth/devices",
+      "path": "/auth/devices",
       "label": "Devices",
-      "area": "data",
-      "requiredCapabilities": ["auth_device.devices.read"],
-      "icon": "network",
+      "area": "runtime",
+      "requiredCapabilities": [
+        "auth_device.devices.read"
+      ],
+      "icon": "smartphone",
       "navigation": {
-        "workspace": { "id": "auth", "label": "Auth", "icon": "shield" },
+        "workspace": {
+          "id": "auth",
+          "label": "Auth",
+          "icon": "shield"
+        },
+        "group": {
+          "id": "directory",
+          "label": "Directory",
+          "icon": "users",
+          "order": 10
+        },
         "order": 70
       }
     }

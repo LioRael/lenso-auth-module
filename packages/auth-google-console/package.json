@@ -17,7 +17,8 @@
       "artifact": "./dist/",
       "format": "console_ui_esm",
       "entry": "index.js",
-      "manifest": "./console-module.json"
+      "manifest": "./console-module.json",
+      "styleAssets": ["assets/stylex.css"]
     }
   },
   "dependencies": {

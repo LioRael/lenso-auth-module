@@ -9,11 +9,22 @@
       "path": "/auth/sessions",
       "label": "Sessions",
       "area": "runtime",
-      "requiredCapabilities": ["auth.sessions.read"],
-      "icon": "shield",
+      "requiredCapabilities": [
+        "auth.sessions.read"
+      ],
+      "icon": "activity",
       "navigation": {
-        "workspace": { "id": "auth", "label": "Auth", "icon": "shield" },
-        "group": { "id": "directory", "label": "Directory", "order": 10 },
+        "workspace": {
+          "id": "auth",
+          "label": "Auth",
+          "icon": "shield"
+        },
+        "group": {
+          "id": "directory",
+          "label": "Directory",
+          "icon": "users",
+          "order": 10
+        },
         "order": 60
       }
     },
@@ -22,11 +33,22 @@
       "path": "/auth/users",
       "label": "Users",
       "area": "runtime",
-      "requiredCapabilities": ["auth.users.read"],
-      "icon": "shield",
+      "requiredCapabilities": [
+        "auth.users.read"
+      ],
+      "icon": "users",
       "navigation": {
-        "workspace": { "id": "auth", "label": "Auth", "icon": "shield" },
-        "group": { "id": "directory", "label": "Directory", "order": 10 },
+        "workspace": {
+          "id": "auth",
+          "label": "Auth",
+          "icon": "shield"
+        },
+        "group": {
+          "id": "directory",
+          "label": "Directory",
+          "icon": "users",
+          "order": 10
+        },
         "order": 50
       }
     }

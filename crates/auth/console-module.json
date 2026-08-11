@@ -4,7 +4,53 @@
   "hostApi": "^2.1.0",
   "consoleUi": "^2.0.0",
   "surfaces": [
-    { "id": "sessions", "path": "/auth/sessions", "label": "Sessions", "area": "runtime", "requiredCapabilities": ["auth.sessions.read"], "icon": "shield", "navigation": { "workspace": { "id": "auth", "label": "Auth", "icon": "shield" }, "group": { "id": "directory", "label": "Directory", "order": 10 }, "order": 60 } },
-    { "id": "users", "path": "/auth/users", "label": "Users", "area": "runtime", "requiredCapabilities": ["auth.users.read"], "icon": "shield", "navigation": { "workspace": { "id": "auth", "label": "Auth", "icon": "shield" }, "group": { "id": "directory", "label": "Directory", "order": 10 }, "order": 50 } }
+    {
+      "id": "sessions",
+      "path": "/auth/sessions",
+      "label": "Sessions",
+      "area": "runtime",
+      "requiredCapabilities": [
+        "auth.sessions.read"
+      ],
+      "icon": "activity",
+      "navigation": {
+        "workspace": {
+          "id": "auth",
+          "label": "Auth",
+          "icon": "shield"
+        },
+        "group": {
+          "id": "directory",
+          "label": "Directory",
+          "icon": "users",
+          "order": 10
+        },
+        "order": 60
+      }
+    },
+    {
+      "id": "users",
+      "path": "/auth/users",
+      "label": "Users",
+      "area": "runtime",
+      "requiredCapabilities": [
+        "auth.users.read"
+      ],
+      "icon": "users",
+      "navigation": {
+        "workspace": {
+          "id": "auth",
+          "label": "Auth",
+          "icon": "shield"
+        },
+        "group": {
+          "id": "directory",
+          "label": "Directory",
+          "icon": "users",
+          "order": 10
+        },
+        "order": 50
+      }
+    }
   ]
 }

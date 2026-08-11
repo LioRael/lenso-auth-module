@@ -4,6 +4,29 @@
   "hostApi": "^2.1.0",
   "consoleUi": "^2.0.0",
   "surfaces": [
-    { "id": "oidc-provider", "path": "/data/auth/providers/oidc", "label": "OIDC Provider", "area": "data", "requiredCapabilities": ["auth.providers.read"], "icon": "shield", "navigation": { "workspace": { "id": "auth", "label": "Auth", "icon": "shield" }, "order": 83 } }
+    {
+      "id": "oidc-provider",
+      "path": "/auth/providers/oidc",
+      "label": "OIDC Provider",
+      "area": "runtime",
+      "requiredCapabilities": [
+        "auth.providers.read"
+      ],
+      "icon": "settings",
+      "navigation": {
+        "workspace": {
+          "id": "auth",
+          "label": "Auth",
+          "icon": "shield"
+        },
+        "group": {
+          "id": "sign-in",
+          "label": "Sign-in",
+          "icon": "git-compare-arrows",
+          "order": 20
+        },
+        "order": 83
+      }
+    }
   ]
 }

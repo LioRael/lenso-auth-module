@@ -6,13 +6,25 @@
   "surfaces": [
     {
       "id": "github-provider",
-      "path": "/data/auth/providers/github",
+      "path": "/auth/providers/github",
       "label": "GitHub",
-      "area": "data",
-      "requiredCapabilities": ["auth.providers.read"],
-      "icon": "network",
+      "area": "runtime",
+      "requiredCapabilities": [
+        "auth.providers.read"
+      ],
+      "icon": "github",
       "navigation": {
-        "workspace": { "id": "auth", "label": "Auth", "icon": "shield" },
+        "workspace": {
+          "id": "auth",
+          "label": "Auth",
+          "icon": "shield"
+        },
+        "group": {
+          "id": "sign-in",
+          "label": "Sign-in",
+          "icon": "git-compare-arrows",
+          "order": 20
+        },
         "order": 81
       }
     }

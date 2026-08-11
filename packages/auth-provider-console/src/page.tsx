@@ -1,55 +1,134 @@
 import { useManagedServiceInventory } from "@lenso/auth-console-shared";
-import type { ReactNode } from "react";
+import {
+  Button,
+  ConsolePage,
+  DataGrid,
+  DataRow,
+  FilterSelect,
+  InlineStatus,
+  Inspector,
+  KeyValueList,
+  PaneHeader,
+  SplitView,
+  StateView,
+  TableHeader,
+  Tabs,
+  pageStyles,
+  type SemanticTone,
+} from "@lenso/console-ui";
+import * as stylex from "@stylexjs/stylex";
+import { useMemo, useState, type ReactNode } from "react";
 
 import {
   providerDetail,
+  providerRouteDescription,
   providerSummaries,
-  routeLabel,
   type ModuleHttpRouteLike,
   type ProviderKind,
-  type ProviderModuleMetadataLike,
   type ProviderSummary,
 } from "./model";
 
-export const AuthProvidersPage = () => {
+type ProviderInspectorTab = "configuration" | "operations" | "overview";
+
+const styles = stylex.create({
+  filterChevron: {
+    display: "inline-block",
+    fontSize: 10,
+    lineHeight: 1,
+    transform: "translateY(-1px)",
+  },
+  filters: { flexWrap: "wrap" },
+  inspectorLines: { display: "grid", gap: 5 },
+  state: { backgroundColor: "var(--lenso-token-canvas, #000000)" },
+  tabs: { marginBlockStart: 2 },
+});
+
+export function AuthProvidersPage() {
   const modulesQuery = useManagedServiceInventory();
-  const summaries = providerSummaries(modulesQuery.data?.modules ?? []);
+  const summaries = useMemo(
+    () => providerSummaries(modulesQuery.data?.modules ?? []),
+    [modulesQuery.data?.modules]
+  );
+  const [selectedKind, setSelectedKind] = useState<ProviderKind>("github");
+  const selected =
+    summaries.find((provider) => provider.kind === selectedKind) ??
+    summaries[0] ??
+    null;
 
   return (
-    <ProviderShell
-      error={modulesQuery.error}
-      isError={modulesQuery.isError}
-      isPending={modulesQuery.isPending}
-      subtitle={`${summaries.filter((provider) => provider.status === "loaded").length} loaded`}
+    <ProviderPage
+      description="Registered sign-in surfaces and their module-owned configuration."
+      filters={
+        <>
+          <ProviderFilter ariaLabel="Provider view" value="all">
+            <option value="all">All providers</option>
+          </ProviderFilter>
+          <ProviderFilter ariaLabel="Provider module" value="any">
+            <option value="any">Any module</option>
+          </ProviderFilter>
+          <ProviderFilter ariaLabel="Provider state" value="registered">
+            <option value="registered">Registered</option>
+          </ProviderFilter>
+        </>
+      }
+      meta="Surface group · Sign-in"
       title="Providers"
     >
-      <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-        <div className="grid border-b border-(--border-subtle) bg-(--surface) md:grid-cols-3">
-          {[
-            ["loaded", summaries.filter((item) => item.status === "loaded").length],
-            ["missing", summaries.filter((item) => item.status === "missing").length],
-            ["routes", summaries.reduce((sum, item) => sum + item.routeCount, 0)],
-          ].map(([label, value]) => (
-            <div
-              className="grid grid-cols-[minmax(0,1fr)_auto] border-r border-(--border-subtle) px-3 py-2 font-mono text-[10px] last:border-r-0"
-              key={label}
-            >
-              <span className="text-(--muted)">{label}</span>
-              <span className="text-[13px] font-semibold text-(--foreground)">
-                {value}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="min-h-0 overflow-auto">
-          {summaries.map((provider) => (
-            <ProviderSummaryRow key={provider.kind} provider={provider} />
-          ))}
-        </div>
-      </div>
-    </ProviderShell>
+      {modulesQuery.isPending ? (
+        <ProviderState
+          description="Reading provider modules from the selected Managed Service."
+          title="Loading provider surfaces"
+        />
+      ) : modulesQuery.isError ? (
+        <ProviderState
+          description={errorMessage(modulesQuery.error)}
+          title="Provider surfaces could not be loaded"
+        />
+      ) : (
+        <SplitView inspectorWidth={376}>
+          <SplitView.Main>
+            <PaneHeader
+              meta={`${summaries.filter((provider) => provider.status === "loaded").length} registered`}
+              title="Provider surfaces"
+            />
+            <DataGrid>
+              <TableHeader
+                columns={["Provider", "Surface", "Routes", "State"]}
+                variant="provider"
+              />
+              {summaries.map((provider) => (
+                <DataRow
+                  cells={[
+                    displaySurfacePath(provider.surfacePath),
+                    provider.routeSummary,
+                    <ProviderStatus key={`${provider.kind}-state`} provider={provider} />,
+                  ]}
+                  interactive
+                  key={provider.kind}
+                  onActivate={() => setSelectedKind(provider.kind)}
+                  primary={provider.label}
+                  secondary={provider.moduleName}
+                  selected={selected?.kind === provider.kind}
+                  variant="provider"
+                />
+              ))}
+            </DataGrid>
+          </SplitView.Main>
+          <SplitView.Inspector>
+            {selected ? (
+              <ProvidersInspector provider={selected} />
+            ) : (
+              <ProviderState
+                description="No provider Module is available in this Managed Service."
+                title="No provider selected"
+              />
+            )}
+          </SplitView.Inspector>
+        </SplitView>
+      )}
+    </ProviderPage>
   );
-};
+}
 
 export const GitHubProviderPage = () => (
   <ProviderDetailPage kind="github" title="GitHub" />
@@ -71,200 +150,557 @@ function ProviderDetailPage({
   title: string;
 }) {
   const modulesQuery = useManagedServiceInventory();
-  const detail = providerDetail(modulesQuery.data?.modules ?? [], kind);
+  const detail = useMemo(
+    () => providerDetail(modulesQuery.data?.modules ?? [], kind),
+    [kind, modulesQuery.data?.modules]
+  );
+  const provider = detail.summary;
+
+  const description =
+    kind === "oidc"
+      ? "First-party OpenID Connect issuer configuration and protocol endpoints."
+      : `${title} sign-in configuration and runtime entry points owned by ${provider?.moduleName ?? `auth-${kind}`}.`;
 
   return (
-    <ProviderShell
-      error={modulesQuery.error}
-      isError={modulesQuery.isError}
-      isPending={modulesQuery.isPending}
-      subtitle={detail.summary?.status ?? "missing"}
+    <ProviderPage
+      description={description}
+      filters={
+        kind === "oidc" ? (
+          <>
+            <ProviderFilter ariaLabel="Endpoint view" value="all">
+              <option value="all">All endpoints</option>
+            </ProviderFilter>
+            <ProviderFilter ariaLabel="Endpoint family" value="protocol">
+              <option value="protocol">Discovery + OAuth</option>
+            </ProviderFilter>
+            <ProviderFilter ariaLabel="Endpoint state" value="registered">
+              <option value="registered">Registered</option>
+            </ProviderFilter>
+          </>
+        ) : (
+          <>
+            <ProviderFilter ariaLabel="Configuration view" value="configuration">
+              <option value="configuration">Configuration</option>
+            </ProviderFilter>
+            <ProviderFilter ariaLabel="Field requirement" value="required">
+              <option value="required">Required fields</option>
+            </ProviderFilter>
+            <ProviderFilter ariaLabel="Configuration source" value="runtime">
+              <option value="runtime">Runtime values</option>
+            </ProviderFilter>
+          </>
+        )
+      }
+      meta="Provider surface · registered"
       title={title}
     >
-      {detail.summary ? (
-        <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_clamp(280px,28vw,380px)] overflow-hidden">
-          <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-r border-(--border-subtle)">
-            <SectionHeader
-              meta={`${detail.routes.length} routes`}
-              title="Routes"
-            />
-            <ProviderRoutesTable routes={detail.routes} />
-          </section>
-          <aside className="min-h-0 overflow-auto bg-(--sidebar)">
-            <SectionHeader meta={detail.summary.status} title="Module" />
-            <Metric label="module" value={detail.summary.moduleName} />
-            <Metric
-              label="dependencies"
-              value={detail.summary.dependencies.join(", ") || "-"}
-            />
-            <Metric label="version" value={detail.summary.version} />
-            <Metric label="delivery" value={detail.summary.delivery} />
-            <Metric
-              label="runtime"
-              value={detail.summary.runtimeStatus}
-            />
-          </aside>
-        </div>
+      {modulesQuery.isPending ? (
+        <ProviderState
+          description="Reading provider metadata from the selected Managed Service."
+          title={`Loading ${title}`}
+        />
+      ) : modulesQuery.isError ? (
+        <ProviderState
+          description={errorMessage(modulesQuery.error)}
+          title={`${title} could not be loaded`}
+        />
+      ) : provider ? (
+        kind === "oidc" ? (
+          <OidcProviderWorkspace provider={provider} routes={detail.routes} />
+        ) : (
+          <OAuthProviderWorkspace provider={provider} routes={detail.routes} />
+        )
       ) : (
-        <PanelMessage value="Provider module not found" />
+        <ProviderState
+          description="The provider definition is unavailable."
+          title="Provider not found"
+        />
       )}
-    </ProviderShell>
+    </ProviderPage>
   );
 }
 
-function ProviderShell({
+function OAuthProviderWorkspace({
+  provider,
+  routes,
+}: {
+  provider: ProviderSummary;
+  routes: readonly ModuleHttpRouteLike[];
+}) {
+  return (
+    <SplitView inspectorWidth={376}>
+      <SplitView.Main>
+        <PaneHeader meta="Module owned" title="Configuration" />
+        <DataGrid>
+          <TableHeader
+            columns={["Field", "Requirement", "Source", "State"]}
+          />
+          {provider.configuration.map((field) => (
+            <DataRow
+              cells={[
+                field.requirement,
+                field.source,
+                <InlineStatus key={`${field.name}-state`} tone="success">
+                  {field.state}
+                </InlineStatus>,
+              ]}
+              key={field.name}
+              primary={field.name}
+              secondary={field.description}
+              selected={field.name === provider.configuration[0]?.name}
+            />
+          ))}
+          <DataRow
+            cells={[
+              "Registered",
+              provider.moduleName,
+              <ProviderStatus key="provider-routes-state" provider={provider} />,
+            ]}
+            primary="login routes"
+            secondary={provider.routeSummary}
+          />
+        </DataGrid>
+      </SplitView.Main>
+      <SplitView.Inspector>
+        <ProviderDetailInspector provider={provider} routes={routes} />
+      </SplitView.Inspector>
+    </SplitView>
+  );
+}
+
+function OidcProviderWorkspace({
+  provider,
+  routes,
+}: {
+  provider: ProviderSummary;
+  routes: readonly ModuleHttpRouteLike[];
+}) {
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const selectedRoute =
+    routes.find((route) => route.path === selectedPath) ?? routes[0] ?? null;
+
+  return (
+    <SplitView inspectorWidth={376}>
+      <SplitView.Main>
+        <PaneHeader meta={`${routes.length} endpoints`} title="Protocol surface" />
+        <DataGrid>
+          <TableHeader columns={["Endpoint", "Method", "Purpose", "State"]} />
+          {routes.length === 0 ? (
+            <ProviderState
+              description="The selected Managed Service did not report OIDC routes."
+              title="No protocol endpoints"
+            />
+          ) : (
+            routes.map((route) => {
+              const description = providerRouteDescription(route);
+              return (
+                <DataRow
+                  cells={[
+                    route.method,
+                    description.purpose,
+                    <ProviderStatus key={`${route.path}-state`} provider={provider} />,
+                  ]}
+                  interactive
+                  key={`${route.method}:${route.path}`}
+                  onActivate={() => setSelectedPath(route.path)}
+                  primary={route.path}
+                  secondary={description.summary}
+                  selected={selectedRoute?.path === route.path}
+                />
+              );
+            })
+          )}
+        </DataGrid>
+      </SplitView.Main>
+      <SplitView.Inspector>
+        <OidcInspector provider={provider} selectedRoute={selectedRoute} />
+      </SplitView.Inspector>
+    </SplitView>
+  );
+}
+
+function ProvidersInspector({ provider }: { provider: ProviderSummary }) {
+  const [tab, setTab] = useState<ProviderInspectorTab>("overview");
+  const state = providerState(provider);
+
+  return (
+    <Inspector
+      status={<InlineStatus tone={state.tone}>{state.label} surface</InlineStatus>}
+      subtitle={provider.moduleName}
+      title={provider.label}
+    >
+      <Tabs density="inspector" stylex={styles.tabs}>
+        <Tabs.List>
+          <Tabs.Tab onClick={() => setTab("overview")} selected={tab === "overview"}>
+            Overview
+          </Tabs.Tab>
+          <Tabs.Tab
+            onClick={() => setTab("configuration")}
+            selected={tab === "configuration"}
+          >
+            Configuration
+          </Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel>
+          {tab === "overview" ? (
+            <>
+              <Inspector.Section title="Surface">
+                <InspectorLines
+                  items={[
+                    "Group: Sign-in",
+                    `Path: ${displaySurfacePath(provider.surfacePath)}`,
+                    "Workspace: Auth",
+                  ]}
+                />
+              </Inspector.Section>
+              <Inspector.Section title="Configuration">
+                <InspectorLines
+                  items={provider.configuration.map((field) => field.name)}
+                />
+              </Inspector.Section>
+              <Inspector.Section title="Operations">
+                <InspectorLines
+                  items={[
+                    ...provider.operations.split(" · "),
+                    "Open related stories",
+                  ]}
+                />
+              </Inspector.Section>
+              <Inspector.Section title="Ownership">
+                <InspectorLines
+                  items={[
+                    `Routes: ${provider.moduleName}`,
+                    "Effects: provider module",
+                    "Evidence: runtime inventory",
+                  ]}
+                />
+              </Inspector.Section>
+            </>
+          ) : (
+            <Inspector.Section title="Module-owned fields">
+              <KeyValueList>
+                {provider.configuration.map((field) => (
+                  <KeyValueList.Row
+                    key={field.name}
+                    label={field.name}
+                    value={field.state}
+                  />
+                ))}
+              </KeyValueList>
+            </Inspector.Section>
+          )}
+        </Tabs.Panel>
+      </Tabs>
+      <Inspector.Actions>
+        <Button
+          disabled={provider.status === "missing"}
+          onClick={() => window.location.assign(provider.surfacePath)}
+          variant="primary"
+        >
+          Open {provider.label}
+        </Button>
+      </Inspector.Actions>
+    </Inspector>
+  );
+}
+
+function ProviderDetailInspector({
+  provider,
+  routes,
+}: {
+  provider: ProviderSummary;
+  routes: readonly ModuleHttpRouteLike[];
+}) {
+  const [tab, setTab] = useState<ProviderInspectorTab>("configuration");
+  const state = providerState(provider);
+
+  return (
+    <Inspector
+      status={
+        <InlineStatus tone={state.tone}>
+          {state.label} · configuration resolved
+        </InlineStatus>
+      }
+      subtitle={provider.moduleName}
+      title={`${provider.label} provider`}
+    >
+      <Tabs density="inspector" stylex={styles.tabs}>
+        <Tabs.List>
+          <Tabs.Tab
+            onClick={() => setTab("configuration")}
+            selected={tab === "configuration"}
+          >
+            Configuration
+          </Tabs.Tab>
+          <Tabs.Tab
+            onClick={() => setTab("operations")}
+            selected={tab === "operations"}
+          >
+            Operations
+          </Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel>
+          {tab === "configuration" ? (
+            <>
+              <Inspector.Section title="Configuration">
+                <InspectorLines
+                  items={provider.configuration.map((field) => field.name)}
+                />
+              </Inspector.Section>
+              <Inspector.Section title="Sign-in flow">
+                <InspectorLines
+                  items={[
+                    "Start login",
+                    "Complete callback",
+                    "Session issued by Auth",
+                  ]}
+                />
+              </Inspector.Section>
+              <Inspector.Section title="Surface">
+                <InspectorLines
+                  items={[
+                    "Workspace: Auth",
+                    "Group: Sign-in",
+                    `Surface: ${provider.label}`,
+                  ]}
+                />
+              </Inspector.Section>
+              <Inspector.Section title="Evidence">
+                <InspectorLines
+                  items={[
+                    "Secrets never displayed",
+                    `Route owner: ${provider.moduleName}`,
+                    "Runtime receipts",
+                  ]}
+                />
+              </Inspector.Section>
+            </>
+          ) : (
+            <Inspector.Section title="Registered routes">
+              <KeyValueList>
+                {routes.map((route) => (
+                  <KeyValueList.Row
+                    key={`${route.method}:${route.path}`}
+                    label={route.method}
+                    value={route.path}
+                  />
+                ))}
+              </KeyValueList>
+            </Inspector.Section>
+          )}
+        </Tabs.Panel>
+      </Tabs>
+      <Inspector.Actions>
+        <Button
+          disabled
+          title="The target-owned sign-in route is not exposed through this Console Surface grant."
+          variant="primary"
+        >
+          Start sign-in
+        </Button>
+      </Inspector.Actions>
+    </Inspector>
+  );
+}
+
+function OidcInspector({
+  provider,
+  selectedRoute,
+}: {
+  provider: ProviderSummary;
+  selectedRoute: ModuleHttpRouteLike | null;
+}) {
+  const [tab, setTab] = useState<ProviderInspectorTab>("operations");
+  const state = providerState(provider);
+  const routeDescription = selectedRoute
+    ? providerRouteDescription(selectedRoute)
+    : null;
+
+  return (
+    <Inspector
+      status={
+        <InlineStatus tone={state.tone}>
+          {state.label} · protocol surface
+        </InlineStatus>
+      }
+      subtitle={provider.moduleName}
+      title="OIDC issuer"
+    >
+      <Tabs density="inspector" stylex={styles.tabs}>
+        <Tabs.List>
+          <Tabs.Tab
+            onClick={() => setTab("configuration")}
+            selected={tab === "configuration"}
+          >
+            Configuration
+          </Tabs.Tab>
+          <Tabs.Tab
+            onClick={() => setTab("operations")}
+            selected={tab === "operations"}
+          >
+            Endpoints
+          </Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel>
+          {tab === "configuration" ? (
+            <Inspector.Section title="Configuration">
+              <InspectorLines
+                items={provider.configuration.map((field) => field.name)}
+              />
+            </Inspector.Section>
+          ) : (
+            <>
+              <Inspector.Section title="Configuration">
+                <InspectorLines
+                  items={provider.configuration.map((field) => field.name)}
+                />
+              </Inspector.Section>
+              <Inspector.Section title="Selected endpoint">
+                <InspectorLines
+                  items={[
+                    selectedRoute
+                      ? `${selectedRoute.method} ${selectedRoute.path}`
+                      : "No endpoint selected",
+                    routeDescription?.summary ?? "-",
+                    "No operator effect",
+                  ]}
+                />
+              </Inspector.Section>
+              <Inspector.Section title="Protocol">
+                <InspectorLines
+                  items={[
+                    "Authorization code flow",
+                    "JWKS signing keys",
+                    "Token exchange",
+                  ]}
+                />
+              </Inspector.Section>
+              <Inspector.Section title="Evidence">
+                <InspectorLines
+                  items={[
+                    `Route owner: ${provider.moduleName}`,
+                    "Keys remain protected",
+                    "Runtime receipts",
+                  ]}
+                />
+              </Inspector.Section>
+            </>
+          )}
+        </Tabs.Panel>
+      </Tabs>
+      <Inspector.Actions>
+        <Button
+          disabled
+          title="The managed issuer value is not exposed through this Console Surface grant."
+        >
+          Copy issuer
+        </Button>
+      </Inspector.Actions>
+    </Inspector>
+  );
+}
+
+function ProviderPage({
   children,
-  error,
-  isError,
-  isPending,
-  subtitle,
+  description,
+  filters,
+  meta,
   title,
 }: {
   children: ReactNode;
-  error: unknown;
-  isError: boolean;
-  isPending: boolean;
-  subtitle: string;
-  title: string;
+  description: ReactNode;
+  filters: ReactNode;
+  meta: ReactNode;
+  title: ReactNode;
 }) {
-  if (isError) {
-    return (
-      <main className="h-full bg-(--background) text-(--foreground)">
-        <PanelMessage
-          tone="error"
-          value={String((error as Error | undefined)?.message)}
-        />
-      </main>
-    );
-  }
-  if (isPending) {
-    return (
-      <main className="h-full bg-(--background) text-(--foreground)">
-        <PanelMessage value="Loading provider metadata" />
-      </main>
-    );
-  }
   return (
-    <main className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-(--background) text-(--foreground)">
-      <header className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <h1 className="font-mono text-[13px] font-semibold">{title}</h1>
-          <span className="ml-auto font-mono text-[10px] text-(--muted)">
-            {subtitle}
-          </span>
+    <>
+      <ConsolePage.Header>
+        <ConsolePage.Heading>
+          <ConsolePage.Title>{title}</ConsolePage.Title>
+          <ConsolePage.Description>{description}</ConsolePage.Description>
+        </ConsolePage.Heading>
+        <ConsolePage.Actions>{meta}</ConsolePage.Actions>
+      </ConsolePage.Header>
+      <ConsolePage.Body>
+        <div {...stylex.props(pageStyles.pageFilters, styles.filters)}>
+          {filters}
         </div>
-      </header>
-      {children}
-    </main>
+        {children}
+      </ConsolePage.Body>
+    </>
   );
 }
 
-function ProviderSummaryRow({ provider }: { provider: ProviderSummary }) {
-  return (
-    <div className="grid min-h-11 min-w-220 grid-cols-[minmax(180px,1fr)_120px_120px_minmax(180px,0.8fr)_100px] items-center border-b border-(--border-subtle) px-3 py-2 font-mono text-[11px]">
-      <span className="truncate text-(--foreground)">{provider.label}</span>
-      <StatusPill status={provider.status} />
-      <span className="truncate text-(--muted)">
-        {provider.routeCount} routes
-      </span>
-      <span className="truncate text-(--muted)">
-        {provider.dependencies.join(", ") || "-"}
-      </span>
-      <span className="truncate text-(--muted)">{provider.version}</span>
-    </div>
-  );
-}
-
-function ProviderRoutesTable({
-  routes,
+function ProviderFilter({
+  ariaLabel,
+  children,
+  value,
 }: {
-  routes: readonly ModuleHttpRouteLike[];
+  ariaLabel: string;
+  children: ReactNode;
+  value: string;
 }) {
-  if (routes.length === 0) {
-    return <PanelMessage value="No provider routes found" />;
-  }
   return (
-    <div className="min-h-0 overflow-auto">
-      <div className="grid min-w-210 grid-cols-[80px_minmax(220px,1fr)_minmax(180px,0.8fr)] border-b border-(--border-subtle) bg-(--surface) px-3 py-1.5 font-mono text-[10px] text-(--muted)">
-        <span>Method</span>
-        <span>Path</span>
-        <span>Capability</span>
-      </div>
-      {routes.map((route, index) => (
-        <div
-          className="grid min-h-10 min-w-210 grid-cols-[80px_minmax(220px,1fr)_minmax(180px,0.8fr)] items-center border-b border-(--border-subtle) px-3 py-2 font-mono text-[11px]"
-          key={`${route.method ?? "GET"}:${route.path ?? index}`}
-        >
-          <span className="truncate text-(--foreground)">
-            {route.method ?? "-"}
-          </span>
-          <span className="truncate text-(--muted)">{route.path ?? "-"}</span>
-          <span className="truncate text-(--muted)">
-            {route.capability ?? routeLabel(route)}
-          </span>
-        </div>
+    <FilterSelect
+      aria-label={ariaLabel}
+      icon={<span {...stylex.props(styles.filterChevron)}>⌄</span>}
+      onChange={() => undefined}
+      value={value}
+    >
+      {children}
+    </FilterSelect>
+  );
+}
+
+function ProviderStatus({ provider }: { provider: ProviderSummary }) {
+  const state = providerState(provider);
+  return <InlineStatus tone={state.tone}>{state.label}</InlineStatus>;
+}
+
+function InspectorLines({ items }: { items: readonly ReactNode[] }) {
+  return (
+    <div {...stylex.props(styles.inspectorLines)}>
+      {items.map((item, index) => (
+        <span key={index}>{item}</span>
       ))}
     </div>
   );
 }
 
-function SectionHeader({ meta, title }: { meta?: string; title: string }) {
-  return (
-    <div className="flex min-w-0 items-center gap-2 border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
-      <h2 className="truncate font-mono text-[11px] font-semibold text-(--foreground)">
-        {title}
-      </h2>
-      {meta ? (
-        <span className="ml-auto truncate font-mono text-[10px] text-(--muted)">
-          {meta}
-        </span>
-      ) : null}
-    </div>
-  );
+function displaySurfacePath(path: string): string {
+  return path.replace(/^\/auth/u, "");
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2 border-b border-(--border-subtle) bg-(--surface) px-3 py-2 font-mono text-[10px]">
-      <span className="text-(--muted)">{label}</span>
-      <span className="truncate text-(--foreground)" title={value}>
-        {value}
-      </span>
-    </div>
-  );
+function providerState(provider: ProviderSummary): {
+  label: "Degraded" | "Missing" | "Registered";
+  tone: SemanticTone;
+} {
+  if (provider.status === "loaded") {
+    return { label: "Registered", tone: "success" };
+  }
+  if (provider.status === "error") {
+    return { label: "Degraded", tone: "danger" };
+  }
+  return { label: "Missing", tone: "neutral" };
 }
 
-function StatusPill({ status }: { status: ProviderSummary["status"] }) {
-  const tone =
-    status === "loaded"
-      ? "bg-[var(--tone-success-bg)] text-(--tone-success-fg) border-[var(--tone-success-border)]"
-      : status === "error"
-        ? "bg-[var(--tone-error-bg)] text-(--tone-error-fg) border-[var(--tone-error-border)]"
-        : "bg-[var(--tone-muted-bg)] text-(--tone-muted-fg) border-[var(--tone-muted-border)]";
-  return (
-    <span
-      className={`inline-flex h-5 w-fit max-w-full items-center border px-1.5 font-mono text-[10px] ${tone}`}
-    >
-      {status}
-    </span>
-  );
-}
-
-function PanelMessage({
-  tone = "muted",
-  value,
+function ProviderState({
+  description,
+  title,
 }: {
-  tone?: "error" | "muted";
-  value: string;
+  description: string;
+  title: string;
 }) {
   return (
-    <div
-      className={[
-        "p-3 font-mono text-[11px]",
-        tone === "error" ? "text-(--error)" : "text-(--muted)",
-      ].join(" ")}
-    >
-      {value}
-    </div>
+    <StateView
+      description={description}
+      stylex={styles.state}
+      title={title}
+    />
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

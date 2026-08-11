@@ -6,7 +6,7 @@ import { authOauthConsoleManifest } from "./manifest";
 
 const ProvidersSurface = () => (
   <SurfaceRoot moduleId="lenso/auth-oauth" surfaceId="providers">
-    <ConsolePage scroll={false}>
+    <ConsolePage data-page="auth-providers-page">
       <AuthProvidersPage />
     </ConsolePage>
   </SurfaceRoot>

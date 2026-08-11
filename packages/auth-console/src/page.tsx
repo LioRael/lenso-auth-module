@@ -33,19 +33,15 @@ import {
 
 import {
   createAuthBusinessApi,
-  type AuthPage,
-  type AuthSessionRecord,
-  type AuthUserRecord,
 } from "./business-api";
 import {
   authSessionRows,
-  authSessionsSummary,
   authUserRows,
-  authUsersSummary,
   filterAuthSessionRows,
   filterAuthUserRows,
   formatAuthTimestamp,
   type AuthIdentityFilter,
+  type AuthSessionExpiryFilter,
   type AuthSessionRow,
   type AuthSessionStateFilter,
   type AuthUserRow,
@@ -57,9 +53,20 @@ const AUTH_USERS_MANAGE = "auth.users.manage";
 const AUTH_SESSIONS_REVOKE = "auth.sessions.revoke";
 
 type InspectorTab = "actions" | "details" | "sessions";
+type SessionInspectorTab = "details" | "evidence";
 type UserMutation =
   | { readonly kind: "disable"; readonly reason?: string; readonly until?: string }
   | { readonly kind: "enable" };
+
+type UserActionRegistryEntry = {
+  readonly available: boolean;
+  readonly effect: string;
+  readonly id: string;
+  readonly kind: "Core" | "Extension";
+  readonly label: string;
+  readonly operationId: string;
+  readonly owner: string;
+};
 
 const styles = stylex.create({
   actionForm: {
@@ -89,6 +96,10 @@ const styles = stylex.create({
   filters: {
     flexWrap: "wrap",
   },
+  inspectorLines: {
+    display: "grid",
+    gap: 5,
+  },
   mono: {
     fontFamily: 'var(--lenso-token-fontCode, "Roboto Mono", monospace)',
   },
@@ -109,6 +120,7 @@ export function AuthUsersPage() {
     useState<AuthIdentityFilter>("all");
   const [stateFilter, setStateFilter] = useState<AuthUserStateFilter>("all");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("details");
   const records = usersQuery.data?.records;
   const rows = useMemo(() => authUserRows(records ?? []), [records]);
@@ -116,7 +128,6 @@ export function AuthUsersPage() {
     () => filterAuthUserRows(rows, identityFilter, stateFilter),
     [identityFilter, rows, stateFilter]
   );
-  const summary = useMemo(() => authUsersSummary(records ?? []), [records]);
   const selectedUser =
     filteredRows.find((user) => user.id === selectedUserId) ??
     filteredRows[0] ??
@@ -126,9 +137,18 @@ export function AuthUsersPage() {
     AUTH_USERS_DETAIL_ACTIONS_SLOT,
     { selected_user: selectedUser ?? {} }
   );
-  const extensionAction =
-    detailActions.find((action) => action.kind === "operation") ?? null;
   const canManage = client.capabilities.has(AUTH_USERS_MANAGE);
+  const actionRegistry = userActionRegistry(
+    selectedUser,
+    canManage,
+    detailActions,
+    client.capabilities
+  );
+  const selectedAction =
+    actionRegistry.find((action) => action.id === selectedActionId) ??
+    actionRegistry[0] ??
+    null;
+  const isActionsView = inspectorTab === "actions";
   const executeUserMutation = useCallback(
     async (mutation: UserMutation) => {
       if (!selectedUser) {
@@ -171,14 +191,19 @@ export function AuthUsersPage() {
       <ConsolePage data-page="auth-users-page">
         <ConsolePage.Header>
           <ConsolePage.Heading>
-            <ConsolePage.Title>Users</ConsolePage.Title>
+            <ConsolePage.Title>
+              {isActionsView ? "User actions" : "Users"}
+            </ConsolePage.Title>
             <ConsolePage.Description>
-              User identities registered by Auth, with contract-bound access
-              controls and extension actions.
+              {isActionsView
+                ? "Core Auth operations and module-contributed actions for the selected identity."
+                : "User identities registered by Auth, with actions contributed by password and phone modules."}
             </ConsolePage.Description>
           </ConsolePage.Heading>
           <ConsolePage.Actions>
-            Auth Business API · live runtime data
+            {isActionsView
+              ? `Selected user · ${selectedUser?.id ?? "none"}`
+              : "Schema-admin surface  ·  live runtime data"}
           </ConsolePage.Actions>
         </ConsolePage.Header>
 
@@ -187,29 +212,47 @@ export function AuthUsersPage() {
             {...stylex.props(pageStyles.pageFilters, styles.filters)}
             data-page-slot="auth-users-page__filters"
           >
-            <DirectoryFilter ariaLabel="User view" value="all">
-              <option value="all">All users</option>
-            </DirectoryFilter>
-            <DirectoryFilter
-              ariaLabel="Identity type"
-              onChange={(value) =>
-                setIdentityFilter(value as AuthIdentityFilter)
-              }
-              value={identityFilter}
-            >
-              <option value="all">Any identity</option>
-              <option value="registered">Registered</option>
-              <option value="anonymous">Anonymous</option>
-            </DirectoryFilter>
-            <DirectoryFilter
-              ariaLabel="User state"
-              onChange={(value) => setStateFilter(value as AuthUserStateFilter)}
-              value={stateFilter}
-            >
-              <option value="all">Any state</option>
-              <option value="active">Active</option>
-              <option value="disabled">Disabled</option>
-            </DirectoryFilter>
+            {isActionsView ? (
+              <>
+                <DirectoryFilter ariaLabel="Action view" value="all">
+                  <option value="all">All actions</option>
+                </DirectoryFilter>
+                <DirectoryFilter ariaLabel="Action owner" value="all">
+                  <option value="all">Core + extensions</option>
+                </DirectoryFilter>
+                <DirectoryFilter ariaLabel="Action state" value="available">
+                  <option value="available">Available now</option>
+                </DirectoryFilter>
+              </>
+            ) : (
+              <>
+                <DirectoryFilter ariaLabel="User view" value="all">
+                  <option value="all">All users</option>
+                </DirectoryFilter>
+                <DirectoryFilter
+                  ariaLabel="Identity type"
+                  onChange={(value) =>
+                    setIdentityFilter(value as AuthIdentityFilter)
+                  }
+                  value={identityFilter}
+                >
+                  <option value="all">Any identity</option>
+                  <option value="registered">Registered</option>
+                  <option value="anonymous">Anonymous</option>
+                </DirectoryFilter>
+                <DirectoryFilter
+                  ariaLabel="User state"
+                  onChange={(value) =>
+                    setStateFilter(value as AuthUserStateFilter)
+                  }
+                  value={stateFilter}
+                >
+                  <option value="all">Any state</option>
+                  <option value="active">Active</option>
+                  <option value="disabled">Disabled</option>
+                </DirectoryFilter>
+              </>
+            )}
           </div>
 
           {usersQuery.isPending ? (
@@ -229,55 +272,71 @@ export function AuthUsersPage() {
             >
               <SplitView.Main>
                 <PaneHeader
-                  meta={`${filteredRows.length} of ${summary.total}`}
-                  title="Directory"
+                  meta={
+                    isActionsView
+                      ? `${actionRegistry.length} registered`
+                      : "Latest records"
+                  }
+                  title={isActionsView ? "Action registry" : "User directory"}
                 />
                 <DataGrid>
-                  <TableHeader
-                    columns={["User", "Anonymous", "Created", "State"]}
-                  />
-                  {filteredRows.length === 0 ? (
-                    <DirectoryState
-                      description="Adjust the identity or state filters to see other users."
-                      title="No users match these filters"
+                  {isActionsView ? (
+                    <UserActionRegistry
+                      actions={actionRegistry}
+                      onSelect={setSelectedActionId}
+                      selectedAction={selectedAction}
                     />
                   ) : (
-                    filteredRows.map((user) => (
-                      <DataRow
-                        cells={[
-                          user.isAnonymous ? "Yes" : "No",
-                          formatAuthTimestamp(user.createdAt),
-                          <InlineStatus
-                            key={`${user.id}-state`}
-                            tone={statusTone(user.status)}
-                          >
-                            {titleCase(user.status)}
-                          </InlineStatus>,
-                        ]}
-                        interactive
-                        key={user.id}
-                        onActivate={() => setSelectedUserId(user.id)}
-                        primary={user.id}
-                        secondary={
-                          user.isAnonymous
-                            ? "Anonymous identity"
-                            : "Registered identity"
-                        }
-                        selected={selectedUser?.id === user.id}
+                    <>
+                      <TableHeader
+                        columns={["User", "Anonymous", "Created", "State"]}
                       />
-                    ))
+                      {filteredRows.length === 0 ? (
+                        <DirectoryState
+                          description="Adjust the identity or state filters to see other users."
+                          title="No users match these filters"
+                        />
+                      ) : (
+                        filteredRows.map((user) => (
+                          <DataRow
+                            cells={[
+                              user.isAnonymous ? "Yes" : "No",
+                              formatAuthTimestamp(user.createdAt),
+                              <InlineStatus
+                                key={`${user.id}-state`}
+                                tone={statusTone(user.status)}
+                              >
+                                {titleCase(user.status)}
+                              </InlineStatus>,
+                            ]}
+                            interactive
+                            key={user.id}
+                            onActivate={() => setSelectedUserId(user.id)}
+                            primary={user.id}
+                            secondary={
+                              user.isAnonymous
+                                ? "Anonymous identity"
+                                : "Registered identity"
+                            }
+                            selected={selectedUser?.id === user.id}
+                          />
+                        ))
+                      )}
+                    </>
                   )}
                 </DataGrid>
               </SplitView.Main>
               <SplitView.Inspector>
                 <UserInspector
+                  actionRegistry={actionRegistry}
                   canManage={canManage}
-                  extensionAction={extensionAction}
+                  extensionActions={detailActions}
                   inspectorTab={inspectorTab}
                   mutation={userMutation}
                   onChangeTab={setInspectorTab}
                   onDisable={disableUser}
                   onEnable={() => userMutation.mutate({ kind: "enable" })}
+                  selectedAction={selectedAction}
                   user={selectedUser}
                 />
               </SplitView.Inspector>
@@ -286,6 +345,42 @@ export function AuthUsersPage() {
         </ConsolePage.Body>
       </ConsolePage>
     </SurfaceRoot>
+  );
+}
+
+function UserActionRegistry({
+  actions,
+  onSelect,
+  selectedAction,
+}: {
+  actions: readonly UserActionRegistryEntry[];
+  onSelect: (actionId: string) => void;
+  selectedAction: UserActionRegistryEntry | null;
+}) {
+  return (
+    <>
+      <TableHeader columns={["Action", "Kind", "Effect", "State"]} />
+      {actions.map((action) => (
+        <DataRow
+          cells={[
+            action.kind,
+            action.effect,
+            <InlineStatus
+              key={`${action.id}-state`}
+              tone={action.available ? "success" : "neutral"}
+            >
+              {action.available ? "Available" : "Unavailable"}
+            </InlineStatus>,
+          ]}
+          interactive
+          key={action.id}
+          onActivate={() => onSelect(action.id)}
+          primary={action.label}
+          secondary={action.owner}
+          selected={selectedAction?.id === action.id}
+        />
+      ))}
+    </>
   );
 }
 
@@ -299,16 +394,17 @@ export function AuthSessionsPage() {
   const sessionsQuery = useAsyncQuery(loadSessions);
   const [stateFilter, setStateFilter] =
     useState<AuthSessionStateFilter>("all");
+  const [expiryFilter, setExpiryFilter] =
+    useState<AuthSessionExpiryFilter>("all");
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
     null
   );
   const records = sessionsQuery.data?.records;
   const rows = useMemo(() => authSessionRows(records ?? []), [records]);
   const filteredRows = useMemo(
-    () => filterAuthSessionRows(rows, stateFilter),
-    [rows, stateFilter]
+    () => filterAuthSessionRows(rows, stateFilter, expiryFilter),
+    [expiryFilter, rows, stateFilter]
   );
-  const summary = useMemo(() => authSessionsSummary(records ?? []), [records]);
   const selectedSession =
     filteredRows.find((session) => session.id === selectedSessionId) ??
     filteredRows[0] ??
@@ -332,13 +428,12 @@ export function AuthSessionsPage() {
           <ConsolePage.Heading>
             <ConsolePage.Title>Sessions</ConsolePage.Title>
             <ConsolePage.Description>
-              Active and historical authentication sessions for the selected
-              Managed Service.
+              Authentication sessions, expiry state, and revocation evidence
+              owned by Auth.
             </ConsolePage.Description>
           </ConsolePage.Heading>
           <ConsolePage.Actions>
-            {summary.active} active · {summary.expired} expired · {summary.revoked}{" "}
-            revoked
+            Runtime surface · revocation is auditable
           </ConsolePage.Actions>
         </ConsolePage.Header>
 
@@ -349,6 +444,17 @@ export function AuthSessionsPage() {
           >
             <DirectoryFilter ariaLabel="Session view" value="all">
               <option value="all">All sessions</option>
+            </DirectoryFilter>
+            <DirectoryFilter
+              ariaLabel="Session expiry"
+              onChange={(value) =>
+                setExpiryFilter(value as AuthSessionExpiryFilter)
+              }
+              value={expiryFilter}
+            >
+              <option value="all">Any expiry</option>
+              <option value="unexpired">Not expired</option>
+              <option value="expired">Expired</option>
             </DirectoryFilter>
             <DirectoryFilter
               ariaLabel="Session state"
@@ -380,13 +486,10 @@ export function AuthSessionsPage() {
               inspectorWidth={376}
             >
               <SplitView.Main>
-                <PaneHeader
-                  meta={`${filteredRows.length} of ${summary.total}`}
-                  title="Session directory"
-                />
+                <PaneHeader meta="Latest records" title="Session registry" />
                 <DataGrid>
                   <TableHeader
-                    columns={["Session", "User", "Created", "State"]}
+                    columns={["Session", "Device", "Expires", "State"]}
                   />
                   {filteredRows.length === 0 ? (
                     <DirectoryState
@@ -397,8 +500,10 @@ export function AuthSessionsPage() {
                     filteredRows.map((session) => (
                       <DataRow
                         cells={[
-                          session.userId,
-                          formatAuthTimestamp(session.createdAt),
+                          session.deviceId === "-"
+                            ? "No device"
+                            : session.deviceId,
+                          formatAuthTimestamp(session.expiresAt),
                           <InlineStatus
                             key={`${session.id}-state`}
                             tone={statusTone(session.status)}
@@ -410,11 +515,7 @@ export function AuthSessionsPage() {
                         key={session.id}
                         onActivate={() => setSelectedSessionId(session.id)}
                         primary={session.id}
-                        secondary={
-                          session.deviceId === "-"
-                            ? "Unbound device"
-                            : session.deviceId
-                        }
+                        secondary={session.userId}
                         selected={selectedSession?.id === session.id}
                       />
                     ))
@@ -438,22 +539,26 @@ export function AuthSessionsPage() {
 }
 
 function UserInspector({
+  actionRegistry,
   canManage,
-  extensionAction,
+  extensionActions,
   inspectorTab,
   mutation,
   onChangeTab,
   onDisable,
   onEnable,
+  selectedAction,
   user,
 }: {
+  actionRegistry: readonly UserActionRegistryEntry[];
   canManage: boolean;
-  extensionAction: ConsoleResolvedOperationContribution | null;
+  extensionActions: readonly ConsoleResolvedOperationContribution[];
   inspectorTab: InspectorTab;
   mutation: AsyncMutationState<UserMutation>;
   onChangeTab: (tab: InspectorTab) => void;
   onDisable: (event: FormEvent<HTMLFormElement>) => void;
   onEnable: () => void;
+  selectedAction: UserActionRegistryEntry | null;
   user: AuthUserRow | null;
 }) {
   if (!user) {
@@ -465,15 +570,35 @@ function UserInspector({
     );
   }
 
+  const isActionsView = inspectorTab === "actions";
+
   return (
     <Inspector
       status={
-        <InlineStatus tone={statusTone(user.status)}>
-          {titleCase(user.status)}
+        <InlineStatus
+          tone={
+            isActionsView
+              ? selectedAction?.available
+                ? "success"
+                : "neutral"
+              : statusTone(user.status)
+          }
+        >
+          {isActionsView
+            ? selectedAction?.available
+              ? "Available for selected user"
+              : "Unavailable for selected user"
+            : `${titleCase(user.status)} · created ${formatAuthDateLabel(user.createdAt)}`}
         </InlineStatus>
       }
-      subtitle={user.isAnonymous ? "Anonymous identity" : "Registered identity"}
-      title={user.id}
+      subtitle={
+        isActionsView
+          ? user.id
+          : user.isAnonymous
+            ? "Anonymous identity"
+            : "Registered identity"
+      }
+      title={isActionsView ? "Actions" : user.id}
     >
       <Tabs density="inspector" stylex={styles.tabs}>
         <Tabs.List>
@@ -491,44 +616,43 @@ function UserInspector({
           {inspectorTab === "details" ? (
             <>
               <Inspector.Section title="Identity">
-                <KeyValueList>
-                  <KeyValueList.Row
-                    label="Anonymous"
-                    value={user.isAnonymous ? "Yes" : "No"}
-                  />
-                  <KeyValueList.Row
-                    label="Created"
-                    value={formatAuthTimestamp(user.createdAt)}
-                  />
-                </KeyValueList>
+                <InspectorLines
+                  items={[
+                    `Anonymous: ${user.isAnonymous ? "yes" : "no"}`,
+                    "Device: -",
+                    `Created: ${formatAuthTimestamp(user.createdAt)}`,
+                  ]}
+                />
               </Inspector.Section>
               <Inspector.Section title="Access state">
-                <KeyValueList>
-                  <KeyValueList.Row
-                    label="State"
-                    value={titleCase(user.status)}
-                  />
-                  <KeyValueList.Row
-                    label="Disabled"
-                    value={formatAuthTimestamp(user.disabledAt)}
-                  />
-                  <KeyValueList.Row
-                    label="Until"
-                    value={formatAuthTimestamp(user.disabledUntil)}
-                  />
-                  <KeyValueList.Row label="Reason" value={user.disabledReason} />
-                </KeyValueList>
+                <InspectorLines
+                  items={[
+                    `Disabled: ${user.status === "disabled" ? "yes" : "no"}`,
+                    `Reason: ${user.disabledReason}`,
+                    `Until: ${formatAuthTimestamp(user.disabledUntil)}`,
+                  ]}
+                />
               </Inspector.Section>
               <Inspector.Section title="Surface">
-                <KeyValueList>
-                  <KeyValueList.Row label="Source" value="Auth Business API" />
-                  <KeyValueList.Row label="Mode" value="Live runtime data" />
-                </KeyValueList>
+                <InspectorLines
+                  items={[
+                    "Workspace: Auth",
+                    "Group: Directory",
+                    "Surface: Users",
+                  ]}
+                />
               </Inspector.Section>
               <Inspector.Section title="Extension actions">
-                {extensionAction
-                  ? extensionAction.label
-                  : "No installed Auth module contributes an operation."}
+                <InspectorLines
+                  items={
+                    extensionActions.length > 0
+                      ? [
+                          ...extensionActions.map((action) => action.label),
+                          `Slot: ${AUTH_USERS_DETAIL_ACTIONS_SLOT}`,
+                        ]
+                      : ["No installed Auth module contributes an operation."]
+                  }
+                />
               </Inspector.Section>
             </>
           ) : inspectorTab === "sessions" ? (
@@ -543,11 +667,12 @@ function UserInspector({
             />
           ) : (
             <UserActions
+              actions={actionRegistry}
               canManage={canManage}
-              extensionAction={extensionAction}
               mutation={mutation}
               onDisable={onDisable}
               onEnable={onEnable}
+              selectedAction={selectedAction}
               user={user}
             />
           )}
@@ -558,24 +683,65 @@ function UserInspector({
 }
 
 function UserActions({
+  actions,
   canManage,
-  extensionAction,
   mutation,
   onDisable,
   onEnable,
+  selectedAction,
   user,
 }: {
+  actions: readonly UserActionRegistryEntry[];
   canManage: boolean;
-  extensionAction: ConsoleResolvedOperationContribution | null;
   mutation: AsyncMutationState<UserMutation>;
   onDisable: (event: FormEvent<HTMLFormElement>) => void;
   onEnable: () => void;
+  selectedAction: UserActionRegistryEntry | null;
   user: AuthUserRow;
 }) {
+  const [coreControl, setCoreControl] = useState<"disable" | null>(null);
+  const extensionActions = actions.filter(
+    (action) => action.kind === "Extension"
+  );
+
+  useEffect(() => {
+    setCoreControl(null);
+  }, [selectedAction?.id]);
+
+  if (!selectedAction) {
+    return (
+      <DirectoryState
+        description="No core or module-contributed action is registered for this user."
+        title="No action selected"
+      />
+    );
+  }
+
   return (
     <div {...stylex.props(styles.actionStack)}>
-      <Inspector.Section title="Access action">
-        {user.status === "active" ? (
+      <Inspector.Section title="Core controls">
+        <InspectorLines
+          items={["Disable user", "Enable user", "Capability-gated"]}
+        />
+      </Inspector.Section>
+
+      {extensionActions.map((action) => (
+        <Inspector.Section
+          key={action.id}
+          title={`${extensionLabel(action.owner)} extension`}
+        >
+          <InspectorLines
+            items={[
+              action.label,
+              `Owner: ${action.owner}`,
+              "Slot contribution",
+            ]}
+          />
+        </Inspector.Section>
+      ))}
+
+      {coreControl === "disable" && user.status === "active" ? (
+        <Inspector.Section title="Confirm disable user">
           <form {...stylex.props(styles.actionForm)} onSubmit={onDisable}>
             <Field>
               <Field.Label>Reason</Field.Label>
@@ -593,6 +759,36 @@ function UserActions({
               {mutation.isPending ? "Disabling…" : "Disable user"}
             </Button>
           </form>
+        </Inspector.Section>
+      ) : null}
+
+      <Inspector.Section title="Execution">
+        <InspectorLines
+          items={[
+            "Confirmation required",
+            "Receipts retained",
+            "Effects owned by modules",
+          ]}
+        />
+        {mutation.isError ? (
+          <p {...stylex.props(styles.feedback)}>
+            {errorMessage(mutation.error)}
+          </p>
+        ) : null}
+        {!canManage && selectedAction.kind === "Core"
+          ? "This operator cannot manage Auth users."
+          : null}
+      </Inspector.Section>
+
+      <Inspector.Actions>
+        {user.status === "active" ? (
+          <Button
+            disabled={!canManage || mutation.isPending}
+            onClick={() => setCoreControl("disable")}
+            variant="danger"
+          >
+            Disable user
+          </Button>
         ) : (
           <Button
             disabled={!canManage || mutation.isPending}
@@ -602,26 +798,16 @@ function UserActions({
             {mutation.isPending ? "Enabling…" : "Enable user"}
           </Button>
         )}
-        {!canManage ? "This operator cannot manage Auth users." : null}
-        {mutation.isError ? (
-          <p {...stylex.props(styles.feedback)}>
-            {errorMessage(mutation.error)}
-          </p>
-        ) : null}
-      </Inspector.Section>
-      <Inspector.Section title="Extension action">
-        {extensionAction ? (
-          <KeyValueList>
-            <KeyValueList.Row label="Action" value={extensionAction.label} />
-            <KeyValueList.Row
-              label="Operation"
-              value={extensionAction.operationId}
-            />
-          </KeyValueList>
-        ) : (
-          "No installed Auth module contributes an operation."
-        )}
-      </Inspector.Section>
+        {extensionActions.map((action) => (
+          <Button
+            disabled
+            key={action.id}
+            title="This contribution is registered, but generic contribution execution is not exposed by the current Console Surface API."
+          >
+            {action.label}
+          </Button>
+        ))}
+      </Inspector.Actions>
     </div>
   );
 }
@@ -637,6 +823,8 @@ function SessionInspector({
   revokeSession: AsyncMutationState<undefined>;
   session: AuthSessionRow | null;
 }) {
+  const [tab, setTab] = useState<SessionInspectorTab>("details");
+
   if (!session) {
     return (
       <DirectoryState
@@ -650,36 +838,76 @@ function SessionInspector({
     <Inspector
       status={
         <InlineStatus tone={statusTone(session.status)}>
-          {titleCase(session.status)}
+          {`${titleCase(session.status)} · expires ${formatAuthDateLabel(session.expiresAt)}`}
         </InlineStatus>
       }
-      subtitle={session.deviceId === "-" ? "Unbound device" : session.deviceId}
+      subtitle={session.userId}
       title={session.id}
     >
-      <Inspector.Section title="Identity">
-        <KeyValueList>
-          <KeyValueList.Row label="User" value={session.userId} />
-          <KeyValueList.Row label="Device" value={session.deviceId} />
-          <KeyValueList.Row label="Client IP" value={session.clientIp} />
-          <KeyValueList.Row label="User agent" value={session.userAgent} />
-        </KeyValueList>
-      </Inspector.Section>
-      <Inspector.Section title="Lifetime">
-        <KeyValueList>
-          <KeyValueList.Row
-            label="Created"
-            value={formatAuthTimestamp(session.createdAt)}
-          />
-          <KeyValueList.Row
-            label="Expires"
-            value={formatAuthTimestamp(session.expiresAt)}
-          />
-          <KeyValueList.Row
-            label="Revoked"
-            value={formatAuthTimestamp(session.revokedAt)}
-          />
-        </KeyValueList>
-      </Inspector.Section>
+      <Tabs density="inspector" stylex={styles.tabs}>
+        <Tabs.List>
+          <Tabs.Tab onClick={() => setTab("details")} selected={tab === "details"}>
+            Details
+          </Tabs.Tab>
+          <Tabs.Tab onClick={() => setTab("evidence")} selected={tab === "evidence"}>
+            Evidence
+          </Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel>
+          {tab === "details" ? (
+            <>
+              <Inspector.Section title="Session">
+                <InspectorLines
+                  items={[
+                    `User: ${session.userId}`,
+                    `Device: ${session.deviceId}`,
+                    `Created: ${formatAuthTimestamp(session.createdAt)}`,
+                  ]}
+                />
+              </Inspector.Section>
+              <Inspector.Section title="Client">
+                <InspectorLines
+                  items={[
+                    `IP: ${session.clientIp}`,
+                    `Agent: ${session.userAgent}`,
+                    session.deviceId === "-" ? "No device" : "Device bound",
+                  ]}
+                />
+              </Inspector.Section>
+              <Inspector.Section title="Lifecycle">
+                <InspectorLines
+                  items={[
+                    `Expires: ${formatAuthTimestamp(session.expiresAt)}`,
+                    `Revoked: ${formatAuthTimestamp(session.revokedAt)}`,
+                    `State: ${session.status}`,
+                  ]}
+                />
+              </Inspector.Section>
+              <Inspector.Section title="Evidence">
+                <InspectorLines
+                  items={[
+                    "Action: revoke_session",
+                    "Owner: auth",
+                    "Receipt retained",
+                  ]}
+                />
+              </Inspector.Section>
+            </>
+          ) : (
+            <Inspector.Section title="Revocation evidence">
+              <KeyValueList>
+                <KeyValueList.Row label="Action" value="revoke_session" />
+                <KeyValueList.Row label="Owner" value="auth" />
+                <KeyValueList.Row
+                  label="Revoked"
+                  value={formatAuthTimestamp(session.revokedAt)}
+                />
+                <KeyValueList.Row label="Receipt" value="Retained" />
+              </KeyValueList>
+            </Inspector.Section>
+          )}
+        </Tabs.Panel>
+      </Tabs>
       {session.status === "active" ? (
         <Inspector.Actions>
           <Button
@@ -721,6 +949,16 @@ function DirectoryFilter({
     >
       {children}
     </FilterSelect>
+  );
+}
+
+function InspectorLines({ items }: { items: readonly ReactNode[] }) {
+  return (
+    <div {...stylex.props(styles.inspectorLines)}>
+      {items.map((item, index) => (
+        <span key={index}>{item}</span>
+      ))}
+    </div>
   );
 }
 
@@ -806,6 +1044,52 @@ function useAsyncMutation<Input>(
   return { ...state, mutate };
 }
 
+function userActionRegistry(
+  user: AuthUserRow | null,
+  canManage: boolean,
+  contributions: readonly ConsoleResolvedOperationContribution[],
+  capabilities: { readonly has: (capability: string) => boolean }
+): UserActionRegistryEntry[] {
+  const coreActions: UserActionRegistryEntry[] = [
+    {
+      available: Boolean(user && user.status === "active" && canManage),
+      effect: "Blocks new sessions",
+      id: "auth:disable-user",
+      kind: "Core",
+      label: "Disable user",
+      operationId: "auth/disable-user",
+      owner: "auth",
+    },
+    {
+      available: Boolean(user && user.status === "disabled" && canManage),
+      effect: "Restores access",
+      id: "auth:enable-user",
+      kind: "Core",
+      label: "Enable user",
+      operationId: "auth/enable-user",
+      owner: "auth",
+    },
+  ];
+  const extensionActions = contributions.map((contribution) => ({
+    available: Boolean(
+      user &&
+        contribution.requiredCapabilities.every((capability) =>
+          capabilities.has(capability)
+        )
+    ),
+    effect: contribution.label.toLowerCase().includes("password")
+      ? "Rotates credential"
+      : "Module-contributed effect",
+    id: contribution.key,
+    kind: "Extension" as const,
+    label: contribution.label,
+    operationId: contribution.operationId,
+    owner: contribution.key.split(/[.:]/u)[0] || "auth-extension",
+  }));
+
+  return [...coreActions, ...extensionActions];
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -816,10 +1100,26 @@ function statusTone(
   if (status === "active") {
     return "success";
   }
-  if (status === "expired") {
-    return "neutral";
-  }
   return "danger";
+}
+
+function formatAuthDateLabel(value: string): string {
+  if (value === "-") {
+    return value;
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("en", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(timestamp));
+}
+
+function extensionLabel(owner: string): string {
+  return titleCase(owner.replace(/^auth-/u, ""));
 }
 
 function titleCase(value: string): string {

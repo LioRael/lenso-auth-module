@@ -6,13 +6,25 @@
   "surfaces": [
     {
       "id": "oidc-provider",
-      "path": "/data/auth/providers/oidc",
+      "path": "/auth/providers/oidc",
       "label": "OIDC Provider",
-      "area": "data",
-      "requiredCapabilities": ["auth.providers.read"],
-      "icon": "shield",
+      "area": "runtime",
+      "requiredCapabilities": [
+        "auth.providers.read"
+      ],
+      "icon": "settings",
       "navigation": {
-        "workspace": { "id": "auth", "label": "Auth", "icon": "shield" },
+        "workspace": {
+          "id": "auth",
+          "label": "Auth",
+          "icon": "shield"
+        },
+        "group": {
+          "id": "sign-in",
+          "label": "Sign-in",
+          "icon": "git-compare-arrows",
+          "order": 20
+        },
         "order": 83
       }
     }

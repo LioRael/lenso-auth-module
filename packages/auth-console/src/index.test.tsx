@@ -14,9 +14,14 @@ describe("auth console UI artifact", () => {
       "/auth/users",
     ]);
     expect(authConsoleManifest.surfaces[0]?.navigation?.group).toEqual({
+      icon: "users",
       id: "directory",
       label: "Directory",
       order: 10,
     });
+    expect(authConsoleManifest.surfaces.map((surface) => surface.icon)).toEqual([
+      "activity",
+      "users",
+    ]);
   });
 });

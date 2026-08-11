@@ -10,15 +10,21 @@ export const authGithubConsoleManifest = defineConsoleManifest({
   protocol: CONSOLE_MODULE_API_PROTOCOL,
   surfaces: [
     {
-      area: "data",
-      icon: "network",
+      area: "runtime",
+      icon: "github",
       id: "github-provider",
       label: "GitHub",
       navigation: {
+        group: {
+          icon: "git-compare-arrows",
+          id: "sign-in",
+          label: "Sign-in",
+          order: 20,
+        },
         order: 81,
         workspace: { icon: "shield", id: "auth", label: "Auth" },
       },
-      path: "/data/auth/providers/github",
+      path: "/auth/providers/github",
       requiredCapabilities: ["auth.providers.read"],
     },
   ],
