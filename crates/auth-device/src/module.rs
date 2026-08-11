@@ -7,9 +7,10 @@ use contracts::{ServiceOperationIdempotency, ServiceOperationMetadata};
 use platform_core::AppContext;
 use platform_http::ApiOpenApiRouter;
 use platform_module::{
-    AdminSchema, ConsoleNavigation, ConsoleSurface, ConsoleSurfacePresentation,
-    ConsoleWorkspaceRef, EntitySchema, FieldSchema, FieldType, HostLinkedModule, LinkedBinding,
-    LinkedHttpContribution, Module, ModuleHttpMethod, ModuleHttpRoute, ModuleManifest,
+    AdminSchema, ConsoleNavigation, ConsoleNavigationGroup, ConsoleSurface,
+    ConsoleSurfacePresentation, ConsoleWorkspaceRef, EntitySchema, FieldSchema, FieldType,
+    HostLinkedModule, LinkedBinding, LinkedHttpContribution, Module, ModuleHttpMethod,
+    ModuleHttpRoute, ModuleManifest,
 };
 use std::sync::Arc;
 
@@ -38,6 +39,15 @@ fn auth_workspace() -> ConsoleWorkspaceRef {
         id: "auth".to_owned(),
         label: "Auth".to_owned(),
         icon: Some("shield".to_owned()),
+    }
+}
+
+fn auth_directory_group() -> ConsoleNavigationGroup {
+    ConsoleNavigationGroup {
+        id: "directory".to_owned(),
+        label: "Directory".to_owned(),
+        icon: Some("users".to_owned()),
+        order: Some(10),
     }
 }
 
@@ -105,15 +115,15 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
     vec![ConsoleSurface {
         name: "devices".to_owned(),
         label: "Devices".to_owned(),
-        route: "/data/auth/devices".to_owned(),
+        route: "/auth/devices".to_owned(),
         presentation: ConsoleSurfacePresentation::Esm {
             entry: "devices".to_owned(),
         },
-        icon: Some("network".to_owned()),
+        icon: Some("smartphone".to_owned()),
         required_capabilities: vec![AUTH_DEVICE_READ.to_owned()],
         navigation: Some(ConsoleNavigation {
             workspace: auth_workspace(),
-            group: None,
+            group: Some(auth_directory_group()),
             order: Some(70),
         }),
     }]

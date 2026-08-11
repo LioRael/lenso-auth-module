@@ -1,223 +1,271 @@
-import { ConsolePage, SurfaceRoot, useConsoleClient } from "@lenso/console-ui";
-import { useEffect, useMemo, useState } from "react";
+import {
+  ConsolePage,
+  DataGrid,
+  DataRow,
+  FilterSelect,
+  InlineStatus,
+  Inspector,
+  KeyValueList,
+  PaneHeader,
+  SplitView,
+  StateView,
+  SurfaceRoot,
+  TableHeader,
+  pageStyles,
+  useConsoleClient,
+  type SemanticTone,
+} from "@lenso/console-ui";
+import * as stylex from "@stylexjs/stylex";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { listAuthDevices, type AuthDevicePage } from "./business-api";
-
 import {
   authDeviceRows,
-  authDevicesSummary,
   type AuthDeviceRow,
 } from "./model";
 
-export const AuthDevicesPage = () => {
+type AuthDeviceStateFilter = "all" | AuthDeviceRow["status"];
+
+const styles = stylex.create({
+  filterChevron: {
+    display: "inline-block",
+    fontSize: 10,
+    lineHeight: 1,
+    transform: "translateY(-1px)",
+  },
+  filters: { flexWrap: "wrap" },
+  state: { backgroundColor: "var(--lenso-token-canvas, #000000)" },
+});
+
+export function AuthDevicesPage() {
   const client = useConsoleClient();
   const devicesQuery = useAuthDevices(client);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const deviceRows = authDeviceRows(devicesQuery.data?.records ?? []);
-  const summary = authDevicesSummary(devicesQuery.data?.records ?? []);
+  const [stateFilter, setStateFilter] = useState<AuthDeviceStateFilter>("all");
+  const deviceRows = useMemo(
+    () => authDeviceRows(devicesQuery.data?.records ?? []),
+    [devicesQuery.data?.records]
+  );
+  const filteredRows = useMemo(
+    () =>
+      stateFilter === "all"
+        ? deviceRows
+        : deviceRows.filter((device) => device.status === stateFilter),
+    [deviceRows, stateFilter]
+  );
   const selectedDevice =
+    filteredRows.find((device) => device.id === selectedDeviceId) ??
+    filteredRows[0] ??
     deviceRows.find((device) => device.id === selectedDeviceId) ??
-    deviceRows[0] ??
     null;
 
   return (
-    <SurfaceRoot moduleId="auth-device" surfaceId="devices">
-      <ConsolePage scroll={false}>
-        <main className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden bg-(--background) text-(--foreground)">
-      <header className="border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <h1 className="font-mono text-[13px] font-semibold">Devices</h1>
-          <span className="ml-auto font-mono text-[10px] text-(--muted)">
-            {deviceRows.length} records
-          </span>
-        </div>
-      </header>
+    <SurfaceRoot moduleId="lenso/auth-device" surfaceId="devices">
+      <ConsolePage data-page="auth-devices-page">
+        <ConsolePage.Header>
+          <ConsolePage.Heading>
+            <ConsolePage.Title>Devices</ConsolePage.Title>
+            <ConsolePage.Description>
+              Auth device bindings, trust state, and the latest client evidence
+              owned by Auth Device.
+            </ConsolePage.Description>
+          </ConsolePage.Heading>
+          <ConsolePage.Actions>
+            Schema-admin surface  ·  live runtime data
+          </ConsolePage.Actions>
+        </ConsolePage.Header>
 
-      <div className="grid border-b border-(--border-subtle) bg-(--surface) md:grid-cols-4">
-        {[
-          ["total", summary.total],
-          ["seen", summary.seen],
-          ["trusted", summary.trusted],
-          ["primary", summary.primary],
-        ].map(([label, value]) => (
+        <ConsolePage.Body data-page-slot="auth-devices-page__body">
           <div
-            className="grid grid-cols-[minmax(0,1fr)_auto] border-r border-(--border-subtle) px-3 py-2 font-mono text-[10px] last:border-r-0"
-            key={label}
+            {...stylex.props(pageStyles.pageFilters, styles.filters)}
+            data-page-slot="auth-devices-page__filters"
           >
-            <span className="text-(--muted)">{label}</span>
-            <span className="text-[13px] font-semibold text-(--foreground)">
-              {value}
-            </span>
+            <DeviceFilter ariaLabel="Device view" value="all">
+              <option value="all">All devices</option>
+            </DeviceFilter>
+            <DeviceFilter
+              ariaLabel="Trust state"
+              onChange={(value) =>
+                setStateFilter(value as AuthDeviceStateFilter)
+              }
+              value={stateFilter}
+            >
+              <option value="all">Any trust</option>
+              <option value="primary">Primary</option>
+              <option value="trusted">Trusted</option>
+              <option value="seen">Seen</option>
+            </DeviceFilter>
+            <DeviceFilter ariaLabel="Client evidence" value="any">
+              <option value="any">Any evidence</option>
+            </DeviceFilter>
           </div>
-        ))}
-      </div>
 
-      <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_clamp(280px,28vw,400px)] overflow-hidden">
-        <section className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-r border-(--border-subtle)">
-          <SectionHeader meta={`${deviceRows.length} records`} title="Devices" />
-          <AuthDevicesTable
-            error={devicesQuery.error}
-            isError={devicesQuery.isError}
-            isPending={devicesQuery.isPending}
-            onSelect={setSelectedDeviceId}
-            rows={deviceRows}
-            selectedDevice={selectedDevice}
-          />
-        </section>
-
-        <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-(--sidebar)">
-          <SectionHeader
-            meta={selectedDevice ? selectedDevice.status : "no selection"}
-            title={selectedDevice?.id ?? "Device"}
-          />
-          {selectedDevice ? (
-            <div className="min-h-0 overflow-auto">
-              <Metric label="user" value={selectedDevice.userId} />
-              <Metric label="created" value={selectedDevice.createdAt} />
-              <Metric label="updated" value={selectedDevice.updatedAt} />
-              <Metric label="trusted" value={selectedDevice.trustedAt} />
-              <Metric label="primary" value={selectedDevice.primaryAt} />
-              <Metric label="last ip" value={selectedDevice.lastSeenIp} />
-              <Metric
-                label="user agent"
-                value={selectedDevice.lastSeenUserAgent}
-              />
-            </div>
+          {devicesQuery.isPending ? (
+            <DeviceState
+              description="Reading Auth Device records from the selected Managed Service."
+              title="Loading devices"
+            />
+          ) : devicesQuery.isError ? (
+            <DeviceState
+              description={errorMessage(devicesQuery.error)}
+              title="Devices could not be loaded"
+            />
           ) : (
-            <PanelMessage value="Select a device" />
+            <SplitView
+              data-page-slot="auth-devices-page__workspace"
+              inspectorWidth={376}
+            >
+              <SplitView.Main>
+                <PaneHeader
+                  meta={`${filteredRows.length} of ${deviceRows.length}`}
+                  title="Device registry"
+                />
+                <DataGrid>
+                  <TableHeader
+                    columns={["Device", "User", "Updated", "State"]}
+                  />
+                  {filteredRows.length === 0 ? (
+                    <DeviceState
+                      description="Adjust the trust filter to see other Auth Device records."
+                      title="No devices match this filter"
+                    />
+                  ) : (
+                    filteredRows.map((device) => (
+                      <DataRow
+                        cells={[
+                          device.userId,
+                          formatTimestamp(device.updatedAt),
+                          <DeviceStatus
+                            key={`${device.id}-state`}
+                            status={device.status}
+                          />,
+                        ]}
+                        interactive
+                        key={device.id}
+                        onActivate={() => setSelectedDeviceId(device.id)}
+                        primary={device.id}
+                        secondary={
+                          device.lastSeenIp === "-"
+                            ? "No client address"
+                            : device.lastSeenIp
+                        }
+                        selected={selectedDevice?.id === device.id}
+                      />
+                    ))
+                  )}
+                </DataGrid>
+              </SplitView.Main>
+              <SplitView.Inspector>
+                <DeviceInspector device={selectedDevice} />
+              </SplitView.Inspector>
+            </SplitView>
           )}
-        </aside>
-      </div>
-        </main>
+        </ConsolePage.Body>
       </ConsolePage>
     </SurfaceRoot>
   );
-};
+}
 
-const AuthDevicesTable = ({
-  error,
-  isError,
-  isPending,
-  onSelect,
-  rows,
-  selectedDevice,
-}: {
-  error: unknown;
-  isError: boolean;
-  isPending: boolean;
-  onSelect: (deviceId: string) => void;
-  rows: AuthDeviceRow[];
-  selectedDevice: AuthDeviceRow | null;
-}) => {
-  if (isError) {
+function DeviceInspector({ device }: { device: AuthDeviceRow | null }) {
+  if (!device) {
     return (
-      <PanelMessage
-        tone="error"
-        value={String((error as Error | undefined)?.message)}
+      <DeviceState
+        description="Choose a device from the registry to inspect it."
+        title="No device selected"
       />
     );
   }
-  if (isPending) {
-    return <PanelMessage value="Loading auth devices" />;
-  }
-  if (rows.length === 0) {
-    return <PanelMessage value="No auth devices found" />;
-  }
 
   return (
-    <div className="min-h-0 overflow-auto">
-      <div className="grid min-w-260 grid-cols-[minmax(220px,1fr)_minmax(180px,0.8fr)_170px_170px_92px] border-b border-(--border-subtle) bg-(--surface) px-3 py-1.5 font-mono text-[10px] text-(--muted)">
-        <span>Device</span>
-        <span>User</span>
-        <span>Updated</span>
-        <span>Last IP</span>
-        <span>Status</span>
-      </div>
-      {rows.map((device) => {
-        const selected = selectedDevice?.id === device.id;
-        return (
-          <button
-            aria-pressed={selected}
-            className={[
-              "grid min-h-11 w-full min-w-260 grid-cols-[minmax(220px,1fr)_minmax(180px,0.8fr)_170px_170px_92px] items-center gap-0 border-b border-(--border-subtle) px-3 py-2 text-left font-mono text-[11px] transition",
-              selected ? "native-selection" : "hover:bg-(--bg-row-hover)",
-            ].join(" ")}
-            key={device.id}
-            onClick={() => onSelect(device.id)}
-            type="button"
-          >
-            <span className="truncate text-(--foreground)">{device.id}</span>
-            <span className="truncate text-(--muted)">{device.userId}</span>
-            <span className="truncate text-(--muted)">{device.updatedAt}</span>
-            <span className="truncate text-(--muted)">
-              {device.lastSeenIp}
-            </span>
-            <StatusPill status={device.status} />
-          </button>
-        );
-      })}
-    </div>
-  );
-};
-
-function SectionHeader({ meta, title }: { meta?: string; title: string }) {
-  return (
-    <div className="flex min-w-0 items-center gap-2 border-b border-(--border-subtle) bg-(--surface) px-3 py-2">
-      <h2 className="truncate font-mono text-[11px] font-semibold text-(--foreground)">
-        {title}
-      </h2>
-      {meta ? (
-        <span className="ml-auto truncate font-mono text-[10px] text-(--muted)">
-          {meta}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2 border-b border-(--border-subtle) bg-(--surface) px-3 py-2 font-mono text-[10px]">
-      <span className="text-(--muted)">{label}</span>
-      <span className="truncate text-(--foreground)" title={value}>
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function StatusPill({ status }: { status: AuthDeviceRow["status"] }) {
-  const tone =
-    status === "primary"
-      ? "bg-[var(--tone-success-bg)] text-(--tone-success-fg) border-[var(--tone-success-border)]"
-      : status === "trusted"
-        ? "bg-[var(--tone-info-bg)] text-(--tone-info-fg) border-[var(--tone-info-border)]"
-        : "bg-[var(--tone-muted-bg)] text-(--tone-muted-fg) border-[var(--tone-muted-border)]";
-  return (
-    <span
-      className={`inline-flex h-5 w-fit max-w-full items-center border px-1.5 font-mono text-[10px] ${tone}`}
+    <Inspector
+      status={<DeviceStatus status={device.status} />}
+      subtitle={device.userId}
+      title={device.id}
     >
-      {status}
-    </span>
+      <Inspector.Section title="Identity">
+        <KeyValueList>
+          <KeyValueList.Row label="User" value={device.userId} />
+          <KeyValueList.Row
+            label="Created"
+            value={formatTimestamp(device.createdAt)}
+          />
+          <KeyValueList.Row
+            label="Updated"
+            value={formatTimestamp(device.updatedAt)}
+          />
+        </KeyValueList>
+      </Inspector.Section>
+      <Inspector.Section title="Trust state">
+        <KeyValueList>
+          <KeyValueList.Row label="State" value={titleCase(device.status)} />
+          <KeyValueList.Row
+            label="Trusted"
+            value={formatTimestamp(device.trustedAt)}
+          />
+          <KeyValueList.Row
+            label="Primary"
+            value={formatTimestamp(device.primaryAt)}
+          />
+        </KeyValueList>
+      </Inspector.Section>
+      <Inspector.Section title="Client evidence">
+        <KeyValueList>
+          <KeyValueList.Row label="Last IP" value={device.lastSeenIp} />
+          <KeyValueList.Row
+            label="User agent"
+            value={device.lastSeenUserAgent}
+          />
+        </KeyValueList>
+      </Inspector.Section>
+      <Inspector.Section title="Surface">
+        <KeyValueList>
+          <KeyValueList.Row label="Workspace" value="Auth" />
+          <KeyValueList.Row label="Group" value="Directory" />
+          <KeyValueList.Row label="Surface" value="Devices" />
+        </KeyValueList>
+      </Inspector.Section>
+    </Inspector>
   );
 }
 
-function PanelMessage({
-  tone = "muted",
+function DeviceFilter({
+  ariaLabel,
+  children,
+  onChange,
   value,
 }: {
-  tone?: "error" | "muted";
+  ariaLabel: string;
+  children: ReactNode;
+  onChange?: (value: string) => void;
   value: string;
 }) {
   return (
-    <div
-      className={[
-        "p-3 font-mono text-[11px]",
-        tone === "error" ? "text-(--error)" : "text-(--muted)",
-      ].join(" ")}
+    <FilterSelect
+      aria-label={ariaLabel}
+      icon={<span {...stylex.props(styles.filterChevron)}>⌄</span>}
+      onChange={(event) => onChange?.(event.currentTarget.value)}
+      value={value}
     >
-      {value}
-    </div>
+      {children}
+    </FilterSelect>
+  );
+}
+
+function DeviceStatus({ status }: { status: AuthDeviceRow["status"] }) {
+  const tone: SemanticTone =
+    status === "primary" ? "success" : status === "trusted" ? "info" : "neutral";
+  return <InlineStatus tone={tone}>{titleCase(status)}</InlineStatus>;
+}
+
+function DeviceState({
+  description,
+  title,
+}: {
+  description: string;
+  title: string;
+}) {
+  return (
+    <StateView description={description} stylex={styles.state} title={title} />
   );
 }
 
@@ -263,4 +311,22 @@ function useAuthDevices(client: ReturnType<typeof useConsoleClient>): {
   }, [client, contextKey]);
 
   return state;
+}
+
+function formatTimestamp(value: string): string {
+  if (value === "-") {
+    return value;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp)
+    ? new Date(timestamp).toISOString().replace("T", " ").replace(".000Z", " UTC")
+    : value;
+}
+
+function titleCase(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

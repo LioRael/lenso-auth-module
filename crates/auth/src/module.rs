@@ -323,7 +323,7 @@ fn auth_directory_group() -> ConsoleNavigationGroup {
     ConsoleNavigationGroup {
         id: "directory".to_owned(),
         label: "Directory".to_owned(),
-        icon: None,
+        icon: Some("users".to_owned()),
         order: Some(10),
     }
 }
@@ -337,7 +337,7 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
             presentation: ConsoleSurfacePresentation::Esm {
                 entry: "users".to_owned(),
             },
-            icon: Some("shield".to_owned()),
+            icon: Some("users".to_owned()),
             required_capabilities: vec![AUTH_USERS_READ.to_owned()],
             navigation: Some(ConsoleNavigation {
                 workspace: auth_workspace(),
@@ -352,7 +352,7 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
             presentation: ConsoleSurfacePresentation::Esm {
                 entry: "sessions".to_owned(),
             },
-            icon: Some("shield".to_owned()),
+            icon: Some("activity".to_owned()),
             required_capabilities: vec![AUTH_SESSIONS_READ.to_owned()],
             navigation: Some(ConsoleNavigation {
                 workspace: auth_workspace(),

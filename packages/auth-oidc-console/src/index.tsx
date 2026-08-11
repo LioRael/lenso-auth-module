@@ -6,7 +6,7 @@ import { authOidcConsoleManifest } from "./manifest";
 
 const OidcSurface = () => (
   <SurfaceRoot moduleId="lenso/auth-oidc" surfaceId="oidc-provider">
-    <ConsolePage scroll={false}>
+    <ConsolePage data-page="auth-oidc-provider-page">
       <OidcProviderPage />
     </ConsolePage>
   </SurfaceRoot>

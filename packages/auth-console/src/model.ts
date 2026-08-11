@@ -5,6 +5,7 @@ import type {
 
 export type AuthIdentityFilter = "all" | "anonymous" | "registered";
 export type AuthUserStateFilter = "all" | "active" | "disabled";
+export type AuthSessionExpiryFilter = "all" | "expired" | "unexpired";
 export type AuthSessionStateFilter =
   | "all"
   | "active"
@@ -154,9 +155,23 @@ export const authSessionsSummary = (
 
 export function filterAuthSessionRows(
   rows: readonly AuthSessionRow[],
-  state: AuthSessionStateFilter
+  state: AuthSessionStateFilter,
+  expiry: AuthSessionExpiryFilter = "all",
+  now = new Date()
 ): AuthSessionRow[] {
-  return state === "all" ? [...rows] : rows.filter((row) => row.status === state);
+  return rows.filter(
+    (row) =>
+      (state === "all" || row.status === state) &&
+      (expiry === "all" ||
+        (expiry === "expired"
+          ? sessionHasExpired(row, now)
+          : !sessionHasExpired(row, now)))
+  );
+}
+
+function sessionHasExpired(row: AuthSessionRow, now: Date): boolean {
+  const expiresMs = Date.parse(row.expiresAt);
+  return Number.isFinite(expiresMs) && expiresMs <= now.getTime();
 }
 
 function sessionStatus(
@@ -181,8 +196,5 @@ export function formatAuthTimestamp(value: string): string {
   if (!Number.isFinite(timestamp)) {
     return value;
   }
-  return new Date(timestamp)
-    .toISOString()
-    .replace("T", " ")
-    .replace(".000Z", " UTC");
+  return new Date(timestamp).toISOString().slice(0, 16).replace("T", " ");
 }

@@ -4,6 +4,29 @@
   "hostApi": "^2.1.0",
   "consoleUi": "^2.0.0",
   "surfaces": [
-    { "id": "providers", "path": "/data/auth/providers", "label": "Providers", "area": "data", "requiredCapabilities": ["auth.providers.read"], "icon": "network", "navigation": { "workspace": { "id": "auth", "label": "Auth", "icon": "shield" }, "order": 80 } }
+    {
+      "id": "providers",
+      "path": "/auth/providers",
+      "label": "Providers",
+      "area": "runtime",
+      "requiredCapabilities": [
+        "auth.providers.read"
+      ],
+      "icon": "blocks",
+      "navigation": {
+        "workspace": {
+          "id": "auth",
+          "label": "Auth",
+          "icon": "shield"
+        },
+        "group": {
+          "id": "sign-in",
+          "label": "Sign-in",
+          "icon": "git-compare-arrows",
+          "order": 20
+        },
+        "order": 80
+      }
+    }
   ]
 }

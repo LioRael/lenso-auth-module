@@ -10,15 +10,21 @@ export const authOidcConsoleManifest = defineConsoleManifest({
   protocol: CONSOLE_MODULE_API_PROTOCOL,
   surfaces: [
     {
-      area: "data",
-      icon: "shield",
+      area: "runtime",
+      icon: "settings",
       id: "oidc-provider",
       label: "OIDC Provider",
       navigation: {
+        group: {
+          icon: "git-compare-arrows",
+          id: "sign-in",
+          label: "Sign-in",
+          order: 20,
+        },
         order: 83,
         workspace: { icon: "shield", id: "auth", label: "Auth" },
       },
-      path: "/data/auth/providers/oidc",
+      path: "/auth/providers/oidc",
       requiredCapabilities: ["auth.providers.read"],
     },
   ],

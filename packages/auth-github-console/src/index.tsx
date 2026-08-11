@@ -6,7 +6,7 @@ import { authGithubConsoleManifest } from "./manifest";
 
 const GitHubSurface = () => (
   <SurfaceRoot moduleId="lenso/auth-github" surfaceId="github-provider">
-    <ConsolePage scroll={false}>
+    <ConsolePage data-page="auth-github-provider-page">
       <GitHubProviderPage />
     </ConsolePage>
   </SurfaceRoot>

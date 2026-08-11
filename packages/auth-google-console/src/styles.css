@@ -1,8 +1,1 @@
 @import "@lenso/console-ui/stylex.css";
-
-@layer utilities;
-
-@import "tailwindcss/utilities.css" layer(utilities);
-
-@source "../../auth-provider-console/src/**/*.{ts,tsx}";
-@source "./**/*.{ts,tsx}";

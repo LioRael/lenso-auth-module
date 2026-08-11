@@ -6,7 +6,7 @@ import { authGoogleConsoleManifest } from "./manifest";
 
 const GoogleSurface = () => (
   <SurfaceRoot moduleId="lenso/auth-google" surfaceId="google-provider">
-    <ConsolePage scroll={false}>
+    <ConsolePage data-page="auth-google-provider-page">
       <GoogleProviderPage />
     </ConsolePage>
   </SurfaceRoot>

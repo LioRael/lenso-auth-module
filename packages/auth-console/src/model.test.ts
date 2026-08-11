@@ -118,11 +118,18 @@ describe("Auth Console model", () => {
       total: 3,
     });
     expect(filterAuthSessionRows(rows, "revoked")).toEqual([rows[2]]);
+    expect(filterAuthSessionRows(rows, "all", "expired", now)).toEqual([
+      rows[1],
+    ]);
+    expect(filterAuthSessionRows(rows, "all", "unexpired", now)).toEqual([
+      rows[0],
+      rows[2],
+    ]);
   });
 
   test("formats RFC3339 timestamps for the compact directory", () => {
     expect(formatAuthTimestamp("2026-06-18T09:00:00.000Z")).toBe(
-      "2026-06-18 09:00:00 UTC"
+      "2026-06-18 09:00"
     );
     expect(formatAuthTimestamp("-")).toBe("-");
   });

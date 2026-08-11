@@ -10,15 +10,21 @@ export const authDeviceConsoleManifest = defineConsoleManifest({
   protocol: CONSOLE_MODULE_API_PROTOCOL,
   surfaces: [
     {
-      area: "data",
-      icon: "network",
+      area: "runtime",
+      icon: "smartphone",
       id: "devices",
       label: "Devices",
       navigation: {
+        group: {
+          icon: "users",
+          id: "directory",
+          label: "Directory",
+          order: 10,
+        },
         order: 70,
         workspace: { icon: "shield", id: "auth", label: "Auth" },
       },
-      path: "/data/auth/devices",
+      path: "/auth/devices",
       requiredCapabilities: ["auth_device.devices.read"],
     },
   ],

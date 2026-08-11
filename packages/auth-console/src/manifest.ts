@@ -11,11 +11,16 @@ export const authConsoleManifest = defineConsoleManifest({
   surfaces: [
     {
       area: "runtime",
-      icon: "shield",
+      icon: "activity",
       id: "sessions",
       label: "Sessions",
       navigation: {
-        group: { id: "directory", label: "Directory", order: 10 },
+        group: {
+          icon: "users",
+          id: "directory",
+          label: "Directory",
+          order: 10,
+        },
         order: 60,
         workspace: { icon: "shield", id: "auth", label: "Auth" },
       },
@@ -24,11 +29,16 @@ export const authConsoleManifest = defineConsoleManifest({
     },
     {
       area: "runtime",
-      icon: "shield",
+      icon: "users",
       id: "users",
       label: "Users",
       navigation: {
-        group: { id: "directory", label: "Directory", order: 10 },
+        group: {
+          icon: "users",
+          id: "directory",
+          label: "Directory",
+          order: 10,
+        },
         order: 50,
         workspace: { icon: "shield", id: "auth", label: "Auth" },
       },

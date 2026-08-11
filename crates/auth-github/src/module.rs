@@ -2,9 +2,9 @@ use crate::migrations::AUTH_GITHUB_MIGRATIONS;
 use platform_core::AppContext;
 use platform_http::ApiOpenApiRouter;
 use platform_module::{
-    ConsoleNavigation, ConsoleSurface, ConsoleSurfacePresentation, ConsoleWorkspaceRef,
-    HostLinkedModule, LinkedBinding, LinkedHttpContribution, Module, ModuleHttpMethod,
-    ModuleHttpRoute, ModuleManifest,
+    ConsoleNavigation, ConsoleNavigationGroup, ConsoleSurface, ConsoleSurfacePresentation,
+    ConsoleWorkspaceRef, HostLinkedModule, LinkedBinding, LinkedHttpContribution, Module,
+    ModuleHttpMethod, ModuleHttpRoute, ModuleManifest,
 };
 
 pub const MODULE_NAME: &str = "auth-github";
@@ -14,6 +14,15 @@ fn auth_workspace() -> ConsoleWorkspaceRef {
         id: "auth".to_owned(),
         label: "Auth".to_owned(),
         icon: Some("shield".to_owned()),
+    }
+}
+
+fn auth_sign_in_group() -> ConsoleNavigationGroup {
+    ConsoleNavigationGroup {
+        id: "sign-in".to_owned(),
+        label: "Sign-in".to_owned(),
+        icon: Some("git-compare-arrows".to_owned()),
+        order: Some(20),
     }
 }
 
@@ -42,15 +51,15 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
     vec![ConsoleSurface {
         name: "github-provider".to_owned(),
         label: "GitHub".to_owned(),
-        route: "/data/auth/providers/github".to_owned(),
+        route: "/auth/providers/github".to_owned(),
         presentation: ConsoleSurfacePresentation::Esm {
             entry: "github-provider".to_owned(),
         },
-        icon: Some("network".to_owned()),
+        icon: Some("github".to_owned()),
         required_capabilities: vec![auth_oauth::module::AUTH_PROVIDERS_READ.to_owned()],
         navigation: Some(ConsoleNavigation {
             workspace: auth_workspace(),
-            group: None,
+            group: Some(auth_sign_in_group()),
             order: Some(81),
         }),
     }]
