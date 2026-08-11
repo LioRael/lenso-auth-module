@@ -1,9 +1,0 @@
-@import "@lenso/console-ui/stylex.css";
-
-@reference "./runtime-console-theme.css";
-
-@layer utilities;
-
-@import "tailwindcss/utilities.css" layer(utilities);
-
-@source "./**/*.{ts,tsx}";

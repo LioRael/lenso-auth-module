@@ -1,10 +1,10 @@
 import { defineConsoleUiModule } from "@lenso/console-ui";
+import "@lenso/console-ui/stylex.css";
 
-import "./styles.css";
 import { AuthSessionsPage, AuthUsersPage } from "./page";
 import { authConsoleManifest } from "./manifest";
 
-const authConsoleUiModule = defineConsoleUiModule({
+export const authConsoleUiModule = defineConsoleUiModule({
   manifest: authConsoleManifest,
   surfaces: {
     sessions: AuthSessionsPage,

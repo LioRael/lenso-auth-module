@@ -1,6 +1,7 @@
-import { useConsoleRecords } from "@lenso/auth-console-shared";
-import { ConsolePage, SurfaceRoot } from "@lenso/console-ui";
-import { useState } from "react";
+import { ConsolePage, SurfaceRoot, useConsoleClient } from "@lenso/console-ui";
+import { useEffect, useMemo, useState } from "react";
+
+import { listAuthDevices, type AuthDevicePage } from "./business-api";
 
 import {
   authDeviceRows,
@@ -8,13 +9,12 @@ import {
   type AuthDeviceRow,
 } from "./model";
 
-const DEVICE_ENTITY_NAME = "devices";
-
 export const AuthDevicesPage = () => {
-  const devicesQuery = useConsoleRecords(DEVICE_ENTITY_NAME);
+  const client = useConsoleClient();
+  const devicesQuery = useAuthDevices(client);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const deviceRows = authDeviceRows(devicesQuery.data?.data ?? []);
-  const summary = authDevicesSummary(devicesQuery.data?.data ?? []);
+  const deviceRows = authDeviceRows(devicesQuery.data?.records ?? []);
+  const summary = authDevicesSummary(devicesQuery.data?.records ?? []);
   const selectedDevice =
     deviceRows.find((device) => device.id === selectedDeviceId) ??
     deviceRows[0] ??
@@ -219,4 +219,48 @@ function PanelMessage({
       {value}
     </div>
   );
+}
+
+function useAuthDevices(client: ReturnType<typeof useConsoleClient>): {
+  data?: AuthDevicePage;
+  error: unknown;
+  isError: boolean;
+  isPending: boolean;
+} {
+  const [state, setState] = useState<{
+    data?: AuthDevicePage;
+    error: unknown;
+    isError: boolean;
+    isPending: boolean;
+  }>({ error: null, isError: false, isPending: true });
+  const contextKey = useMemo(
+    () =>
+      JSON.stringify([
+        client.identity,
+        client.managedServiceContext.systemId,
+        client.managedServiceContext.serviceId,
+      ]),
+    [client]
+  );
+
+  useEffect(() => {
+    let active = true;
+    setState({ error: null, isError: false, isPending: true });
+    void listAuthDevices(client, { limit: 200 })
+      .then((data) => {
+        if (active) {
+          setState({ data, error: null, isError: false, isPending: false });
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setState({ error, isError: true, isPending: false });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, contextKey]);
+
+  return state;
 }

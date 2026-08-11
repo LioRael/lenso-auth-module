@@ -10,8 +10,13 @@ describe("auth console UI artifact", () => {
       "users",
     ]);
     expect(authConsoleManifest.surfaces.map((surface) => surface.path)).toEqual([
-      "/data/auth/sessions",
-      "/data/auth/users",
+      "/auth/sessions",
+      "/auth/users",
     ]);
+    expect(authConsoleManifest.surfaces[0]?.navigation?.group).toEqual({
+      id: "directory",
+      label: "Directory",
+      order: 10,
+    });
   });
 });

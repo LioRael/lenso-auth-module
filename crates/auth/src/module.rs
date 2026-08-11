@@ -1,15 +1,16 @@
 use crate::admin::AuthAdminData;
 use crate::repositories::PostgresAuthUserRepository;
+use contracts::{ServiceOperationIdempotency, ServiceOperationMetadata};
 use platform_core::AppContext;
 use platform_http::ApiOpenApiRouter;
 use platform_module::{
     AdminAction, AdminActionDangerLevel, AdminActionInputField, AdminActionInputSchema,
     AdminDeclarativeComponent, AdminDeclarativePage, AdminDeclarativeSection,
-    AdminDeclarativeSurface, AdminSchema, ConsoleContributionKind, ConsoleNavigation, ConsoleSlot,
-    ConsoleSlotContext, ConsoleSlotContextField, ConsoleSlotContextFieldType, ConsoleSurface,
-    ConsoleSurfacePresentation, ConsoleWorkspaceRef, EntitySchema, FieldSchema, FieldType,
-    LinkedBinding, LinkedHttpContribution, Module, ModuleHttpMethod, ModuleHttpRoute,
-    ModuleManifest,
+    AdminDeclarativeSurface, AdminSchema, ConsoleContributionKind, ConsoleNavigation,
+    ConsoleNavigationGroup, ConsoleSlot, ConsoleSlotContext, ConsoleSlotContextField,
+    ConsoleSlotContextFieldType, ConsoleSurface, ConsoleSurfacePresentation, ConsoleWorkspaceRef,
+    EntitySchema, FieldSchema, FieldType, LinkedBinding, LinkedHttpContribution, Module,
+    ModuleHttpMethod, ModuleHttpRoute, ModuleManifest,
 };
 use std::sync::Arc;
 
@@ -39,7 +40,65 @@ pub fn http_routes() -> Vec<ModuleHttpRoute> {
             display_name: Some("Revoke Session".to_owned()),
             story_title: Some("Auth Session Revoked".to_owned()),
         },
+        business_route(
+            ModuleHttpMethod::Get,
+            "/v1/auth/console/users",
+            AUTH_USERS_READ,
+            crate::console_api::LIST_USERS_OPERATION,
+            "List Auth Users",
+        ),
+        business_route(
+            ModuleHttpMethod::Get,
+            "/v1/auth/console/sessions",
+            AUTH_SESSIONS_READ,
+            crate::console_api::LIST_SESSIONS_OPERATION,
+            "List Auth Sessions",
+        ),
+        business_route(
+            ModuleHttpMethod::Post,
+            "/v1/auth/console/users/{user_id}/disable",
+            AUTH_USERS_MANAGE,
+            crate::console_api::DISABLE_USER_OPERATION,
+            "Disable Auth User",
+        ),
+        business_route(
+            ModuleHttpMethod::Post,
+            "/v1/auth/console/users/{user_id}/enable",
+            AUTH_USERS_MANAGE,
+            crate::console_api::ENABLE_USER_OPERATION,
+            "Enable Auth User",
+        ),
+        business_route(
+            ModuleHttpMethod::Post,
+            "/v1/auth/console/sessions/{session_id}/revoke",
+            AUTH_SESSIONS_REVOKE,
+            crate::console_api::REVOKE_SESSION_OPERATION,
+            "Revoke Auth Session From Console",
+        ),
     ]
+}
+
+fn business_route(
+    method: ModuleHttpMethod,
+    path: &str,
+    capability: &str,
+    operation_id: &str,
+    display_name: &str,
+) -> ModuleHttpRoute {
+    ModuleHttpRoute {
+        method,
+        path: path.to_owned(),
+        capability: Some(capability.to_owned()),
+        display_name: Some(display_name.to_owned()),
+        story_title: Some(display_name.to_owned()),
+        operation: Some(ServiceOperationMetadata {
+            operation_id: Some(operation_id.to_owned()),
+            summary: Some(display_name.to_owned()),
+            idempotency: Some(ServiceOperationIdempotency::Idempotent),
+            timeout_ms: Some(10_000),
+            ..ServiceOperationMetadata::default()
+        }),
+    }
 }
 
 pub fn user_schema() -> AdminSchema {
@@ -260,27 +319,21 @@ fn auth_workspace() -> ConsoleWorkspaceRef {
     }
 }
 
+fn auth_directory_group() -> ConsoleNavigationGroup {
+    ConsoleNavigationGroup {
+        id: "directory".to_owned(),
+        label: "Directory".to_owned(),
+        icon: None,
+        order: Some(10),
+    }
+}
+
 pub fn console_surfaces() -> Vec<ConsoleSurface> {
     vec![
         ConsoleSurface {
-            name: "sessions".to_owned(),
-            label: "Sessions".to_owned(),
-            route: "/data/auth/sessions".to_owned(),
-            presentation: ConsoleSurfacePresentation::Esm {
-                entry: "sessions".to_owned(),
-            },
-            icon: Some("shield".to_owned()),
-            required_capabilities: vec![AUTH_SESSIONS_READ.to_owned()],
-            navigation: Some(ConsoleNavigation {
-                workspace: auth_workspace(),
-                group: None,
-                order: Some(50),
-            }),
-        },
-        ConsoleSurface {
             name: "users".to_owned(),
             label: "Users".to_owned(),
-            route: "/data/auth/users".to_owned(),
+            route: "/auth/users".to_owned(),
             presentation: ConsoleSurfacePresentation::Esm {
                 entry: "users".to_owned(),
             },
@@ -288,7 +341,22 @@ pub fn console_surfaces() -> Vec<ConsoleSurface> {
             required_capabilities: vec![AUTH_USERS_READ.to_owned()],
             navigation: Some(ConsoleNavigation {
                 workspace: auth_workspace(),
-                group: None,
+                group: Some(auth_directory_group()),
+                order: Some(50),
+            }),
+        },
+        ConsoleSurface {
+            name: "sessions".to_owned(),
+            label: "Sessions".to_owned(),
+            route: "/auth/sessions".to_owned(),
+            presentation: ConsoleSurfacePresentation::Esm {
+                entry: "sessions".to_owned(),
+            },
+            icon: Some("shield".to_owned()),
+            required_capabilities: vec![AUTH_SESSIONS_READ.to_owned()],
+            navigation: Some(ConsoleNavigation {
+                workspace: auth_workspace(),
+                group: Some(auth_directory_group()),
                 order: Some(60),
             }),
         },
@@ -329,12 +397,13 @@ pub fn manifest() -> ModuleManifest {
 
 pub fn merge_http(base: ApiOpenApiRouter) -> ApiOpenApiRouter {
     base.merge(crate::routes::router())
+        .merge(crate::console_api::router())
 }
 
 pub fn binding() -> LinkedBinding {
     LinkedBinding::builder()
         .http(LinkedHttpContribution {
-            public_prefixes: &["/v1/auth/dev/", "/v1/auth/sessions/"],
+            public_prefixes: &["/v1/auth/console/", "/v1/auth/dev/", "/v1/auth/sessions/"],
             merge: merge_http,
         })
         .build()
@@ -420,7 +489,7 @@ mod tests {
     #[test]
     fn generated_console_manifest_matches_checked_in_artifact_manifest() {
         let generated =
-            serde_json::to_value(manifest().console_module_manifest("^1.0.0", "^2.0.0"))
+            serde_json::to_value(manifest().console_module_manifest("^2.1.0", "^2.0.0"))
                 .expect("console module manifest should serialize");
         let checked_in: serde_json::Value =
             serde_json::from_str(include_str!("../console-module.json"))

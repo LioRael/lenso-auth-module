@@ -5,7 +5,7 @@ import {
 
 export const authOauthConsoleManifest = defineConsoleManifest({
   consoleUi: "^2.0.0",
-  hostApi: "^1.0.0",
+  hostApi: "^2.1.0",
   moduleId: "lenso/auth-oauth",
   protocol: CONSOLE_MODULE_API_PROTOCOL,
   surfaces: [

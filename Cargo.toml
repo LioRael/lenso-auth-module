@@ -21,6 +21,7 @@ auth-oidc = { package = "lenso-module-auth-oidc", path = "crates/auth-oidc", ver
 auth-password = { package = "lenso-module-auth-password", path = "crates/auth-password", version = "0.1.15" }
 auth-phone = { package = "lenso-module-auth-phone", path = "crates/auth-phone", version = "0.1.7" }
 chrono = { version = "0.4", features = ["serde"] }
+contracts = { package = "lenso-contracts", version = "0.4.0" }
 getrandom = "0.4"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 platform-core = { package = "lenso-platform-core", version = "0.1.23" }

@@ -1,7 +1,7 @@
 {
   "protocol": "lenso.console-module.v1",
   "moduleId": "lenso/auth-google",
-  "hostApi": "^1.0.0",
+  "hostApi": "^2.1.0",
   "consoleUi": "^2.0.0",
   "surfaces": [
     {

@@ -23,6 +23,7 @@ redis = ["dep:redis"]
 async-trait.workspace = true
 axum.workspace = true
 chrono.workspace = true
+contracts.workspace = true
 getrandom.workspace = true
 platform-core.workspace = true
 platform-http.workspace = true
