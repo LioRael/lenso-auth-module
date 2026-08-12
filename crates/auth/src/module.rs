@@ -25,6 +25,22 @@ pub const AUTH_USERS_DETAIL_ACTIONS_SLOT_VERSION: u32 = 1;
 pub fn http_routes() -> Vec<ModuleHttpRoute> {
     vec![
         ModuleHttpRoute {
+            method: ModuleHttpMethod::Get,
+            path: crate::console_artifact::AUTH_CONSOLE_ARTIFACT_PATH.to_owned(),
+            capability: None,
+            operation: None,
+            display_name: Some("Download Auth Console Artifact".to_owned()),
+            story_title: Some("Auth Console Artifact Downloaded".to_owned()),
+        },
+        ModuleHttpRoute {
+            method: ModuleHttpMethod::Get,
+            path: crate::console_artifact::AUTH_CONSOLE_RELEASE_PATH.to_owned(),
+            capability: None,
+            operation: None,
+            display_name: Some("Read Auth Console Release".to_owned()),
+            story_title: Some("Auth Console Release Read".to_owned()),
+        },
+        ModuleHttpRoute {
             method: ModuleHttpMethod::Post,
             path: "/v1/auth/dev/sessions".to_owned(),
             capability: None,
@@ -398,6 +414,7 @@ pub fn manifest() -> ModuleManifest {
 pub fn merge_http(base: ApiOpenApiRouter) -> ApiOpenApiRouter {
     base.merge(crate::routes::router())
         .merge(crate::console_api::router())
+        .merge(crate::console_artifact::router())
 }
 
 pub fn binding() -> LinkedBinding {
