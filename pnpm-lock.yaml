@@ -12,8 +12,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@lenso/console-ui':
-        specifier: ^1.0.0
-        version: 1.0.0(react@19.2.8)
+        specifier: ^1.0.2
+        version: 1.0.2(react@19.2.8)
       '@stylexjs/unplugin':
         specifier: 0.19.0
         version: 0.19.0(unplugin@2.3.11)
@@ -54,8 +54,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@lenso/console-ui':
-        specifier: ^1.0.0
-        version: 1.0.0(react@19.2.8)
+        specifier: ^1.0.2
+        version: 1.0.2(react@19.2.8)
       '@stylexjs/stylex':
         specifier: 0.19.0
         version: 0.19.0
@@ -72,8 +72,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@lenso/console-ui':
-        specifier: ^1.0.0
-        version: 1.0.0(react@19.2.8)
+        specifier: ^1.0.2
+        version: 1.0.2(react@19.2.8)
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -87,8 +87,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@lenso/console-ui':
-        specifier: ^1.0.0
-        version: 1.0.0(react@19.2.8)
+        specifier: ^1.0.2
+        version: 1.0.2(react@19.2.8)
       '@stylexjs/stylex':
         specifier: 0.19.0
         version: 0.19.0
@@ -111,8 +111,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@lenso/console-ui':
-        specifier: ^1.0.0
-        version: 1.0.0(react@19.2.8)
+        specifier: ^1.0.2
+        version: 1.0.2(react@19.2.8)
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -129,8 +129,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@lenso/console-ui':
-        specifier: ^1.0.0
-        version: 1.0.0(react@19.2.8)
+        specifier: ^1.0.2
+        version: 1.0.2(react@19.2.8)
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -147,8 +147,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@lenso/console-ui':
-        specifier: ^1.0.0
-        version: 1.0.0(react@19.2.8)
+        specifier: ^1.0.2
+        version: 1.0.2(react@19.2.8)
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -165,8 +165,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@lenso/console-ui':
-        specifier: ^1.0.0
-        version: 1.0.0(react@19.2.8)
+        specifier: ^1.0.2
+        version: 1.0.2(react@19.2.8)
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -177,8 +177,8 @@ importers:
         specifier: workspace:*
         version: link:../auth-console-shared
       '@lenso/console-ui':
-        specifier: ^1.0.0
-        version: 1.0.0(react@19.2.8)
+        specifier: ^1.0.2
+        version: 1.0.2(react@19.2.8)
       '@stylexjs/stylex':
         specifier: 0.19.0
         version: 0.19.0
@@ -316,11 +316,11 @@ packages:
   '@lenso/console-module-api@1.0.0':
     resolution: {integrity: sha512-j6t1wsdV5Q1f4UaH/1GPOon7DGC1yBaZDukdtKKOJHGXoM8DifRPoH+ymlkPT+MhIWzLmjN8aCU61L+E7sqOmQ==}
 
-  '@lenso/console-tokens@0.1.0':
-    resolution: {integrity: sha512-NxU1jN9yAVePYXA/tnhsc9FFHiR2hv2YB1aLrD/oGt5Qe8bdZE1g3tw6FnLIVvsOyratQeksEfafabJ0IAdTjg==}
+  '@lenso/console-tokens@0.1.1':
+    resolution: {integrity: sha512-h3s5lIPRgCmeQPW6KtJcidBgwbLkVUXyJCmWqxeigK2X9UslBJh8UGyoL9WtAiQ6BxzDgygojU1TPnUpfNDhqQ==}
 
-  '@lenso/console-ui@1.0.0':
-    resolution: {integrity: sha512-0twR5MB2wZxM3gaTma5caDSZGJMZBxTmxS3Xgj3QH6RfGaIr6r95xNksJOj8PklU4FYOjEAhIWAs8hxriszqjw==}
+  '@lenso/console-ui@1.0.2':
+    resolution: {integrity: sha512-d0aLMIaphw5j2yC6qZ0miCFlkt43FhL4tatVnJvzjEPZscoDrB6LP1Ju21HfNLOgYEJoAMUbL22fFMUu4cJj2w==}
     peerDependencies:
       react: ^19.2.8
 
@@ -1206,14 +1206,14 @@ snapshots:
 
   '@lenso/console-module-api@1.0.0': {}
 
-  '@lenso/console-tokens@0.1.0':
+  '@lenso/console-tokens@0.1.1':
     dependencies:
       '@stylexjs/stylex': 0.19.0
 
-  '@lenso/console-ui@1.0.0(react@19.2.8)':
+  '@lenso/console-ui@1.0.2(react@19.2.8)':
     dependencies:
       '@lenso/console-module-api': 1.0.0
-      '@lenso/console-tokens': 0.1.0
+      '@lenso/console-tokens': 0.1.1
       '@stylexjs/stylex': 0.19.0
       react: 19.2.8
 
