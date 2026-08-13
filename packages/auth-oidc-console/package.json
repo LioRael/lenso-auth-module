@@ -25,7 +25,7 @@
     "@lenso/auth-console-shared": "workspace:*",
     "@lenso/auth-provider-console-ui": "workspace:*",
     "@lenso/console-module-api": "^1.0.0",
-    "@lenso/console-ui": "^1.0.0",
+    "@lenso/console-ui": "^1.0.2",
     "react": "^19.2.8"
   }
 }

@@ -125,7 +125,7 @@ mod tests {
         assert_eq!(release["version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(
             release["artifact"]["digest"],
-            "sha256:01d607ec71232d7973cbce6787f4cd713f49eefb18002bf5764d65656708cf89"
+            "sha256:86d6c8f6f84a431e3a277dbce78097a9dd47fca3baaa36386f70e8eaafd47ac2"
         );
         assert_eq!(
             release["surfaceApi"]["contractDigest"],
