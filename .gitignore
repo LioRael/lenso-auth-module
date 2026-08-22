@@ -1,6 +1,2 @@
 /target/
-node_modules/
-/dist/
-packages/*/dist/
 .DS_Store
-*.tsbuildinfo

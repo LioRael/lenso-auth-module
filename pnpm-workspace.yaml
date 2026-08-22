@@ -1,5 +1,0 @@
-packages:
-  - "packages/*"
-minimumReleaseAgeExclude:
-  - "@lenso/console-module-api@1.0.0"
-  - "@lenso/console-ui@1.0.0"
