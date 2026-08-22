@@ -11,10 +11,10 @@ description = "Protocol-neutral Auth helpers for Lenso vNext Modules."
 base64.workspace = true
 hmac.workspace = true
 lenso-capability-auth = { path = "../lenso-capability-auth", version = "0.1.1" }
-lenso-kernel = { path = "../lenso-kernel", version = "0.1.1" }
+lenso-kernel = "0.1.1"
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
+sha2 = "0.10"
 time.workspace = true
 
 [lints]
