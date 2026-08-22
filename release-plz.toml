@@ -3,3 +3,11 @@ release_always = false
 pr_labels = ["release"]
 changelog_update = false
 git_tag_name = "{{ package }}@{{ version }}"
+
+[[package]]
+name = "lenso-auth-sdk"
+release = false
+
+[[package]]
+name = "lenso-capability-auth"
+release = false
