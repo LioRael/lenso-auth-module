@@ -8,9 +8,9 @@ The default branch contains two public vNext Rust crates:
 Automated publication is intentionally disabled while this extracted
 repository establishes a new release baseline. The crates were first published
 from a different repository history, which release-plz cannot safely compare
-with this repository's pre-extraction commits. Pushes to `main` therefore run
-the workflow as a no-op instead of publishing or opening a broken release pull
-request.
+with this repository's pre-extraction commits. The parked workflow is
+manual-only and reports this state without invoking release-plz. Pushes to
+`main` do not run a publication workflow.
 
 Re-enable publication in a dedicated release-bootstrap change only after:
 
