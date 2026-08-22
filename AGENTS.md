@@ -1,19 +1,25 @@
 # Agent instructions
 
-Before planning, changing, or executing a release, read the repository-owned
-[release process](docs/release-process.md). Do not infer production authority
-from repository write access or bypass registry Trusted Publishing controls.
+The default `main` branch is Lenso vNext-only. The `v0.3` branch and existing
+package tags retain the previous implementation and release history.
 
-## Agent skills
+Before architecture or implementation changes, read `CONTEXT.md`, the local
+ADRs under `docs/adr/`, and the normative Lenso ADRs linked from them. Before
+changing or executing a release, read `docs/release-process.md`.
 
-### Issue tracker
+Create task worktrees from the latest `origin/main` with `wt switch --create`.
+Preserve unrelated dirty work and run Cargo through
+`/Users/leosouthey/Projects/framework/.lenso-tools/bin/lenso-cargo` when
+available.
 
-Issues and PRDs are tracked in the central `LioRael/lenso` GitHub repository. See `docs/agents/issue-tracker.md`.
+Keep the Auth Interface protocol-neutral. Ingress Adapters own credential
+extraction; Auth owns authentication and assertion issuance; target Modules own
+authorization. Do not add HTTP, database, Redis, Console, v0.3 platform, or
+product release concerns to the portable Auth crates.
 
-### Triage labels
+The Capability descriptor is authoritative. Regenerate Rust and TypeScript
+bindings through `lenso-contract-codegen`; never hand-edit generated files.
 
-Triage uses the five canonical labels in the central tracker. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Domain documentation uses a single-context layout. See `docs/agents/domain.md`.
+Use a concise imperative Conventional Commit subject under 72 characters.
+Validate with the repository boundary check, locked format/check/test gates,
+and package dry-runs for changed public crates.

@@ -3,49 +3,34 @@ name: CI
 on:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   check:
     name: Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout auth module
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
-          path: lenso-auth-module
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
+          toolchain: 1.94.0
           components: rustfmt
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Setup pnpm
-        run: corepack enable
-
-      - name: Install npm dependencies
-        run: pnpm install --frozen-lockfile
-        working-directory: lenso-auth-module
-
-      - name: Check Rust
+          targets: wasm32-unknown-unknown,wasm32-wasip2
+      - name: Check repository ownership
+        run: ./scripts/check-repository-boundary.sh
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check workspace
+        run: cargo check --locked --workspace --all-targets
+      - name: Test workspace
+        run: cargo test --locked --workspace
+      - name: Check portable targets
         run: |
-          cargo fmt --all --check
-          cargo test --locked --workspace
-        working-directory: lenso-auth-module
-
-      - name: Check npm packages
+          cargo check --locked --workspace --target wasm32-unknown-unknown
+          cargo check --locked --workspace --target wasm32-wasip2
+      - name: Package public crates
         run: |
-          set -eu
-          for package_dir in auth-console auth-device-console auth-oauth-console auth-github-console auth-google-console auth-oidc-console; do
-            (
-              cd "packages/$package_dir"
-              npm pack --dry-run --registry https://registry.npmjs.org/
-            )
-          done
-        working-directory: lenso-auth-module
+          cargo package --locked -p lenso-capability-auth
+          cargo package --locked -p lenso-auth-sdk

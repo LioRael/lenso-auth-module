@@ -4,8 +4,8 @@
   "labels": ["dependencies"],
   "packageRules": [
     {
-      "description": "Automerge in-range internal patch updates that only refresh lockfiles",
-      "matchPackageNames": ["/^@lenso\\//", "/^lenso(?:-|$)/"],
+      "description": "Automerge in-range Lenso patch lockfile updates",
+      "matchPackageNames": ["/^lenso(?:-|$)/"],
       "matchUpdateTypes": ["patch"],
       "rangeStrategy": "update-lockfile",
       "groupName": "lenso internal patch dependencies",
@@ -14,14 +14,12 @@
       "platformAutomerge": true
     },
     {
-      "description": "Keep manifest or range changes reviewed behind release-intent",
-      "matchPackageNames": ["/^@lenso\\//", "/^lenso(?:-|$)/"],
+      "description": "Review Lenso manifest and range changes",
+      "matchPackageNames": ["/^lenso(?:-|$)/"],
       "matchUpdateTypes": ["minor", "major"],
       "groupName": "lenso internal manifest dependencies",
       "automerge": false,
-      "dependencyDashboardApproval": true,
-      "prBodyNotes": ["Manifest or dependency-range changes require the release-intent status check."]
+      "dependencyDashboardApproval": true
     }
   ]
 }
-
