@@ -17,7 +17,7 @@ lenso-capability-auth = { path = "../lenso-capability-auth", version = "0.1.1" }
 lenso-capability-secrets = { git = "https://github.com/LioRael/lenso-secrets-module", rev = "be02927a185ebdbb463038ba79d8c6ebbea771f1" }
 lenso-kernel = "0.1.4"
 lenso-native-adapter = "0.1.1"
-lenso-postgres-kit = { git = "https://github.com/LioRael/lenso-postgres-kit", rev = "9cf14997a194c0d6c77d7735ce9f34adc71dd5f4" }
+lenso-postgres-kit = { git = "https://github.com/LioRael/lenso-postgres-kit", rev = "525c1012c789e6f54c3c2fdaf8507a626c93e65f" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-expected_crates=$'lenso-auth-api-token-module\nlenso-auth-sdk\nlenso-capability-auth'
+expected_crates=$'lenso-auth-account-module\nlenso-auth-anonymous-module\nlenso-auth-api-token-module\nlenso-auth-device-module\nlenso-auth-federated-module\nlenso-auth-oauth-flow-module\nlenso-auth-oidc-module\nlenso-auth-password-module\nlenso-auth-phone-module\nlenso-auth-router-module\nlenso-auth-sdk\nlenso-capability-account-admin\nlenso-capability-anonymous-auth\nlenso-capability-auth\nlenso-capability-credential-issuer\nlenso-capability-device-auth\nlenso-capability-federated-auth\nlenso-capability-identity-directory\nlenso-capability-oauth-flow\nlenso-capability-oidc-provider\nlenso-capability-password-auth\nlenso-capability-phone-auth\nlenso-capability-sms-delivery'
 actual_crates="$({
   find crates -mindepth 1 -maxdepth 1 -type d -exec basename {} \;
 } | LC_ALL=C sort)"
