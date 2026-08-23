@@ -1,4 +1,4 @@
-//! Opaque API-token Auth Module with Module-owned PostgreSQL state.
+//! Opaque API-token Auth Module with Module-owned `PostgreSQL` state.
 
 mod operator;
 mod schema;
