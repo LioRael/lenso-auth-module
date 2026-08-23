@@ -6,15 +6,15 @@ mod storage;
 
 use std::{cell::RefCell, fmt, rc::Rc, time::Duration as StdDuration};
 
-use futures::future::LocalBoxFuture;
 use lenso_auth_sdk::{ActorAssertionIssuer, Validity, absent_response, authenticated_response};
 use lenso_capability_auth::{
-    AuthEndpoint, AuthInvocationError, AuthProvider, AuthRequest, AuthResponse, AuthenticateError,
+    Auth, AuthEndpoint, AuthInvocationError, AuthProvider, AuthRequest, AuthResponse,
+    AuthenticateError,
 };
 use lenso_capability_secrets::{ResolveRequest, SecretsClient, SecretsInvocationError};
 use lenso_kernel::{
     DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle, NativeRequestEndpoint,
-    PrepareContext, RuntimeFailure,
+    NativeRequestFuture, PrepareContext, RuntimeFailure,
 };
 use lenso_native_adapter::{NativeModuleFactory, NativeModuleFactoryContext, NativeModuleInstance};
 use lenso_postgres_kit::OwnedPostgres;
@@ -234,17 +234,19 @@ impl AuthProvider for ApiTokenAuthProvider {
         &self,
         _context: InvocationContext,
         request: AuthRequest,
-    ) -> LocalBoxFuture<'static, Result<AuthResponse, AuthInvocationError>> {
+    ) -> NativeRequestFuture<Auth> {
         let prepared = self.state.borrow().clone();
         Box::pin(async move {
             let Some(prepared) = prepared else {
-                return Err(AuthInvocationError::Runtime(
-                    RuntimeFailure::ModuleFailure {
-                        detail: "API Token Auth is not prepared".to_owned(),
-                    },
-                ));
+                return Err(RuntimeFailure::ModuleFailure {
+                    detail: "API Token Auth is not prepared".to_owned(),
+                });
             };
-            authenticate(&prepared, request).await
+            match authenticate(&prepared, request).await {
+                Ok(response) => Ok(Ok(response)),
+                Err(AuthInvocationError::Domain(error)) => Ok(Err(error)),
+                Err(AuthInvocationError::Runtime(error)) => Err(error),
+            }
         })
     }
 }
