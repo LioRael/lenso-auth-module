@@ -2,10 +2,10 @@
 
 ## Status
 
-`main` owns the Lenso vNext Auth Capability Interface and portable assertion
-semantics. It is not a compatibility workspace for the previously released
-v0.3 Auth modules. That source remains on `v0.3`, in Git history, and under its
-existing package tags.
+`main` owns the Lenso vNext Auth Capability Interface, portable assertion
+semantics, and concrete vNext Auth Providers. It is not a compatibility
+workspace for the previously released v0.3 Auth modules. That source remains
+on `v0.3`, in Git history, and under its existing package tags.
 
 ## Interface
 
@@ -38,9 +38,16 @@ Composition, or the assertion.
 - There is no implicit global Auth chain or first-success fallback.
 - Rejected selected credentials do not silently fall through to another
   credential.
-- Assertions are issuer-bound, short-lived, audience-limited, and verified at
-  the target seam.
+- Assertions are issuer-bound, short-lived, audience-limited, Ed25519-signed,
+  and verified from public authority at the target seam.
 - Delegation may narrow authority and validity but never widen them.
 - Storage failure is a runtime failure and never produces anonymous identity.
 - Concrete Auth implementations depend inward on the portable Kernel and
   Capability packages; portable Auth does not depend on an Adapter or product.
+
+## First concrete Provider
+
+`lenso-auth-api-token-module` owns random opaque API tokens, durable sessions,
+token/session revocation, and its private PostgreSQL schema. It resolves only
+logical Secrets references during preparation. Setup, upgrade, issuance, and
+revocation are explicit operator workflows; preparation never migrates.

@@ -3,13 +3,12 @@
 use std::{collections::BTreeMap, fmt};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use hmac::{Hmac, Mac};
+use ed25519_dalek::{Signature, Signer as _, SigningKey, VerifyingKey};
 use lenso_capability_auth::{
     AuthActorAssertion, AuthRequest, AuthResponse, AuthResponseKind, AuthenticateRequestCredential,
 };
 use lenso_kernel::{InvocationContext, InvocationContextError, SealedInvocationExtension};
 use serde::Serialize;
-use sha2::Sha256;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 /// Stable extension key used for authenticated Actor assertions.
@@ -61,6 +60,7 @@ pub fn authenticate_request(evidence: Option<CredentialEvidence>) -> AuthRequest
 }
 
 /// The non-error outcomes of the Auth Capability.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum AuthOutcome {
     /// No credential was selected for this ingress path.
@@ -281,6 +281,8 @@ pub enum AssertionValidationError {
     IssuerMismatch { expected: String, actual: String },
     /// The cryptographic proof is invalid.
     InvalidProof,
+    /// A configured public verification key is malformed.
+    InvalidVerificationKey,
     /// The interval is empty or reversed.
     InvalidValidity,
     /// The assertion is not valid yet.
@@ -298,21 +300,22 @@ pub enum AssertionValidationError {
 /// Assertion issuer configured for one Auth Module.
 #[derive(Clone)]
 pub struct ActorAssertionIssuer {
-    verifier: ActorAssertionVerifier,
+    issuer: String,
+    signing_key: SigningKey,
 }
 
 /// Verification-only assertion authority supplied to target Modules.
 #[derive(Clone)]
 pub struct ActorAssertionVerifier {
     issuer: String,
-    verification_key: Vec<u8>,
+    verification_key: VerifyingKey,
 }
 
 impl fmt::Debug for ActorAssertionIssuer {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("ActorAssertionIssuer")
-            .field("issuer", &self.verifier.issuer)
+            .field("issuer", &self.issuer)
             .field("signing_key", &"<redacted>")
             .finish()
     }
@@ -329,19 +332,35 @@ impl fmt::Debug for ActorAssertionVerifier {
 }
 
 impl ActorAssertionIssuer {
-    /// Creates an issuer from App-selected secret material.
+    /// Creates an issuer by deriving an Ed25519 key from App-selected secret material.
     pub fn new(issuer: impl Into<String>, signing_key: impl AsRef<[u8]>) -> Self {
+        use sha2::{Digest as _, Sha256};
+
+        let digest = Sha256::digest(signing_key.as_ref());
+        let mut seed = [0_u8; 32];
+        seed.copy_from_slice(&digest);
+        Self::from_signing_key(issuer, seed)
+    }
+
+    /// Creates an issuer from an exact 32-byte Ed25519 signing seed.
+    pub fn from_signing_key(issuer: impl Into<String>, signing_key: [u8; 32]) -> Self {
         Self {
-            verifier: ActorAssertionVerifier {
-                issuer: issuer.into(),
-                verification_key: signing_key.as_ref().to_vec(),
-            },
+            issuer: issuer.into(),
+            signing_key: SigningKey::from_bytes(&signing_key),
         }
     }
 
     /// Derives verification-only authority for a target Module.
     pub fn verifier(&self) -> ActorAssertionVerifier {
-        self.verifier.clone()
+        ActorAssertionVerifier {
+            issuer: self.issuer.clone(),
+            verification_key: self.signing_key.verifying_key(),
+        }
+    }
+
+    /// Returns the URL-safe base64 public key for immutable target configuration.
+    pub fn public_key_base64(&self) -> String {
+        URL_SAFE_NO_PAD.encode(self.signing_key.verifying_key().as_bytes())
     }
 
     /// Issues a signed assertion.
@@ -361,7 +380,7 @@ impl ActorAssertionIssuer {
             claims: Some(claims),
             expires_at: format_timestamp(validity.expires_at),
             issued_at: format_timestamp(validity.issued_at),
-            issuer: self.verifier.issuer.clone(),
+            issuer: self.issuer.clone(),
             parent_provenance: None,
             proof: String::new(),
             subject: subject.into(),
@@ -381,7 +400,7 @@ impl ActorAssertionIssuer {
         audience: impl IntoIterator<Item = String>,
         expires_at: OffsetDateTime,
     ) -> Result<ActorAssertion, AssertionValidationError> {
-        self.verifier.verify_proof(parent)?;
+        self.verifier().verify_proof(parent)?;
         let audience = audience.into_iter().collect::<Vec<_>>();
         if audience
             .iter()
@@ -405,14 +424,38 @@ impl ActorAssertionIssuer {
     }
 
     fn sign(&self, assertion: &AuthActorAssertion) -> String {
-        let mut mac = Hmac::<Sha256>::new_from_slice(&self.verifier.verification_key)
-            .expect("HMAC accepts keys of any size");
-        mac.update(ActorAssertionVerifier::signing_payload(assertion).as_bytes());
-        URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+        let signature = self
+            .signing_key
+            .sign(ActorAssertionVerifier::signing_payload(assertion).as_bytes());
+        URL_SAFE_NO_PAD.encode(signature.to_bytes())
     }
 }
 
 impl ActorAssertionVerifier {
+    /// Creates verification-only authority from a URL-safe base64 Ed25519 public key.
+    pub fn from_public_key_base64(
+        issuer: impl Into<String>,
+        public_key: &str,
+    ) -> Result<Self, AssertionValidationError> {
+        let bytes = URL_SAFE_NO_PAD
+            .decode(public_key)
+            .map_err(|_| AssertionValidationError::InvalidVerificationKey)?;
+        let bytes: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| AssertionValidationError::InvalidVerificationKey)?;
+        let verification_key = VerifyingKey::from_bytes(&bytes)
+            .map_err(|_| AssertionValidationError::InvalidVerificationKey)?;
+        Ok(Self {
+            issuer: issuer.into(),
+            verification_key,
+        })
+    }
+
+    /// Returns the URL-safe base64 public key safe to distribute to target Modules.
+    pub fn public_key_base64(&self) -> String {
+        URL_SAFE_NO_PAD.encode(self.verification_key.as_bytes())
+    }
+
     /// Verifies and projects the assertion carried by a target context.
     pub fn project_context<T: TypedActor>(
         &self,
@@ -459,13 +502,16 @@ impl ActorAssertionVerifier {
                 actual: assertion.issuer().to_owned(),
             });
         }
-        let expected = URL_SAFE_NO_PAD
+        let signature = URL_SAFE_NO_PAD
             .decode(assertion.proof())
             .map_err(|_| AssertionValidationError::InvalidProof)?;
-        let mut mac = Hmac::<Sha256>::new_from_slice(&self.verification_key)
-            .expect("HMAC accepts keys of any size");
-        mac.update(Self::signing_payload(&assertion.wire).as_bytes());
-        mac.verify_slice(&expected)
+        let signature = Signature::from_slice(&signature)
+            .map_err(|_| AssertionValidationError::InvalidProof)?;
+        self.verification_key
+            .verify_strict(
+                Self::signing_payload(&assertion.wire).as_bytes(),
+                &signature,
+            )
             .map_err(|_| AssertionValidationError::InvalidProof)
     }
 
@@ -540,7 +586,9 @@ mod tests {
         let context = assertion
             .attach(InvocationContext::new(1, None, CancellationToken::new()))
             .expect("assertion should attach");
-        let verifier = issuer.verifier();
+        let public_key = issuer.public_key_base64();
+        let verifier = ActorAssertionVerifier::from_public_key_base64("auth.users", &public_key)
+            .expect("public key should reconstruct verifier");
         let actor = verifier
             .project_context::<UserActor>(
                 &context,
@@ -569,5 +617,12 @@ mod tests {
                 )
                 .is_err()
         );
+        let mut tampered = assertion.clone();
+        tampered.wire.subject = "attacker".to_owned();
+        assert_eq!(
+            verifier.verify_proof(&tampered),
+            Err(AssertionValidationError::InvalidProof)
+        );
+        assert_eq!(verifier.public_key_base64(), public_key);
     }
 }
