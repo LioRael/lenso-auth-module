@@ -21,7 +21,7 @@ derive versions by traversing the imported pre-extraction history.
 Configure a crates.io Trusted Publisher for every already-published crate with:
 
 - repository: `LioRael/lenso-auth-module`
-- workflow: `.github/workflows/release-plz.yml`
+- workflow: `release-plz.yml`
 - environment: unset
 
 Trusted Publishing cannot allocate a new crate name. Before invoking the live
