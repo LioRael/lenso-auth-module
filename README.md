@@ -92,6 +92,10 @@ LENSO_POSTGRES_TEST_URL=postgres://... \
 The Capability descriptor is authoritative. Its build script rejects stale
 Rust and TypeScript generated bindings.
 
+The generated TypeScript binding imports `@lenso/contract-runtime`.
+TypeScript consumers must declare a compatible
+`@lenso/contract-runtime@^0.1.0` dependency.
+
 ## Branches
 
 - `main`: Lenso vNext Auth Interface and portable semantics.
