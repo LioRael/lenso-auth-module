@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-expected_crates=$'lenso-auth-sdk\nlenso-capability-auth'
+expected_crates=$'lenso-auth-api-token-module\nlenso-auth-sdk\nlenso-capability-auth'
 actual_crates="$({
   find crates -mindepth 1 -maxdepth 1 -type d -exec basename {} \;
 } | LC_ALL=C sort)"
@@ -22,6 +22,13 @@ if rg -n \
   'lenso-(contracts|module-auth|platform-(core|http|module|runtime|testing))' \
   Cargo.toml crates --glob 'Cargo.toml'; then
   printf 'legacy v0.3 dependency returned\n' >&2
+  exit 1
+fi
+
+if rg -n \
+  'sqlx|postgres|lenso-postgres-kit|lenso-native-adapter|lenso-capability-secrets' \
+  crates/lenso-auth-sdk/Cargo.toml crates/lenso-capability-auth/Cargo.toml; then
+  printf 'portable Auth crate gained a concrete Adapter dependency\n' >&2
   exit 1
 fi
 

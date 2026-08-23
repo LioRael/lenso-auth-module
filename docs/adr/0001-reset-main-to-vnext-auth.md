@@ -34,7 +34,7 @@ new vNext Module or Adapter whose Interface and ownership are explicit.
 
 - `main` has one Auth vocabulary and one inward dependency direction.
 - Removing the old source does not delete published artifacts or history.
-- The current workspace supplies the stable Interface and portable assertion
-  implementation, but deliberately does not claim a production credential
-  store or provider that has not been designed and verified for vNext.
+- The reset established the stable Interface and portable assertion boundary.
+  Concrete Providers may be added only as separate vNext crates with explicit
+  ownership; ADR 0002 adds the first such Provider.
 - CI rejects reintroduction of the removed workspace shape.
