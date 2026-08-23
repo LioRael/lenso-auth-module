@@ -1,9 +1,29 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/lenso-auth-account-module",
+    "crates/lenso-auth-anonymous-module",
     "crates/lenso-auth-api-token-module",
+    "crates/lenso-auth-device-module",
+    "crates/lenso-auth-federated-module",
+    "crates/lenso-auth-oauth-flow-module",
+    "crates/lenso-auth-oidc-module",
+    "crates/lenso-auth-password-module",
+    "crates/lenso-auth-phone-module",
+    "crates/lenso-auth-router-module",
     "crates/lenso-auth-sdk",
     "crates/lenso-capability-auth",
+    "crates/lenso-capability-account-admin",
+    "crates/lenso-capability-anonymous-auth",
+    "crates/lenso-capability-credential-issuer",
+    "crates/lenso-capability-identity-directory",
+    "crates/lenso-capability-device-auth",
+    "crates/lenso-capability-federated-auth",
+    "crates/lenso-capability-oauth-flow",
+    "crates/lenso-capability-oidc-provider",
+    "crates/lenso-capability-password-auth",
+    "crates/lenso-capability-phone-auth",
+    "crates/lenso-capability-sms-delivery",
 ]
 
 [workspace.package]
@@ -13,17 +33,21 @@ repository = "https://github.com/LioRael/lenso-auth-module"
 rust-version = "1.94"
 
 [workspace.dependencies]
+aes-gcm = "0.10"
+argon2 = "0.5"
 base64 = "0.22"
 ed25519-dalek = "3.0"
 futures = "0.3"
 getrandom = "0.4"
 hmac = "0.12"
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "json", "time"] }
 thiserror = "2.0"
 time = { version = "0.3", features = ["formatting", "parsing", "serde"] }
+url = "2.5"
 zeroize = "1.9"
 
 [workspace.lints.rust]
