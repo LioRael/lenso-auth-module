@@ -89,12 +89,10 @@ LENSO_POSTGRES_TEST_URL=postgres://... \
   test --locked --workspace -- --include-ignored --test-threads=1
 ```
 
-The Capability descriptor is authoritative. Its build script rejects stale
-Rust and TypeScript generated bindings.
-
-The generated TypeScript binding imports `@lenso/contract-runtime`.
-TypeScript consumers must declare a compatible
-`@lenso/contract-runtime@^0.1.0` dependency.
+The Capability descriptor is authoritative. Each native Capability build
+script rejects a stale Rust projection. Bun consumers import the matching
+TypeScript projection from `@lenso/bun`, which locks the source revision and
+checks that projection independently.
 
 ## Branches
 
