@@ -89,10 +89,17 @@ LENSO_POSTGRES_TEST_URL=postgres://... \
   test --locked --workspace -- --include-ignored --test-threads=1
 ```
 
-The Capability descriptor is authoritative. Each native Capability build
-script rejects a stale Rust projection. Bun consumers import the matching
-TypeScript projection from `@lenso/bun`, which locks the source revision and
-checks that projection independently.
+Each Capability's annotated Rust trait and value types are the authoring
+source. Its build script rejects stale locked Descriptor, Schema, and Rust
+projection artifacts. For an intentional contract change, update the Rust
+source, run the package once with `LENSO_UPDATE_CONTRACT_SNAPSHOT=1`, review
+the locked snapshot diff, and regenerate `src/generated.rs` with
+`lenso-contract-codegen 0.6.1`. Bun consumers import the matching TypeScript
+projection from `@lenso/bun`, which locks the source revision independently.
+
+Native Auth Modules use `#[lenso::module]`; package identity, linked Factory,
+and registration are generated from Cargo metadata. Stateful lifecycle and
+explicit Capability endpoints remain Module-owned implementation details.
 
 ## Branches
 

@@ -3,12 +3,21 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
+use lenso_module_authoring::CapabilityClient;
 pub const CAPABILITY_ID: &str = "lenso.auth.oidc-provider@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const OIDC_PROVIDER_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const OIDC_PROVIDER_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_provided_oidc_provider { () => { "{\"capability_id\":\"lenso.auth.oidc-provider@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"authorize\",\"exchange\",\"jwks\",\"metadata\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_oidc_provider_client { () => { "{\"capability_id\":\"lenso.auth.oidc-provider@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
 
 pub const AUTHORIZE_OPERATION: &str = "authorize";
 pub const EXCHANGE_OPERATION: &str = "exchange";
@@ -540,11 +549,153 @@ pub fn decode_metadata_response(wire: &str) -> Result<MetadataResponse, serde_js
 pub fn encode_metadata_error(value: &MetadataError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_metadata_error(wire: &str) -> Result<MetadataError, serde_json::Error> { decode_portable_json(wire) }
 
+#[doc(hidden)]
+pub trait __LensoIntoOidcProviderAuthorizeResult {
+    fn __lenso_into_result(self) -> Result<Result<AuthorizeResponse, AuthorizeError>, RuntimeFailure>;
+}
+impl __LensoIntoOidcProviderAuthorizeResult for Result<AuthorizeResponse, AuthorizeError> {
+    fn __lenso_into_result(self) -> Result<Result<AuthorizeResponse, AuthorizeError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoOidcProviderAuthorizeResult for Result<AuthorizeResponse, lenso_module_authoring::ModuleError<AuthorizeError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<AuthorizeResponse, AuthorizeError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoOidcProviderAuthorizeResult for Result<AuthorizeResponse, OidcProviderAuthorizeInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<AuthorizeResponse, AuthorizeError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(OidcProviderAuthorizeInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(OidcProviderAuthorizeInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoOidcProviderExchangeResult {
+    fn __lenso_into_result(self) -> Result<Result<ExchangeResponse, ExchangeError>, RuntimeFailure>;
+}
+impl __LensoIntoOidcProviderExchangeResult for Result<ExchangeResponse, ExchangeError> {
+    fn __lenso_into_result(self) -> Result<Result<ExchangeResponse, ExchangeError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoOidcProviderExchangeResult for Result<ExchangeResponse, lenso_module_authoring::ModuleError<ExchangeError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<ExchangeResponse, ExchangeError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoOidcProviderExchangeResult for Result<ExchangeResponse, OidcProviderExchangeInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<ExchangeResponse, ExchangeError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(OidcProviderExchangeInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(OidcProviderExchangeInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoOidcProviderJwksResult {
+    fn __lenso_into_result(self) -> Result<Result<JwksResponse, JwksError>, RuntimeFailure>;
+}
+impl __LensoIntoOidcProviderJwksResult for Result<JwksResponse, JwksError> {
+    fn __lenso_into_result(self) -> Result<Result<JwksResponse, JwksError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoOidcProviderJwksResult for Result<JwksResponse, lenso_module_authoring::ModuleError<JwksError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<JwksResponse, JwksError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoOidcProviderJwksResult for Result<JwksResponse, OidcProviderJwksInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<JwksResponse, JwksError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(OidcProviderJwksInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(OidcProviderJwksInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoOidcProviderMetadataResult {
+    fn __lenso_into_result(self) -> Result<Result<MetadataResponse, MetadataError>, RuntimeFailure>;
+}
+impl __LensoIntoOidcProviderMetadataResult for Result<MetadataResponse, MetadataError> {
+    fn __lenso_into_result(self) -> Result<Result<MetadataResponse, MetadataError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoOidcProviderMetadataResult for Result<MetadataResponse, lenso_module_authoring::ModuleError<MetadataError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<MetadataResponse, MetadataError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoOidcProviderMetadataResult for Result<MetadataResponse, OidcProviderMetadataInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<MetadataResponse, MetadataError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(OidcProviderMetadataInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(OidcProviderMetadataInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait OidcProviderProvider: fmt::Debug + 'static {
     fn authorize(&self, context: InvocationContext, request: AuthorizeRequest) -> NativeRequestFuture<OidcProviderAuthorize>;
     fn exchange(&self, context: InvocationContext, request: ExchangeRequest) -> NativeRequestFuture<OidcProviderExchange>;
     fn jwks(&self, context: InvocationContext, request: JwksRequest) -> NativeRequestFuture<OidcProviderJwks>;
     fn metadata(&self, context: InvocationContext, request: MetadataRequest) -> NativeRequestFuture<OidcProviderMetadata>;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_oidc_provider {
+    ($module:ty, $support:path) => {
+        use $support as __LensoNativeSupportOidcProvider;
+        impl $crate::OidcProviderProvider for $module {
+        fn authorize(&self, context: __LensoNativeSupportOidcProvider::InvocationContext, request: $crate::AuthorizeRequest) -> __LensoNativeSupportOidcProvider::NativeRequestFuture<$crate::OidcProviderAuthorize> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::authorize(&module, context, request).await;
+                $crate::__LensoIntoOidcProviderAuthorizeResult::__lenso_into_result(result)
+            })
+        }
+        fn exchange(&self, context: __LensoNativeSupportOidcProvider::InvocationContext, request: $crate::ExchangeRequest) -> __LensoNativeSupportOidcProvider::NativeRequestFuture<$crate::OidcProviderExchange> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::exchange(&module, context, request).await;
+                $crate::__LensoIntoOidcProviderExchangeResult::__lenso_into_result(result)
+            })
+        }
+        fn jwks(&self, context: __LensoNativeSupportOidcProvider::InvocationContext, request: $crate::JwksRequest) -> __LensoNativeSupportOidcProvider::NativeRequestFuture<$crate::OidcProviderJwks> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::jwks(&module, context, request).await;
+                $crate::__LensoIntoOidcProviderJwksResult::__lenso_into_result(result)
+            })
+        }
+        fn metadata(&self, context: __LensoNativeSupportOidcProvider::InvocationContext, request: $crate::MetadataRequest) -> __LensoNativeSupportOidcProvider::NativeRequestFuture<$crate::OidcProviderMetadata> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::metadata(&module, context, request).await;
+                $crate::__LensoIntoOidcProviderMetadataResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -629,6 +780,36 @@ impl<P: OidcProviderProvider> NativeRequestEndpoint for OidcProviderEndpoint<P> 
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_endpoints_oidc_provider {
+    ($provider:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let endpoint = ::std::rc::Rc::new($crate::OidcProviderEndpoint::new($provider));
+        (
+            vec![endpoint.clone() as ::std::rc::Rc<dyn __LensoNativeSupport::NativeRequestEndpoint>],
+            vec![],
+            vec![],
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_oidc_provider {
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let (request_endpoints, stream_endpoints, event_endpoints) =
+            $crate::__lenso_native_endpoints_oidc_provider!($provider, $support);
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+            request_endpoints,
+            stream_endpoints,
+            event_endpoints,
+            $lifecycle,
+        )
+    }};
+}
+
 #[derive(Debug)]
 pub struct OidcProviderClient {
     authorize: NativeRequestHandle<OidcProviderAuthorize>,
@@ -638,12 +819,7 @@ pub struct OidcProviderClient {
 }
 impl OidcProviderClient {
     pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
-        Ok(Self {
-            authorize: dependencies.one::<OidcProviderAuthorize>()?,
-            exchange: dependencies.one::<OidcProviderExchange>()?,
-            jwks: dependencies.one::<OidcProviderJwks>()?,
-            metadata: dependencies.one::<OidcProviderMetadata>()?,
-        })
+        <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
     pub async fn authorize(&self, request: AuthorizeRequest) -> Result<AuthorizeResponse, OidcProviderAuthorizeInvocationError> {
@@ -692,6 +868,29 @@ impl OidcProviderClient {
         self.metadata.invoke_with_context(METADATA_OPERATION, context, request).await
             .map_err(OidcProviderMetadataInvocationError::Runtime)?
             .map_err(OidcProviderMetadataInvocationError::Domain)
+    }
+}
+
+impl CapabilityClient for OidcProviderClient {
+    type Dependencies = ModuleDependencies;
+    type Error = RuntimeFailure;
+
+    const CAPABILITY_ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
+        Ok(Self {
+            authorize: dependencies.one::<OidcProviderAuthorize>()?,
+            exchange: dependencies.one::<OidcProviderExchange>()?,
+            jwks: dependencies.one::<OidcProviderJwks>()?,
+            metadata: dependencies.one::<OidcProviderMetadata>()?,
+        })
+    }
+
+    fn already_connected() -> RuntimeFailure {
+        RuntimeFailure::ModuleFailure {
+            detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
+        }
     }
 }
 

@@ -22,7 +22,7 @@ use lenso_kernel::{
     ActivateContext, DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle,
     NativeRequestEndpoint, NativeRequestFuture, PrepareContext, RuntimeFailure,
 };
-use lenso_native_adapter::{NativeModuleFactory, NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
 use lenso_postgres_kit::OwnedPostgres;
 pub use operator::{OidcOperator, OidcOperatorError};
 use schema::schema_plan;
@@ -38,8 +38,6 @@ use std::{
 };
 use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
 use zeroize::Zeroizing;
-pub const PACKAGE_ID: &str = "lenso.auth.oidc";
-pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const TIMEOUT: StdDuration = StdDuration::from_secs(10);
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -91,36 +89,26 @@ impl OidcConfig {
         Ok(())
     }
 }
-#[derive(Clone, Copy, Debug, Default)]
-pub struct OidcFactory;
-impl NativeModuleFactory for OidcFactory {
-    fn package_id(&self) -> &'static str {
-        PACKAGE_ID
-    }
-    fn package_version(&self) -> &'static str {
-        PACKAGE_VERSION
-    }
-    fn instantiate(
-        &self,
-        context: NativeModuleFactoryContext<'_>,
-    ) -> Result<NativeModuleInstance, RuntimeFailure> {
-        let config: OidcConfig =
-            serde_json::from_str(context.configuration()).map_err(|e| invalid(&e.to_string()))?;
-        config.validate()?;
-        let prepared = Rc::new(RefCell::new(None));
-        let active = Rc::new(RefCell::new(None));
-        let endpoint = Rc::new(OidcProviderEndpoint::new(Provider {
-            active: active.clone(),
-        })) as Rc<dyn NativeRequestEndpoint>;
-        Ok(NativeModuleInstance::with_lifecycle(
-            vec![endpoint],
-            Lifecycle {
-                config,
-                prepared,
-                active,
-            },
-        ))
-    }
+#[lenso::module]
+fn instantiate_auth_module(
+    context: NativeModuleFactoryContext<'_>,
+) -> Result<NativeModuleInstance, RuntimeFailure> {
+    let config: OidcConfig =
+        serde_json::from_str(context.configuration()).map_err(|e| invalid(&e.to_string()))?;
+    config.validate()?;
+    let prepared = Rc::new(RefCell::new(None));
+    let active = Rc::new(RefCell::new(None));
+    let endpoint = Rc::new(OidcProviderEndpoint::new(Provider {
+        active: active.clone(),
+    })) as Rc<dyn NativeRequestEndpoint>;
+    Ok(NativeModuleInstance::with_lifecycle(
+        vec![endpoint],
+        Lifecycle {
+            config,
+            prepared,
+            active,
+        },
+    ))
 }
 #[derive(Clone)]
 struct Prepared {

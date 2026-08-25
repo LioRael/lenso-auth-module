@@ -3,12 +3,21 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
+use lenso_module_authoring::CapabilityClient;
 pub const CAPABILITY_ID: &str = "lenso.auth.phone@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const PHONE_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const PHONE_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_provided_phone { () => { "{\"capability_id\":\"lenso.auth.phone@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"password_login\",\"set_password\",\"start_otp\",\"verify_otp\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_phone_client { () => { "{\"capability_id\":\"lenso.auth.phone@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
 
 pub const PASSWORD_LOGIN_OPERATION: &str = "password_login";
 pub const SET_PASSWORD_OPERATION: &str = "set_password";
@@ -594,11 +603,153 @@ pub fn decode_verify_otp_response(wire: &str) -> Result<VerifyOtpResponse, serde
 pub fn encode_verify_otp_error(value: &VerifyOtpError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_verify_otp_error(wire: &str) -> Result<VerifyOtpError, serde_json::Error> { decode_portable_json(wire) }
 
+#[doc(hidden)]
+pub trait __LensoIntoPhonePasswordLoginResult {
+    fn __lenso_into_result(self) -> Result<Result<PasswordLoginResponse, PasswordLoginError>, RuntimeFailure>;
+}
+impl __LensoIntoPhonePasswordLoginResult for Result<PasswordLoginResponse, PasswordLoginError> {
+    fn __lenso_into_result(self) -> Result<Result<PasswordLoginResponse, PasswordLoginError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoPhonePasswordLoginResult for Result<PasswordLoginResponse, lenso_module_authoring::ModuleError<PasswordLoginError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<PasswordLoginResponse, PasswordLoginError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoPhonePasswordLoginResult for Result<PasswordLoginResponse, PhonePasswordLoginInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<PasswordLoginResponse, PasswordLoginError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(PhonePasswordLoginInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(PhonePasswordLoginInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoPhoneSetPasswordResult {
+    fn __lenso_into_result(self) -> Result<Result<SetPasswordResponse, SetPasswordError>, RuntimeFailure>;
+}
+impl __LensoIntoPhoneSetPasswordResult for Result<SetPasswordResponse, SetPasswordError> {
+    fn __lenso_into_result(self) -> Result<Result<SetPasswordResponse, SetPasswordError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoPhoneSetPasswordResult for Result<SetPasswordResponse, lenso_module_authoring::ModuleError<SetPasswordError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<SetPasswordResponse, SetPasswordError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoPhoneSetPasswordResult for Result<SetPasswordResponse, PhoneSetPasswordInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<SetPasswordResponse, SetPasswordError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(PhoneSetPasswordInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(PhoneSetPasswordInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoPhoneStartOtpResult {
+    fn __lenso_into_result(self) -> Result<Result<StartOtpResponse, StartOtpError>, RuntimeFailure>;
+}
+impl __LensoIntoPhoneStartOtpResult for Result<StartOtpResponse, StartOtpError> {
+    fn __lenso_into_result(self) -> Result<Result<StartOtpResponse, StartOtpError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoPhoneStartOtpResult for Result<StartOtpResponse, lenso_module_authoring::ModuleError<StartOtpError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<StartOtpResponse, StartOtpError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoPhoneStartOtpResult for Result<StartOtpResponse, PhoneStartOtpInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<StartOtpResponse, StartOtpError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(PhoneStartOtpInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(PhoneStartOtpInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoPhoneVerifyOtpResult {
+    fn __lenso_into_result(self) -> Result<Result<VerifyOtpResponse, VerifyOtpError>, RuntimeFailure>;
+}
+impl __LensoIntoPhoneVerifyOtpResult for Result<VerifyOtpResponse, VerifyOtpError> {
+    fn __lenso_into_result(self) -> Result<Result<VerifyOtpResponse, VerifyOtpError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoPhoneVerifyOtpResult for Result<VerifyOtpResponse, lenso_module_authoring::ModuleError<VerifyOtpError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<VerifyOtpResponse, VerifyOtpError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoPhoneVerifyOtpResult for Result<VerifyOtpResponse, PhoneVerifyOtpInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<VerifyOtpResponse, VerifyOtpError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(PhoneVerifyOtpInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(PhoneVerifyOtpInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait PhoneProvider: fmt::Debug + 'static {
     fn password_login(&self, context: InvocationContext, request: PasswordLoginRequest) -> NativeRequestFuture<PhonePasswordLogin>;
     fn set_password(&self, context: InvocationContext, request: SetPasswordRequest) -> NativeRequestFuture<PhoneSetPassword>;
     fn start_otp(&self, context: InvocationContext, request: StartOtpRequest) -> NativeRequestFuture<PhoneStartOtp>;
     fn verify_otp(&self, context: InvocationContext, request: VerifyOtpRequest) -> NativeRequestFuture<PhoneVerifyOtp>;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_phone {
+    ($module:ty, $support:path) => {
+        use $support as __LensoNativeSupportPhone;
+        impl $crate::PhoneProvider for $module {
+        fn password_login(&self, context: __LensoNativeSupportPhone::InvocationContext, request: $crate::PasswordLoginRequest) -> __LensoNativeSupportPhone::NativeRequestFuture<$crate::PhonePasswordLogin> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::password_login(&module, context, request).await;
+                $crate::__LensoIntoPhonePasswordLoginResult::__lenso_into_result(result)
+            })
+        }
+        fn set_password(&self, context: __LensoNativeSupportPhone::InvocationContext, request: $crate::SetPasswordRequest) -> __LensoNativeSupportPhone::NativeRequestFuture<$crate::PhoneSetPassword> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::set_password(&module, context, request).await;
+                $crate::__LensoIntoPhoneSetPasswordResult::__lenso_into_result(result)
+            })
+        }
+        fn start_otp(&self, context: __LensoNativeSupportPhone::InvocationContext, request: $crate::StartOtpRequest) -> __LensoNativeSupportPhone::NativeRequestFuture<$crate::PhoneStartOtp> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::start_otp(&module, context, request).await;
+                $crate::__LensoIntoPhoneStartOtpResult::__lenso_into_result(result)
+            })
+        }
+        fn verify_otp(&self, context: __LensoNativeSupportPhone::InvocationContext, request: $crate::VerifyOtpRequest) -> __LensoNativeSupportPhone::NativeRequestFuture<$crate::PhoneVerifyOtp> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::verify_otp(&module, context, request).await;
+                $crate::__LensoIntoPhoneVerifyOtpResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -683,6 +834,36 @@ impl<P: PhoneProvider> NativeRequestEndpoint for PhoneEndpoint<P> {
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_endpoints_phone {
+    ($provider:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let endpoint = ::std::rc::Rc::new($crate::PhoneEndpoint::new($provider));
+        (
+            vec![endpoint.clone() as ::std::rc::Rc<dyn __LensoNativeSupport::NativeRequestEndpoint>],
+            vec![],
+            vec![],
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_phone {
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let (request_endpoints, stream_endpoints, event_endpoints) =
+            $crate::__lenso_native_endpoints_phone!($provider, $support);
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+            request_endpoints,
+            stream_endpoints,
+            event_endpoints,
+            $lifecycle,
+        )
+    }};
+}
+
 #[derive(Debug)]
 pub struct PhoneClient {
     password_login: NativeRequestHandle<PhonePasswordLogin>,
@@ -692,12 +873,7 @@ pub struct PhoneClient {
 }
 impl PhoneClient {
     pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
-        Ok(Self {
-            password_login: dependencies.one::<PhonePasswordLogin>()?,
-            set_password: dependencies.one::<PhoneSetPassword>()?,
-            start_otp: dependencies.one::<PhoneStartOtp>()?,
-            verify_otp: dependencies.one::<PhoneVerifyOtp>()?,
-        })
+        <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
     pub async fn password_login(&self, request: PasswordLoginRequest) -> Result<PasswordLoginResponse, PhonePasswordLoginInvocationError> {
@@ -746,6 +922,29 @@ impl PhoneClient {
         self.verify_otp.invoke_with_context(VERIFY_OTP_OPERATION, context, request).await
             .map_err(PhoneVerifyOtpInvocationError::Runtime)?
             .map_err(PhoneVerifyOtpInvocationError::Domain)
+    }
+}
+
+impl CapabilityClient for PhoneClient {
+    type Dependencies = ModuleDependencies;
+    type Error = RuntimeFailure;
+
+    const CAPABILITY_ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
+        Ok(Self {
+            password_login: dependencies.one::<PhonePasswordLogin>()?,
+            set_password: dependencies.one::<PhoneSetPassword>()?,
+            start_otp: dependencies.one::<PhoneStartOtp>()?,
+            verify_otp: dependencies.one::<PhoneVerifyOtp>()?,
+        })
+    }
+
+    fn already_connected() -> RuntimeFailure {
+        RuntimeFailure::ModuleFailure {
+            detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
+        }
     }
 }
 

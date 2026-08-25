@@ -3,12 +3,21 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
+use lenso_module_authoring::CapabilityClient;
 pub const CAPABILITY_ID: &str = "lenso.auth.credential-issuer@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const CREDENTIAL_ISSUER_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const CREDENTIAL_ISSUER_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_provided_credential_issuer { () => { "{\"capability_id\":\"lenso.auth.credential-issuer@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"issue\",\"revoke\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_credential_issuer_client { () => { "{\"capability_id\":\"lenso.auth.credential-issuer@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
 
 pub const ISSUE_OPERATION: &str = "issue";
 pub const REVOKE_OPERATION: &str = "revoke";
@@ -254,9 +263,85 @@ pub fn decode_revoke_response(wire: &str) -> Result<RevokeResponse, serde_json::
 pub fn encode_revoke_error(value: &RevokeError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_revoke_error(wire: &str) -> Result<RevokeError, serde_json::Error> { decode_portable_json(wire) }
 
+#[doc(hidden)]
+pub trait __LensoIntoCredentialIssuerIssueResult {
+    fn __lenso_into_result(self) -> Result<Result<IssueResponse, IssueError>, RuntimeFailure>;
+}
+impl __LensoIntoCredentialIssuerIssueResult for Result<IssueResponse, IssueError> {
+    fn __lenso_into_result(self) -> Result<Result<IssueResponse, IssueError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoCredentialIssuerIssueResult for Result<IssueResponse, lenso_module_authoring::ModuleError<IssueError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<IssueResponse, IssueError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoCredentialIssuerIssueResult for Result<IssueResponse, CredentialIssuerIssueInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<IssueResponse, IssueError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(CredentialIssuerIssueInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(CredentialIssuerIssueInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoCredentialIssuerRevokeResult {
+    fn __lenso_into_result(self) -> Result<Result<RevokeResponse, RevokeError>, RuntimeFailure>;
+}
+impl __LensoIntoCredentialIssuerRevokeResult for Result<RevokeResponse, RevokeError> {
+    fn __lenso_into_result(self) -> Result<Result<RevokeResponse, RevokeError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoCredentialIssuerRevokeResult for Result<RevokeResponse, lenso_module_authoring::ModuleError<RevokeError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<RevokeResponse, RevokeError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoCredentialIssuerRevokeResult for Result<RevokeResponse, CredentialIssuerRevokeInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<RevokeResponse, RevokeError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(CredentialIssuerRevokeInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(CredentialIssuerRevokeInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait CredentialIssuerProvider: fmt::Debug + 'static {
     fn issue(&self, context: InvocationContext, request: IssueRequest) -> NativeRequestFuture<CredentialIssuerIssue>;
     fn revoke(&self, context: InvocationContext, request: RevokeRequest) -> NativeRequestFuture<CredentialIssuerRevoke>;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_credential_issuer {
+    ($module:ty, $support:path) => {
+        use $support as __LensoNativeSupportCredentialIssuer;
+        impl $crate::CredentialIssuerProvider for $module {
+        fn issue(&self, context: __LensoNativeSupportCredentialIssuer::InvocationContext, request: $crate::IssueRequest) -> __LensoNativeSupportCredentialIssuer::NativeRequestFuture<$crate::CredentialIssuerIssue> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::issue(&module, context, request).await;
+                $crate::__LensoIntoCredentialIssuerIssueResult::__lenso_into_result(result)
+            })
+        }
+        fn revoke(&self, context: __LensoNativeSupportCredentialIssuer::InvocationContext, request: $crate::RevokeRequest) -> __LensoNativeSupportCredentialIssuer::NativeRequestFuture<$crate::CredentialIssuerRevoke> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::revoke(&module, context, request).await;
+                $crate::__LensoIntoCredentialIssuerRevokeResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -313,6 +398,36 @@ impl<P: CredentialIssuerProvider> NativeRequestEndpoint for CredentialIssuerEndp
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_endpoints_credential_issuer {
+    ($provider:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let endpoint = ::std::rc::Rc::new($crate::CredentialIssuerEndpoint::new($provider));
+        (
+            vec![endpoint.clone() as ::std::rc::Rc<dyn __LensoNativeSupport::NativeRequestEndpoint>],
+            vec![],
+            vec![],
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_credential_issuer {
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let (request_endpoints, stream_endpoints, event_endpoints) =
+            $crate::__lenso_native_endpoints_credential_issuer!($provider, $support);
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+            request_endpoints,
+            stream_endpoints,
+            event_endpoints,
+            $lifecycle,
+        )
+    }};
+}
+
 #[derive(Debug)]
 pub struct CredentialIssuerClient {
     issue: NativeRequestHandle<CredentialIssuerIssue>,
@@ -320,10 +435,7 @@ pub struct CredentialIssuerClient {
 }
 impl CredentialIssuerClient {
     pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
-        Ok(Self {
-            issue: dependencies.one::<CredentialIssuerIssue>()?,
-            revoke: dependencies.one::<CredentialIssuerRevoke>()?,
-        })
+        <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
     pub async fn issue(&self, request: IssueRequest) -> Result<IssueResponse, CredentialIssuerIssueInvocationError> {
@@ -348,6 +460,27 @@ impl CredentialIssuerClient {
         self.revoke.invoke_with_context(REVOKE_OPERATION, context, request).await
             .map_err(CredentialIssuerRevokeInvocationError::Runtime)?
             .map_err(CredentialIssuerRevokeInvocationError::Domain)
+    }
+}
+
+impl CapabilityClient for CredentialIssuerClient {
+    type Dependencies = ModuleDependencies;
+    type Error = RuntimeFailure;
+
+    const CAPABILITY_ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
+        Ok(Self {
+            issue: dependencies.one::<CredentialIssuerIssue>()?,
+            revoke: dependencies.one::<CredentialIssuerRevoke>()?,
+        })
+    }
+
+    fn already_connected() -> RuntimeFailure {
+        RuntimeFailure::ModuleFailure {
+            detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
+        }
     }
 }
 

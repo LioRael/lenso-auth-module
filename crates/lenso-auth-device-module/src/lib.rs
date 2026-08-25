@@ -12,7 +12,7 @@ use lenso_kernel::{
     DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle, NativeRequestEndpoint,
     NativeRequestFuture, PrepareContext, RuntimeFailure,
 };
-use lenso_native_adapter::{NativeModuleFactory, NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
 use lenso_postgres_kit::OwnedPostgres;
 pub use operator::{DeviceAuthOperator, DeviceOperatorError};
 use schema::schema_plan;
@@ -22,8 +22,6 @@ use std::{cell::RefCell, fmt, rc::Rc, time::Duration as StdDuration};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use zeroize::Zeroizing;
 
-pub const PACKAGE_ID: &str = "lenso.auth.device";
-pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEPENDENCY_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -53,35 +51,25 @@ impl DeviceAuthConfig {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct DeviceAuthFactory;
-impl NativeModuleFactory for DeviceAuthFactory {
-    fn package_id(&self) -> &'static str {
-        PACKAGE_ID
-    }
-    fn package_version(&self) -> &'static str {
-        PACKAGE_VERSION
-    }
-    fn instantiate(
-        &self,
-        context: NativeModuleFactoryContext<'_>,
-    ) -> Result<NativeModuleInstance, RuntimeFailure> {
-        let config: DeviceAuthConfig =
-            serde_json::from_str(context.configuration()).map_err(|error| {
-                RuntimeFailure::InvalidResolvedPlan {
-                    detail: error.to_string(),
-                }
-            })?;
-        DeviceAuthConfig::new(config.schema.clone(), config.database_url_secret.clone())?;
-        let state = Rc::new(RefCell::new(None));
-        let endpoint = Rc::new(DeviceEndpoint::new(DeviceAuthProvider {
-            state: state.clone(),
-        })) as Rc<dyn NativeRequestEndpoint>;
-        Ok(NativeModuleInstance::with_lifecycle(
-            vec![endpoint],
-            DeviceLifecycle { config, state },
-        ))
-    }
+#[lenso::module]
+fn instantiate_auth_module(
+    context: NativeModuleFactoryContext<'_>,
+) -> Result<NativeModuleInstance, RuntimeFailure> {
+    let config: DeviceAuthConfig =
+        serde_json::from_str(context.configuration()).map_err(|error| {
+            RuntimeFailure::InvalidResolvedPlan {
+                detail: error.to_string(),
+            }
+        })?;
+    DeviceAuthConfig::new(config.schema.clone(), config.database_url_secret.clone())?;
+    let state = Rc::new(RefCell::new(None));
+    let endpoint = Rc::new(DeviceEndpoint::new(DeviceAuthProvider {
+        state: state.clone(),
+    })) as Rc<dyn NativeRequestEndpoint>;
+    Ok(NativeModuleInstance::with_lifecycle(
+        vec![endpoint],
+        DeviceLifecycle { config, state },
+    ))
 }
 
 #[derive(Clone)]

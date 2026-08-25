@@ -1,1 +1,19 @@
-{ "$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"subject":{"type":["string","null"]},"limit":{"type":"integer","minimum":1,"maximum":200},"cursor":{"type":["string","null"]}},"required":["subject","limit","cursor"],"additionalProperties":false }
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["subject", "limit", "cursor"],
+  "properties": {
+    "subject": {
+      "type": ["string", "null"]
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    },
+    "cursor": {
+      "type": ["string", "null"]
+    }
+  },
+  "additionalProperties": false
+}

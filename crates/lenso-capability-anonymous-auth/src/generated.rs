@@ -3,12 +3,21 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
+use lenso_module_authoring::CapabilityClient;
 pub const CAPABILITY_ID: &str = "lenso.auth.anonymous@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const ANONYMOUS_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const ANONYMOUS_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_provided_anonymous { () => { "{\"capability_id\":\"lenso.auth.anonymous@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"sign_in\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_anonymous_client { () => { "{\"capability_id\":\"lenso.auth.anonymous@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
 
 pub const SIGN_IN_OPERATION: &str = "sign_in";
 
@@ -140,8 +149,51 @@ pub fn decode_sign_in_response(wire: &str) -> Result<SignInResponse, serde_json:
 pub fn encode_sign_in_error(value: &SignInError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_sign_in_error(wire: &str) -> Result<SignInError, serde_json::Error> { decode_portable_json(wire) }
 
+#[doc(hidden)]
+pub trait __LensoIntoAnonymousSignInResult {
+    fn __lenso_into_result(self) -> Result<Result<SignInResponse, SignInError>, RuntimeFailure>;
+}
+impl __LensoIntoAnonymousSignInResult for Result<SignInResponse, SignInError> {
+    fn __lenso_into_result(self) -> Result<Result<SignInResponse, SignInError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoAnonymousSignInResult for Result<SignInResponse, lenso_module_authoring::ModuleError<SignInError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<SignInResponse, SignInError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoAnonymousSignInResult for Result<SignInResponse, AnonymousInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<SignInResponse, SignInError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(AnonymousInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(AnonymousInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait AnonymousProvider: fmt::Debug + 'static {
     fn sign_in(&self, context: InvocationContext, request: SignInRequest) -> NativeRequestFuture<Anonymous>;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_anonymous {
+    ($module:ty, $support:path) => {
+        use $support as __LensoNativeSupportAnonymous;
+        impl $crate::AnonymousProvider for $module {
+        fn sign_in(&self, context: __LensoNativeSupportAnonymous::InvocationContext, request: $crate::SignInRequest) -> __LensoNativeSupportAnonymous::NativeRequestFuture<$crate::Anonymous> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::sign_in(&module, context, request).await;
+                $crate::__LensoIntoAnonymousSignInResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -184,6 +236,36 @@ impl<P: AnonymousProvider> NativeRequestEndpoint for AnonymousEndpoint<P> {
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_endpoints_anonymous {
+    ($provider:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let endpoint = ::std::rc::Rc::new($crate::AnonymousEndpoint::new($provider));
+        (
+            vec![endpoint.clone() as ::std::rc::Rc<dyn __LensoNativeSupport::NativeRequestEndpoint>],
+            vec![],
+            vec![],
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_anonymous {
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let (request_endpoints, stream_endpoints, event_endpoints) =
+            $crate::__lenso_native_endpoints_anonymous!($provider, $support);
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+            request_endpoints,
+            stream_endpoints,
+            event_endpoints,
+            $lifecycle,
+        )
+    }};
+}
+
 #[derive(Debug)]
 pub struct AnonymousClient {
     sign_in: NativeRequestHandle<Anonymous>,
@@ -194,9 +276,7 @@ impl AnonymousClient {
     }
 
     pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
-        Ok(Self {
-            sign_in: dependencies.one::<Anonymous>()?,
-        })
+        <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
     pub async fn sign_in(&self, request: SignInRequest) -> Result<SignInResponse, AnonymousInvocationError> {
@@ -209,6 +289,26 @@ impl AnonymousClient {
         self.sign_in.invoke_with_context(SIGN_IN_OPERATION, context, request).await
             .map_err(AnonymousInvocationError::Runtime)?
             .map_err(AnonymousInvocationError::Domain)
+    }
+}
+
+impl CapabilityClient for AnonymousClient {
+    type Dependencies = ModuleDependencies;
+    type Error = RuntimeFailure;
+
+    const CAPABILITY_ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
+        Ok(Self {
+            sign_in: dependencies.one::<Anonymous>()?,
+        })
+    }
+
+    fn already_connected() -> RuntimeFailure {
+        RuntimeFailure::ModuleFailure {
+            detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
+        }
     }
 }
 

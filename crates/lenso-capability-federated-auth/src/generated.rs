@@ -3,12 +3,21 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
+use lenso_module_authoring::CapabilityClient;
 pub const CAPABILITY_ID: &str = "lenso.auth.federated@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const FEDERATED_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const FEDERATED_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_provided_federated { () => { "{\"capability_id\":\"lenso.auth.federated@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"complete\",\"start\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_federated_client { () => { "{\"capability_id\":\"lenso.auth.federated@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
 
 pub const COMPLETE_OPERATION: &str = "complete";
 pub const START_OPERATION: &str = "start";
@@ -273,9 +282,85 @@ pub fn decode_start_response(wire: &str) -> Result<StartResponse, serde_json::Er
 pub fn encode_start_error(value: &StartError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_start_error(wire: &str) -> Result<StartError, serde_json::Error> { decode_portable_json(wire) }
 
+#[doc(hidden)]
+pub trait __LensoIntoFederatedCompleteResult {
+    fn __lenso_into_result(self) -> Result<Result<CompleteResponse, CompleteError>, RuntimeFailure>;
+}
+impl __LensoIntoFederatedCompleteResult for Result<CompleteResponse, CompleteError> {
+    fn __lenso_into_result(self) -> Result<Result<CompleteResponse, CompleteError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoFederatedCompleteResult for Result<CompleteResponse, lenso_module_authoring::ModuleError<CompleteError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<CompleteResponse, CompleteError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoFederatedCompleteResult for Result<CompleteResponse, FederatedCompleteInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<CompleteResponse, CompleteError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(FederatedCompleteInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(FederatedCompleteInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoFederatedStartResult {
+    fn __lenso_into_result(self) -> Result<Result<StartResponse, StartError>, RuntimeFailure>;
+}
+impl __LensoIntoFederatedStartResult for Result<StartResponse, StartError> {
+    fn __lenso_into_result(self) -> Result<Result<StartResponse, StartError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoFederatedStartResult for Result<StartResponse, lenso_module_authoring::ModuleError<StartError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<StartResponse, StartError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoFederatedStartResult for Result<StartResponse, FederatedStartInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<StartResponse, StartError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(FederatedStartInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(FederatedStartInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait FederatedProvider: fmt::Debug + 'static {
     fn complete(&self, context: InvocationContext, request: CompleteRequest) -> NativeRequestFuture<FederatedComplete>;
     fn start(&self, context: InvocationContext, request: StartRequest) -> NativeRequestFuture<FederatedStart>;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_federated {
+    ($module:ty, $support:path) => {
+        use $support as __LensoNativeSupportFederated;
+        impl $crate::FederatedProvider for $module {
+        fn complete(&self, context: __LensoNativeSupportFederated::InvocationContext, request: $crate::CompleteRequest) -> __LensoNativeSupportFederated::NativeRequestFuture<$crate::FederatedComplete> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::complete(&module, context, request).await;
+                $crate::__LensoIntoFederatedCompleteResult::__lenso_into_result(result)
+            })
+        }
+        fn start(&self, context: __LensoNativeSupportFederated::InvocationContext, request: $crate::StartRequest) -> __LensoNativeSupportFederated::NativeRequestFuture<$crate::FederatedStart> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::start(&module, context, request).await;
+                $crate::__LensoIntoFederatedStartResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -332,6 +417,36 @@ impl<P: FederatedProvider> NativeRequestEndpoint for FederatedEndpoint<P> {
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_endpoints_federated {
+    ($provider:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let endpoint = ::std::rc::Rc::new($crate::FederatedEndpoint::new($provider));
+        (
+            vec![endpoint.clone() as ::std::rc::Rc<dyn __LensoNativeSupport::NativeRequestEndpoint>],
+            vec![],
+            vec![],
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_federated {
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let (request_endpoints, stream_endpoints, event_endpoints) =
+            $crate::__lenso_native_endpoints_federated!($provider, $support);
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+            request_endpoints,
+            stream_endpoints,
+            event_endpoints,
+            $lifecycle,
+        )
+    }};
+}
+
 #[derive(Debug)]
 pub struct FederatedClient {
     complete: NativeRequestHandle<FederatedComplete>,
@@ -339,10 +454,7 @@ pub struct FederatedClient {
 }
 impl FederatedClient {
     pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
-        Ok(Self {
-            complete: dependencies.one::<FederatedComplete>()?,
-            start: dependencies.one::<FederatedStart>()?,
-        })
+        <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
     pub async fn complete(&self, request: CompleteRequest) -> Result<CompleteResponse, FederatedCompleteInvocationError> {
@@ -367,6 +479,27 @@ impl FederatedClient {
         self.start.invoke_with_context(START_OPERATION, context, request).await
             .map_err(FederatedStartInvocationError::Runtime)?
             .map_err(FederatedStartInvocationError::Domain)
+    }
+}
+
+impl CapabilityClient for FederatedClient {
+    type Dependencies = ModuleDependencies;
+    type Error = RuntimeFailure;
+
+    const CAPABILITY_ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
+        Ok(Self {
+            complete: dependencies.one::<FederatedComplete>()?,
+            start: dependencies.one::<FederatedStart>()?,
+        })
+    }
+
+    fn already_connected() -> RuntimeFailure {
+        RuntimeFailure::ModuleFailure {
+            detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
+        }
     }
 }
 

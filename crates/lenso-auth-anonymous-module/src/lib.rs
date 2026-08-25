@@ -17,12 +17,9 @@ use lenso_kernel::{
     ActivateContext, DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle,
     NativeRequestEndpoint, NativeRequestFuture, RuntimeFailure,
 };
-use lenso_native_adapter::{NativeModuleFactory, NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
-
-pub const PACKAGE_ID: &str = "lenso.auth.anonymous";
-pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -47,35 +44,25 @@ impl AnonymousAuthConfig {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct AnonymousAuthFactory;
-impl NativeModuleFactory for AnonymousAuthFactory {
-    fn package_id(&self) -> &'static str {
-        PACKAGE_ID
-    }
-    fn package_version(&self) -> &'static str {
-        PACKAGE_VERSION
-    }
-    fn instantiate(
-        &self,
-        context: NativeModuleFactoryContext<'_>,
-    ) -> Result<NativeModuleInstance, RuntimeFailure> {
-        let config: AnonymousAuthConfig =
-            serde_json::from_str(context.configuration()).map_err(|error| {
-                RuntimeFailure::InvalidResolvedPlan {
-                    detail: error.to_string(),
-                }
-            })?;
-        AnonymousAuthConfig::new(config.audience.clone(), config.session_ttl_seconds)?;
-        let active = Rc::new(RefCell::new(None));
-        let endpoint = Rc::new(AnonymousEndpoint::new(AnonymousAuthProvider {
-            active: active.clone(),
-        })) as Rc<dyn NativeRequestEndpoint>;
-        Ok(NativeModuleInstance::with_lifecycle(
-            vec![endpoint],
-            AnonymousLifecycle { config, active },
-        ))
-    }
+#[lenso::module]
+fn instantiate_auth_module(
+    context: NativeModuleFactoryContext<'_>,
+) -> Result<NativeModuleInstance, RuntimeFailure> {
+    let config: AnonymousAuthConfig =
+        serde_json::from_str(context.configuration()).map_err(|error| {
+            RuntimeFailure::InvalidResolvedPlan {
+                detail: error.to_string(),
+            }
+        })?;
+    AnonymousAuthConfig::new(config.audience.clone(), config.session_ttl_seconds)?;
+    let active = Rc::new(RefCell::new(None));
+    let endpoint = Rc::new(AnonymousEndpoint::new(AnonymousAuthProvider {
+        active: active.clone(),
+    })) as Rc<dyn NativeRequestEndpoint>;
+    Ok(NativeModuleInstance::with_lifecycle(
+        vec![endpoint],
+        AnonymousLifecycle { config, active },
+    ))
 }
 
 struct Active {

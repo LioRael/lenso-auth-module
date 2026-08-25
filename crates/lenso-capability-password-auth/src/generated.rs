@@ -3,12 +3,21 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
+use lenso_module_authoring::CapabilityClient;
 pub const CAPABILITY_ID: &str = "lenso.auth.password@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const PASSWORD_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const PASSWORD_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_provided_password { () => { "{\"capability_id\":\"lenso.auth.password@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"login\",\"register\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_password_client { () => { "{\"capability_id\":\"lenso.auth.password@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
 
 pub const LOGIN_OPERATION: &str = "login";
 pub const REGISTER_OPERATION: &str = "register";
@@ -296,9 +305,85 @@ pub fn decode_register_response(wire: &str) -> Result<RegisterResponse, serde_js
 pub fn encode_register_error(value: &RegisterError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_register_error(wire: &str) -> Result<RegisterError, serde_json::Error> { decode_portable_json(wire) }
 
+#[doc(hidden)]
+pub trait __LensoIntoPasswordLoginResult {
+    fn __lenso_into_result(self) -> Result<Result<LoginResponse, LoginError>, RuntimeFailure>;
+}
+impl __LensoIntoPasswordLoginResult for Result<LoginResponse, LoginError> {
+    fn __lenso_into_result(self) -> Result<Result<LoginResponse, LoginError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoPasswordLoginResult for Result<LoginResponse, lenso_module_authoring::ModuleError<LoginError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<LoginResponse, LoginError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoPasswordLoginResult for Result<LoginResponse, PasswordLoginInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<LoginResponse, LoginError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(PasswordLoginInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(PasswordLoginInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoPasswordRegisterResult {
+    fn __lenso_into_result(self) -> Result<Result<RegisterResponse, RegisterError>, RuntimeFailure>;
+}
+impl __LensoIntoPasswordRegisterResult for Result<RegisterResponse, RegisterError> {
+    fn __lenso_into_result(self) -> Result<Result<RegisterResponse, RegisterError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoPasswordRegisterResult for Result<RegisterResponse, lenso_module_authoring::ModuleError<RegisterError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<RegisterResponse, RegisterError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoPasswordRegisterResult for Result<RegisterResponse, PasswordRegisterInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<RegisterResponse, RegisterError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(PasswordRegisterInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(PasswordRegisterInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait PasswordProvider: fmt::Debug + 'static {
     fn login(&self, context: InvocationContext, request: LoginRequest) -> NativeRequestFuture<PasswordLogin>;
     fn register(&self, context: InvocationContext, request: RegisterRequest) -> NativeRequestFuture<PasswordRegister>;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_password {
+    ($module:ty, $support:path) => {
+        use $support as __LensoNativeSupportPassword;
+        impl $crate::PasswordProvider for $module {
+        fn login(&self, context: __LensoNativeSupportPassword::InvocationContext, request: $crate::LoginRequest) -> __LensoNativeSupportPassword::NativeRequestFuture<$crate::PasswordLogin> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::login(&module, context, request).await;
+                $crate::__LensoIntoPasswordLoginResult::__lenso_into_result(result)
+            })
+        }
+        fn register(&self, context: __LensoNativeSupportPassword::InvocationContext, request: $crate::RegisterRequest) -> __LensoNativeSupportPassword::NativeRequestFuture<$crate::PasswordRegister> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::register(&module, context, request).await;
+                $crate::__LensoIntoPasswordRegisterResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -355,6 +440,36 @@ impl<P: PasswordProvider> NativeRequestEndpoint for PasswordEndpoint<P> {
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_endpoints_password {
+    ($provider:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let endpoint = ::std::rc::Rc::new($crate::PasswordEndpoint::new($provider));
+        (
+            vec![endpoint.clone() as ::std::rc::Rc<dyn __LensoNativeSupport::NativeRequestEndpoint>],
+            vec![],
+            vec![],
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_password {
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let (request_endpoints, stream_endpoints, event_endpoints) =
+            $crate::__lenso_native_endpoints_password!($provider, $support);
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+            request_endpoints,
+            stream_endpoints,
+            event_endpoints,
+            $lifecycle,
+        )
+    }};
+}
+
 #[derive(Debug)]
 pub struct PasswordClient {
     login: NativeRequestHandle<PasswordLogin>,
@@ -362,10 +477,7 @@ pub struct PasswordClient {
 }
 impl PasswordClient {
     pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
-        Ok(Self {
-            login: dependencies.one::<PasswordLogin>()?,
-            register: dependencies.one::<PasswordRegister>()?,
-        })
+        <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
     pub async fn login(&self, request: LoginRequest) -> Result<LoginResponse, PasswordLoginInvocationError> {
@@ -390,6 +502,27 @@ impl PasswordClient {
         self.register.invoke_with_context(REGISTER_OPERATION, context, request).await
             .map_err(PasswordRegisterInvocationError::Runtime)?
             .map_err(PasswordRegisterInvocationError::Domain)
+    }
+}
+
+impl CapabilityClient for PasswordClient {
+    type Dependencies = ModuleDependencies;
+    type Error = RuntimeFailure;
+
+    const CAPABILITY_ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
+        Ok(Self {
+            login: dependencies.one::<PasswordLogin>()?,
+            register: dependencies.one::<PasswordRegister>()?,
+        })
+    }
+
+    fn already_connected() -> RuntimeFailure {
+        RuntimeFailure::ModuleFailure {
+            detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
+        }
     }
 }
 

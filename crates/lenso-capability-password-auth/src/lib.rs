@@ -1,5 +1,8 @@
 //! Portable password registration and login role.
 
+#[allow(dead_code)]
+mod contract;
+
 mod generated {
     include!("generated.rs");
 }

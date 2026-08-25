@@ -7,16 +7,20 @@ publish = false
 repository.workspace = true
 description = "PostgreSQL-backed opaque API token Auth Module for Lenso vNext."
 
+[package.metadata.lenso]
+package-id = "lenso.auth.api-token"
+
 [dependencies]
+lenso = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "1a835b8a213d24635171297160f3b534e5602cce" }
 base64.workspace = true
 futures.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
 lenso-auth-sdk = { path = "../lenso-auth-sdk", version = "0.2.0" }
 lenso-capability-auth = { path = "../lenso-capability-auth", version = "0.1.1" }
-lenso-capability-secrets = { git = "https://github.com/LioRael/lenso-secrets-module", rev = "be02927a185ebdbb463038ba79d8c6ebbea771f1" }
-lenso-kernel = "0.1.4"
-lenso-native-adapter = "0.1.1"
+lenso-capability-secrets = { git = "https://github.com/LioRael/lenso-secrets-module", rev = "e1cd46dd7156241f05ad5eeebbae995831c07da6" }
+lenso-kernel = "0.1.9"
+lenso-native-adapter = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "1a835b8a213d24635171297160f3b534e5602cce" }
 lenso-postgres-kit = { git = "https://github.com/LioRael/lenso-postgres-kit", rev = "525c1012c789e6f54c3c2fdaf8507a626c93e65f" }
 serde.workspace = true
 serde_json.workspace = true
@@ -27,8 +31,8 @@ time.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
-lenso-app-plan = "0.1.0"
-lenso-runner = "0.1.1"
+lenso-app-plan = "0.1.4"
+lenso-runner = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "1a835b8a213d24635171297160f3b534e5602cce" }
 tokio = { version = "1.52", features = ["macros", "rt"] }
 
 [lints]

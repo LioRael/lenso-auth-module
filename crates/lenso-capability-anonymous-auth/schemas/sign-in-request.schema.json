@@ -1,5 +1,11 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
-  "properties": { "device_id": { "type": ["string", "null"] } },
-  "required": ["device_id"], "additionalProperties": false
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["device_id"],
+  "properties": {
+    "device_id": {
+      "type": ["string", "null"]
+    }
+  },
+  "additionalProperties": false
 }

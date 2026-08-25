@@ -5,15 +5,19 @@ edition.workspace = true
 license.workspace = true
 publish = false
 repository.workspace = true
+[package.metadata.lenso]
+package-id = "lenso.auth.anonymous"
+
 [dependencies]
+lenso = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "1a835b8a213d24635171297160f3b534e5602cce" }
 base64.workspace = true
 futures.workspace = true
 getrandom.workspace = true
 lenso-capability-anonymous-auth = { path = "../lenso-capability-anonymous-auth" }
 lenso-capability-credential-issuer = { path = "../lenso-capability-credential-issuer" }
 lenso-capability-identity-directory = { path = "../lenso-capability-identity-directory" }
-lenso-kernel = "0.1.4"
-lenso-native-adapter = "0.1.1"
+lenso-kernel = "0.1.9"
+lenso-native-adapter = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "1a835b8a213d24635171297160f3b534e5602cce" }
 serde.workspace = true
 serde_json.workspace = true
 time.workspace = true

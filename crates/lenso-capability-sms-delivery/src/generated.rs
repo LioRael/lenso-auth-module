@@ -3,12 +3,21 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
+use lenso_module_authoring::CapabilityClient;
 pub const CAPABILITY_ID: &str = "lenso.message.sms@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const SMS_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const SMS_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_provided_sms { () => { "{\"capability_id\":\"lenso.message.sms@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"send\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_sms_client { () => { "{\"capability_id\":\"lenso.message.sms@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
 
 pub const SEND_OPERATION: &str = "send";
 
@@ -131,8 +140,51 @@ pub fn decode_send_response(wire: &str) -> Result<SendResponse, serde_json::Erro
 pub fn encode_send_error(value: &SendError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_send_error(wire: &str) -> Result<SendError, serde_json::Error> { decode_portable_json(wire) }
 
+#[doc(hidden)]
+pub trait __LensoIntoSmsSendResult {
+    fn __lenso_into_result(self) -> Result<Result<SendResponse, SendError>, RuntimeFailure>;
+}
+impl __LensoIntoSmsSendResult for Result<SendResponse, SendError> {
+    fn __lenso_into_result(self) -> Result<Result<SendResponse, SendError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoSmsSendResult for Result<SendResponse, lenso_module_authoring::ModuleError<SendError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<SendResponse, SendError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoSmsSendResult for Result<SendResponse, SmsInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<SendResponse, SendError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(SmsInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(SmsInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait SmsProvider: fmt::Debug + 'static {
     fn send(&self, context: InvocationContext, request: SendRequest) -> NativeRequestFuture<Sms>;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_sms {
+    ($module:ty, $support:path) => {
+        use $support as __LensoNativeSupportSms;
+        impl $crate::SmsProvider for $module {
+        fn send(&self, context: __LensoNativeSupportSms::InvocationContext, request: $crate::SendRequest) -> __LensoNativeSupportSms::NativeRequestFuture<$crate::Sms> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::send(&module, context, request).await;
+                $crate::__LensoIntoSmsSendResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -175,6 +227,36 @@ impl<P: SmsProvider> NativeRequestEndpoint for SmsEndpoint<P> {
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_endpoints_sms {
+    ($provider:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let endpoint = ::std::rc::Rc::new($crate::SmsEndpoint::new($provider));
+        (
+            vec![endpoint.clone() as ::std::rc::Rc<dyn __LensoNativeSupport::NativeRequestEndpoint>],
+            vec![],
+            vec![],
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_sms {
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let (request_endpoints, stream_endpoints, event_endpoints) =
+            $crate::__lenso_native_endpoints_sms!($provider, $support);
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+            request_endpoints,
+            stream_endpoints,
+            event_endpoints,
+            $lifecycle,
+        )
+    }};
+}
+
 #[derive(Debug)]
 pub struct SmsClient {
     send: NativeRequestHandle<Sms>,
@@ -185,9 +267,7 @@ impl SmsClient {
     }
 
     pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
-        Ok(Self {
-            send: dependencies.one::<Sms>()?,
-        })
+        <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
     pub async fn send(&self, request: SendRequest) -> Result<SendResponse, SmsInvocationError> {
@@ -200,6 +280,26 @@ impl SmsClient {
         self.send.invoke_with_context(SEND_OPERATION, context, request).await
             .map_err(SmsInvocationError::Runtime)?
             .map_err(SmsInvocationError::Domain)
+    }
+}
+
+impl CapabilityClient for SmsClient {
+    type Dependencies = ModuleDependencies;
+    type Error = RuntimeFailure;
+
+    const CAPABILITY_ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
+        Ok(Self {
+            send: dependencies.one::<Sms>()?,
+        })
+    }
+
+    fn already_connected() -> RuntimeFailure {
+        RuntimeFailure::ModuleFailure {
+            detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
+        }
     }
 }
 

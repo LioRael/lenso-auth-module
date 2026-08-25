@@ -1,1 +1,17 @@
-{ "$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"device_id":{"type":"string"},"created":{"type":"boolean"},"trusted":{"type":"boolean"}},"required":["device_id","created","trusted"],"additionalProperties":false }
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["device_id", "created", "trusted"],
+  "properties": {
+    "device_id": {
+      "type": "string"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "trusted": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

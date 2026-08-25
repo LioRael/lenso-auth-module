@@ -1,1 +1,21 @@
-{ "$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"subject":{"type":"string"},"status":{"enum":["active","disabled"]},"reason":{"type":["string","null"]},"disabled_until":{"type":["string","null"],"format":"date-time"}},"required":["subject","status","reason","disabled_until"],"additionalProperties":false }
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["subject", "status", "reason", "disabled_until"],
+  "properties": {
+    "subject": {
+      "type": "string"
+    },
+    "status": {
+      "enum": ["active", "disabled"]
+    },
+    "reason": {
+      "type": ["string", "null"]
+    },
+    "disabled_until": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

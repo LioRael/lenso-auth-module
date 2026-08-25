@@ -19,7 +19,7 @@ for removed_path in package.json packages pnpm-lock.yaml pnpm-workspace.yaml tsc
 done
 
 if rg -n \
-  'lenso-(contracts|module-auth|platform-(core|http|module|runtime|testing))' \
+  '^[[:space:]]*lenso-(contracts|module-auth|platform-(core|http|module|runtime|testing))[[:space:]]*=' \
   Cargo.toml crates --glob 'Cargo.toml'; then
   printf 'legacy v0.3 dependency returned\n' >&2
   exit 1

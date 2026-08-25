@@ -5,14 +5,12 @@ use std::{
     time::Duration as StdDuration,
 };
 
-use futures::future::LocalBoxFuture;
 use lenso_app_plan::{
     AppComposition, CapabilityBinding, CapabilityEndpointPlan, CapabilityRequirementPlan,
     ModuleInstancePlan, ResolvedAppPlan,
 };
 use lenso_auth_api_token_module::{
-    ApiTokenAuthConfig, ApiTokenAuthFactory, ApiTokenAuthOperator, IssueApiToken, PACKAGE_ID,
-    assertion_public_key,
+    ApiTokenAuthConfig, ApiTokenAuthOperator, IssueApiToken, PACKAGE_ID, assertion_public_key,
 };
 use lenso_auth_sdk::{
     ActorAssertion, ActorAssertionVerifier, ActorProjectionError, AuthOutcome, CredentialEvidence,
@@ -24,11 +22,12 @@ use lenso_capability_auth::{
 };
 use lenso_capability_secrets::{
     CAPABILITY_ID as SECRETS_CAPABILITY_ID, DESCRIPTOR_VERSION as SECRETS_DESCRIPTOR_VERSION,
-    RESOLVE_OPERATION, ResolveError, ResolveRequest, ResolveResponse, SecretsEndpoint,
-    SecretsInvocationError, SecretsProvider,
+    RESOLVE_OPERATION, ResolveError, ResolveRequest, ResolveResponse, Secrets, SecretsEndpoint,
+    SecretsProvider,
 };
 use lenso_kernel::{
-    InvocationContext, Kernel, NativeApp, NativeRequestEndpoint, RuntimeFailure, ShutdownOutcome,
+    InvocationContext, Kernel, NativeApp, NativeRequestEndpoint, NativeRequestFuture,
+    RuntimeFailure, ShutdownOutcome,
 };
 use lenso_native_adapter::{
     NativeModuleFactory, NativeModuleFactoryContext, NativeModuleInstance, NativeModuleRegistry,
@@ -109,16 +108,14 @@ impl SecretsProvider for StaticSecretsProvider {
         &self,
         _context: InvocationContext,
         request: ResolveRequest,
-    ) -> LocalBoxFuture<'static, Result<ResolveResponse, SecretsInvocationError>> {
+    ) -> NativeRequestFuture<Secrets> {
         let result = self
             .values
             .get(&request.reference)
             .cloned()
             .map(|value| ResolveResponse { value })
-            .ok_or(SecretsInvocationError::Domain(
-                ResolveError::UnknownReference,
-            ));
-        Box::pin(futures::future::ready(result))
+            .ok_or(ResolveError::UnknownReference);
+        Box::pin(futures::future::ready(Ok(result)))
     }
 }
 
@@ -372,8 +369,8 @@ fn plan(schema: &str, public_key_secret: &str) -> ResolvedAppPlan {
 
 fn registry(database_url: &str, signing_secret: &str, token_pepper: &str) -> NativeModuleRegistry {
     NativeModuleRegistry::new()
+        .with_linked_factories()
         .with_factory(CallerFactory)
-        .with_factory(ApiTokenAuthFactory)
         .with_factory(StaticSecretsFactory {
             values: BTreeMap::from([
                 ("auth/database-url".to_owned(), database_url.to_owned()),

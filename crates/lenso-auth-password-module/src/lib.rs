@@ -23,7 +23,7 @@ use lenso_kernel::{
     ActivateContext, DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle,
     NativeRequestEndpoint, NativeRequestFuture, PrepareContext, RuntimeFailure,
 };
-use lenso_native_adapter::{NativeModuleFactory, NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
 use lenso_postgres_kit::OwnedPostgres;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -34,8 +34,6 @@ use crate::schema::schema_plan;
 
 pub use operator::{PasswordAuthOperator, PasswordOperatorError};
 
-pub const PACKAGE_ID: &str = "lenso.auth.password";
-pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEPENDENCY_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -105,44 +103,34 @@ pub enum PasswordConfigError {
     InvalidRateLimit,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PasswordAuthFactory;
-impl NativeModuleFactory for PasswordAuthFactory {
-    fn package_id(&self) -> &'static str {
-        PACKAGE_ID
-    }
-    fn package_version(&self) -> &'static str {
-        PACKAGE_VERSION
-    }
-    fn instantiate(
-        &self,
-        context: NativeModuleFactoryContext<'_>,
-    ) -> Result<NativeModuleInstance, RuntimeFailure> {
-        let config: PasswordAuthConfig =
-            serde_json::from_str(context.configuration()).map_err(|error| {
-                RuntimeFailure::InvalidResolvedPlan {
-                    detail: format!("Password Auth configuration is invalid: {error}"),
-                }
-            })?;
-        config
-            .validate()
-            .map_err(|error| RuntimeFailure::InvalidResolvedPlan {
-                detail: error.to_string(),
-            })?;
-        let postgres = Rc::new(RefCell::new(None));
-        let active = Rc::new(RefCell::new(None));
-        let endpoint = Rc::new(PasswordEndpoint::new(PasswordAuthProvider {
-            active: active.clone(),
-        })) as Rc<dyn NativeRequestEndpoint>;
-        Ok(NativeModuleInstance::with_lifecycle(
-            vec![endpoint],
-            PasswordLifecycle {
-                config,
-                postgres,
-                active,
-            },
-        ))
-    }
+#[lenso::module]
+fn instantiate_auth_module(
+    context: NativeModuleFactoryContext<'_>,
+) -> Result<NativeModuleInstance, RuntimeFailure> {
+    let config: PasswordAuthConfig =
+        serde_json::from_str(context.configuration()).map_err(|error| {
+            RuntimeFailure::InvalidResolvedPlan {
+                detail: format!("Password Auth configuration is invalid: {error}"),
+            }
+        })?;
+    config
+        .validate()
+        .map_err(|error| RuntimeFailure::InvalidResolvedPlan {
+            detail: error.to_string(),
+        })?;
+    let postgres = Rc::new(RefCell::new(None));
+    let active = Rc::new(RefCell::new(None));
+    let endpoint = Rc::new(PasswordEndpoint::new(PasswordAuthProvider {
+        active: active.clone(),
+    })) as Rc<dyn NativeRequestEndpoint>;
+    Ok(NativeModuleInstance::with_lifecycle(
+        vec![endpoint],
+        PasswordLifecycle {
+            config,
+            postgres,
+            active,
+        },
+    ))
 }
 
 struct ActivePassword {

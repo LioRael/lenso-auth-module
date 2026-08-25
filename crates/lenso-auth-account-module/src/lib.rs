@@ -32,7 +32,7 @@ use lenso_kernel::{
     DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle, NativeRequestEndpoint,
     NativeRequestFuture, PrepareContext, RuntimeFailure,
 };
-use lenso_native_adapter::{NativeModuleFactory, NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
 use lenso_postgres_kit::OwnedPostgres;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -44,8 +44,6 @@ use crate::schema::schema_plan;
 
 pub use operator::{AccountAuthOperator, AccountOperatorError};
 
-pub const PACKAGE_ID: &str = "lenso.auth.account";
-pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEPENDENCY_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -151,47 +149,36 @@ pub fn assertion_public_key(signing_secret: impl AsRef<[u8]>) -> String {
     ActorAssertionIssuer::new("key-derivation", signing_secret).public_key_base64()
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct AccountAuthFactory;
-
-impl NativeModuleFactory for AccountAuthFactory {
-    fn package_id(&self) -> &'static str {
-        PACKAGE_ID
-    }
-    fn package_version(&self) -> &'static str {
-        PACKAGE_VERSION
-    }
-    fn instantiate(
-        &self,
-        context: NativeModuleFactoryContext<'_>,
-    ) -> Result<NativeModuleInstance, RuntimeFailure> {
-        let config: AccountAuthConfig =
-            serde_json::from_str(context.configuration()).map_err(|error| {
-                RuntimeFailure::InvalidResolvedPlan {
-                    detail: format!("Account Auth configuration is invalid: {error}"),
-                }
-            })?;
-        config
-            .validate()
-            .map_err(|error| RuntimeFailure::InvalidResolvedPlan {
-                detail: error.to_string(),
-            })?;
-        let state = Rc::new(RefCell::new(None));
-        let provider = AccountProvider {
-            state: state.clone(),
-            admin_callers: config.admin_callers.clone(),
-        };
-        let endpoints: Vec<Rc<dyn NativeRequestEndpoint>> = vec![
-            Rc::new(AuthEndpoint::new(provider.clone())),
-            Rc::new(DirectoryEndpoint::new(provider.clone())),
-            Rc::new(CredentialIssuerEndpoint::new(provider.clone())),
-            Rc::new(AccountAdminEndpoint::new(provider)),
-        ];
-        Ok(NativeModuleInstance::with_lifecycle(
-            endpoints,
-            AccountLifecycle { config, state },
-        ))
-    }
+#[lenso::module]
+fn instantiate_auth_module(
+    context: NativeModuleFactoryContext<'_>,
+) -> Result<NativeModuleInstance, RuntimeFailure> {
+    let config: AccountAuthConfig =
+        serde_json::from_str(context.configuration()).map_err(|error| {
+            RuntimeFailure::InvalidResolvedPlan {
+                detail: format!("Account Auth configuration is invalid: {error}"),
+            }
+        })?;
+    config
+        .validate()
+        .map_err(|error| RuntimeFailure::InvalidResolvedPlan {
+            detail: error.to_string(),
+        })?;
+    let state = Rc::new(RefCell::new(None));
+    let provider = AccountProvider {
+        state: state.clone(),
+        admin_callers: config.admin_callers.clone(),
+    };
+    let endpoints: Vec<Rc<dyn NativeRequestEndpoint>> = vec![
+        Rc::new(AuthEndpoint::new(provider.clone())),
+        Rc::new(DirectoryEndpoint::new(provider.clone())),
+        Rc::new(CredentialIssuerEndpoint::new(provider.clone())),
+        Rc::new(AccountAdminEndpoint::new(provider)),
+    ];
+    Ok(NativeModuleInstance::with_lifecycle(
+        endpoints,
+        AccountLifecycle { config, state },
+    ))
 }
 
 #[derive(Clone)]

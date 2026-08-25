@@ -1,1 +1,10 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","oneOf":[{"const":"invalid_callback"},{"const":"invalid_state"},{"const":"provider_rejected"},{"const":"unverified_identity"},{"const":"disabled"}]}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    { "const": "invalid_callback" },
+    { "const": "invalid_state" },
+    { "const": "provider_rejected" },
+    { "const": "unverified_identity" },
+    { "const": "disabled" }
+  ]
+}

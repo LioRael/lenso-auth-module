@@ -3,12 +3,21 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
+use lenso_module_authoring::CapabilityClient;
 pub const CAPABILITY_ID: &str = "lenso.auth.device@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const DEVICE_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const DEVICE_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_provided_device { () => { "{\"capability_id\":\"lenso.auth.device@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"list\",\"observe\",\"set_trust\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_device_client { () => { "{\"capability_id\":\"lenso.auth.device@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
 
 pub const LIST_OPERATION: &str = "list";
 pub const OBSERVE_OPERATION: &str = "observe";
@@ -363,10 +372,119 @@ pub fn decode_set_trust_response(wire: &str) -> Result<SetTrustResponse, serde_j
 pub fn encode_set_trust_error(value: &SetTrustError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_set_trust_error(wire: &str) -> Result<SetTrustError, serde_json::Error> { decode_portable_json(wire) }
 
+#[doc(hidden)]
+pub trait __LensoIntoDeviceListResult {
+    fn __lenso_into_result(self) -> Result<Result<ListResponse, ListError>, RuntimeFailure>;
+}
+impl __LensoIntoDeviceListResult for Result<ListResponse, ListError> {
+    fn __lenso_into_result(self) -> Result<Result<ListResponse, ListError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoDeviceListResult for Result<ListResponse, lenso_module_authoring::ModuleError<ListError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<ListResponse, ListError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoDeviceListResult for Result<ListResponse, DeviceListInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<ListResponse, ListError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(DeviceListInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(DeviceListInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoDeviceObserveResult {
+    fn __lenso_into_result(self) -> Result<Result<ObserveResponse, ObserveError>, RuntimeFailure>;
+}
+impl __LensoIntoDeviceObserveResult for Result<ObserveResponse, ObserveError> {
+    fn __lenso_into_result(self) -> Result<Result<ObserveResponse, ObserveError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoDeviceObserveResult for Result<ObserveResponse, lenso_module_authoring::ModuleError<ObserveError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<ObserveResponse, ObserveError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoDeviceObserveResult for Result<ObserveResponse, DeviceObserveInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<ObserveResponse, ObserveError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(DeviceObserveInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(DeviceObserveInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoDeviceSetTrustResult {
+    fn __lenso_into_result(self) -> Result<Result<SetTrustResponse, SetTrustError>, RuntimeFailure>;
+}
+impl __LensoIntoDeviceSetTrustResult for Result<SetTrustResponse, SetTrustError> {
+    fn __lenso_into_result(self) -> Result<Result<SetTrustResponse, SetTrustError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoDeviceSetTrustResult for Result<SetTrustResponse, lenso_module_authoring::ModuleError<SetTrustError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<SetTrustResponse, SetTrustError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoDeviceSetTrustResult for Result<SetTrustResponse, DeviceSetTrustInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<SetTrustResponse, SetTrustError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(DeviceSetTrustInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(DeviceSetTrustInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait DeviceProvider: fmt::Debug + 'static {
     fn list(&self, context: InvocationContext, request: ListRequest) -> NativeRequestFuture<DeviceList>;
     fn observe(&self, context: InvocationContext, request: ObserveRequest) -> NativeRequestFuture<DeviceObserve>;
     fn set_trust(&self, context: InvocationContext, request: SetTrustRequest) -> NativeRequestFuture<DeviceSetTrust>;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_device {
+    ($module:ty, $support:path) => {
+        use $support as __LensoNativeSupportDevice;
+        impl $crate::DeviceProvider for $module {
+        fn list(&self, context: __LensoNativeSupportDevice::InvocationContext, request: $crate::ListRequest) -> __LensoNativeSupportDevice::NativeRequestFuture<$crate::DeviceList> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::list(&module, context, request).await;
+                $crate::__LensoIntoDeviceListResult::__lenso_into_result(result)
+            })
+        }
+        fn observe(&self, context: __LensoNativeSupportDevice::InvocationContext, request: $crate::ObserveRequest) -> __LensoNativeSupportDevice::NativeRequestFuture<$crate::DeviceObserve> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::observe(&module, context, request).await;
+                $crate::__LensoIntoDeviceObserveResult::__lenso_into_result(result)
+            })
+        }
+        fn set_trust(&self, context: __LensoNativeSupportDevice::InvocationContext, request: $crate::SetTrustRequest) -> __LensoNativeSupportDevice::NativeRequestFuture<$crate::DeviceSetTrust> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::set_trust(&module, context, request).await;
+                $crate::__LensoIntoDeviceSetTrustResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -437,6 +555,36 @@ impl<P: DeviceProvider> NativeRequestEndpoint for DeviceEndpoint<P> {
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_endpoints_device {
+    ($provider:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let endpoint = ::std::rc::Rc::new($crate::DeviceEndpoint::new($provider));
+        (
+            vec![endpoint.clone() as ::std::rc::Rc<dyn __LensoNativeSupport::NativeRequestEndpoint>],
+            vec![],
+            vec![],
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_device {
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let (request_endpoints, stream_endpoints, event_endpoints) =
+            $crate::__lenso_native_endpoints_device!($provider, $support);
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+            request_endpoints,
+            stream_endpoints,
+            event_endpoints,
+            $lifecycle,
+        )
+    }};
+}
+
 #[derive(Debug)]
 pub struct DeviceClient {
     list: NativeRequestHandle<DeviceList>,
@@ -445,11 +593,7 @@ pub struct DeviceClient {
 }
 impl DeviceClient {
     pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
-        Ok(Self {
-            list: dependencies.one::<DeviceList>()?,
-            observe: dependencies.one::<DeviceObserve>()?,
-            set_trust: dependencies.one::<DeviceSetTrust>()?,
-        })
+        <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
     pub async fn list(&self, request: ListRequest) -> Result<ListResponse, DeviceListInvocationError> {
@@ -486,6 +630,28 @@ impl DeviceClient {
         self.set_trust.invoke_with_context(SET_TRUST_OPERATION, context, request).await
             .map_err(DeviceSetTrustInvocationError::Runtime)?
             .map_err(DeviceSetTrustInvocationError::Domain)
+    }
+}
+
+impl CapabilityClient for DeviceClient {
+    type Dependencies = ModuleDependencies;
+    type Error = RuntimeFailure;
+
+    const CAPABILITY_ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
+        Ok(Self {
+            list: dependencies.one::<DeviceList>()?,
+            observe: dependencies.one::<DeviceObserve>()?,
+            set_trust: dependencies.one::<DeviceSetTrust>()?,
+        })
+    }
+
+    fn already_connected() -> RuntimeFailure {
+        RuntimeFailure::ModuleFailure {
+            detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
+        }
     }
 }
 

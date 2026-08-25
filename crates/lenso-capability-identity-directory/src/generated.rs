@@ -3,12 +3,21 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
+use lenso_module_authoring::CapabilityClient;
 pub const CAPABILITY_ID: &str = "lenso.identity.directory@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const DIRECTORY_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const DIRECTORY_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_provided_directory { () => { "{\"capability_id\":\"lenso.identity.directory@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"ensure_identity\",\"read_status\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_directory_client { () => { "{\"capability_id\":\"lenso.identity.directory@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
 
 pub const ENSURE_IDENTITY_OPERATION: &str = "ensure_identity";
 pub const READ_STATUS_OPERATION: &str = "read_status";
@@ -233,9 +242,85 @@ pub fn decode_read_status_response(wire: &str) -> Result<ReadStatusResponse, ser
 pub fn encode_read_status_error(value: &ReadStatusError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_read_status_error(wire: &str) -> Result<ReadStatusError, serde_json::Error> { decode_portable_json(wire) }
 
+#[doc(hidden)]
+pub trait __LensoIntoDirectoryEnsureIdentityResult {
+    fn __lenso_into_result(self) -> Result<Result<EnsureIdentityResponse, EnsureIdentityError>, RuntimeFailure>;
+}
+impl __LensoIntoDirectoryEnsureIdentityResult for Result<EnsureIdentityResponse, EnsureIdentityError> {
+    fn __lenso_into_result(self) -> Result<Result<EnsureIdentityResponse, EnsureIdentityError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoDirectoryEnsureIdentityResult for Result<EnsureIdentityResponse, lenso_module_authoring::ModuleError<EnsureIdentityError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<EnsureIdentityResponse, EnsureIdentityError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoDirectoryEnsureIdentityResult for Result<EnsureIdentityResponse, DirectoryEnsureIdentityInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<EnsureIdentityResponse, EnsureIdentityError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(DirectoryEnsureIdentityInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(DirectoryEnsureIdentityInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoDirectoryReadStatusResult {
+    fn __lenso_into_result(self) -> Result<Result<ReadStatusResponse, ReadStatusError>, RuntimeFailure>;
+}
+impl __LensoIntoDirectoryReadStatusResult for Result<ReadStatusResponse, ReadStatusError> {
+    fn __lenso_into_result(self) -> Result<Result<ReadStatusResponse, ReadStatusError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoDirectoryReadStatusResult for Result<ReadStatusResponse, lenso_module_authoring::ModuleError<ReadStatusError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<ReadStatusResponse, ReadStatusError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoDirectoryReadStatusResult for Result<ReadStatusResponse, DirectoryReadStatusInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<ReadStatusResponse, ReadStatusError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(DirectoryReadStatusInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(DirectoryReadStatusInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait DirectoryProvider: fmt::Debug + 'static {
     fn ensure_identity(&self, context: InvocationContext, request: EnsureIdentityRequest) -> NativeRequestFuture<DirectoryEnsureIdentity>;
     fn read_status(&self, context: InvocationContext, request: ReadStatusRequest) -> NativeRequestFuture<DirectoryReadStatus>;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_directory {
+    ($module:ty, $support:path) => {
+        use $support as __LensoNativeSupportDirectory;
+        impl $crate::DirectoryProvider for $module {
+        fn ensure_identity(&self, context: __LensoNativeSupportDirectory::InvocationContext, request: $crate::EnsureIdentityRequest) -> __LensoNativeSupportDirectory::NativeRequestFuture<$crate::DirectoryEnsureIdentity> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::ensure_identity(&module, context, request).await;
+                $crate::__LensoIntoDirectoryEnsureIdentityResult::__lenso_into_result(result)
+            })
+        }
+        fn read_status(&self, context: __LensoNativeSupportDirectory::InvocationContext, request: $crate::ReadStatusRequest) -> __LensoNativeSupportDirectory::NativeRequestFuture<$crate::DirectoryReadStatus> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::read_status(&module, context, request).await;
+                $crate::__LensoIntoDirectoryReadStatusResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -292,6 +377,36 @@ impl<P: DirectoryProvider> NativeRequestEndpoint for DirectoryEndpoint<P> {
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_endpoints_directory {
+    ($provider:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let endpoint = ::std::rc::Rc::new($crate::DirectoryEndpoint::new($provider));
+        (
+            vec![endpoint.clone() as ::std::rc::Rc<dyn __LensoNativeSupport::NativeRequestEndpoint>],
+            vec![],
+            vec![],
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_directory {
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let (request_endpoints, stream_endpoints, event_endpoints) =
+            $crate::__lenso_native_endpoints_directory!($provider, $support);
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+            request_endpoints,
+            stream_endpoints,
+            event_endpoints,
+            $lifecycle,
+        )
+    }};
+}
+
 #[derive(Debug)]
 pub struct DirectoryClient {
     ensure_identity: NativeRequestHandle<DirectoryEnsureIdentity>,
@@ -299,10 +414,7 @@ pub struct DirectoryClient {
 }
 impl DirectoryClient {
     pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
-        Ok(Self {
-            ensure_identity: dependencies.one::<DirectoryEnsureIdentity>()?,
-            read_status: dependencies.one::<DirectoryReadStatus>()?,
-        })
+        <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
     pub async fn ensure_identity(&self, request: EnsureIdentityRequest) -> Result<EnsureIdentityResponse, DirectoryEnsureIdentityInvocationError> {
@@ -327,6 +439,27 @@ impl DirectoryClient {
         self.read_status.invoke_with_context(READ_STATUS_OPERATION, context, request).await
             .map_err(DirectoryReadStatusInvocationError::Runtime)?
             .map_err(DirectoryReadStatusInvocationError::Domain)
+    }
+}
+
+impl CapabilityClient for DirectoryClient {
+    type Dependencies = ModuleDependencies;
+    type Error = RuntimeFailure;
+
+    const CAPABILITY_ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
+        Ok(Self {
+            ensure_identity: dependencies.one::<DirectoryEnsureIdentity>()?,
+            read_status: dependencies.one::<DirectoryReadStatus>()?,
+        })
+    }
+
+    fn already_connected() -> RuntimeFailure {
+        RuntimeFailure::ModuleFailure {
+            detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
+        }
     }
 }
 
