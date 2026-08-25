@@ -1372,7 +1372,7 @@ dependencies = [
 [[package]]
 name = "lenso-capability-http-client"
 version = "0.2.2"
-source = "git+https://github.com/LioRael/lenso-web?rev=fbf9b2598f2c50d69ef8fcb054a0056387d1c28c#fbf9b2598f2c50d69ef8fcb054a0056387d1c28c"
+source = "git+https://github.com/LioRael/lenso-web?rev=4fa0cf75dcc7d7ece5021bad3f15fef798016a10#4fa0cf75dcc7d7ece5021bad3f15fef798016a10"
 dependencies = [
  "futures",
  "lenso-contract-codegen",
@@ -1461,7 +1461,7 @@ dependencies = [
 [[package]]
 name = "lenso-capability-secrets"
 version = "0.1.0"
-source = "git+https://github.com/LioRael/lenso-secrets-module?rev=e195e01108b0b8483aee3904d8a9adec792aa859#e195e01108b0b8483aee3904d8a9adec792aa859"
+source = "git+https://github.com/LioRael/lenso-secrets-module?rev=161e8853cda3c18012c3551de7aae1b78d581046#161e8853cda3c18012c3551de7aae1b78d581046"
 dependencies = [
  "futures",
  "lenso-contract-codegen",
