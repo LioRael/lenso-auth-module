@@ -29,7 +29,7 @@ pub struct AnonymousAuthConfig {
 impl AnonymousAuthConfig {
     pub fn new(audience: Vec<String>, session_ttl_seconds: u64) -> Result<Self, RuntimeFailure> {
         if audience.is_empty()
-            || audience.iter().any(|value| !valid_name(value))
+            || audience.iter().any(|value| !valid_audience(value))
             || !(1..=604_800).contains(&session_ttl_seconds)
         {
             return Err(RuntimeFailure::InvalidResolvedPlan {
@@ -132,12 +132,38 @@ impl AnonymousProvider for AnonymousAuthModule {
     }
 }
 
+fn valid_audience(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':' | b'@')
+        })
+}
+
 fn valid_name(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 256
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_versioned_capability_operation_audience() {
+        let config =
+            AnonymousAuthConfig::new(vec!["lenso.http.endpoint@1:handle".to_owned()], 3_600);
+
+        assert!(config.is_ok());
+    }
+
+    #[test]
+    fn device_name_does_not_inherit_audience_punctuation() {
+        assert!(!valid_device("device@example"));
+    }
 }
 fn valid_device(value: &str) -> bool {
     valid_name(value)
