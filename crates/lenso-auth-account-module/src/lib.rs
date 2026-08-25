@@ -300,7 +300,7 @@ impl AccountAuthModule {
                 || !valid_name(&request.assurance)
                 || request.audience.is_empty()
                 || request.audience.len() > 64
-                || request.audience.iter().any(|v| !valid_name(v))
+                || request.audience.iter().any(|v| !valid_audience(v))
                 || serde_json::to_vec(&request.claims).map_or(true, |value| value.len() > 16_384)
             {
                 return Ok(Err(IssueError::InvalidAuthority));
@@ -785,6 +785,14 @@ fn valid_name(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b':'))
 }
 
+fn valid_audience(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':' | b'@')
+        })
+}
+
 fn valid_secret_reference(reference: &str) -> bool {
     !reference.is_empty()
         && reference.len() <= 256
@@ -857,5 +865,10 @@ mod tests {
             3_601,
         );
         assert_eq!(result.unwrap_err(), AccountConfigError::InvalidTtl);
+    }
+
+    #[test]
+    fn credential_issuer_accepts_versioned_capability_audience() {
+        assert!(valid_audience("lenso.http.endpoint@1:handle"));
     }
 }

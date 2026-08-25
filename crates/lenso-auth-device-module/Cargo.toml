@@ -11,7 +11,7 @@ package-id = "lenso.auth.device"
 [dependencies]
 lenso = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "48cf37b6475a0dbbe4ad8492888ed7c6c17abae4" }
 lenso-capability-device-auth = { path = "../lenso-capability-device-auth" }
-lenso-capability-secrets = { git = "https://github.com/LioRael/lenso-secrets-module", rev = "161e8853cda3c18012c3551de7aae1b78d581046" }
+lenso-capability-secrets = { git = "https://github.com/LioRael/lenso-secrets-module", rev = "687f1abc28adf052607010a4f5f100f6208bf454" }
 lenso-kernel = "0.1.9"
 lenso-native-adapter = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "48cf37b6475a0dbbe4ad8492888ed7c6c17abae4" }
 lenso-postgres-kit = { git = "https://github.com/LioRael/lenso-postgres-kit", rev = "525c1012c789e6f54c3c2fdaf8507a626c93e65f" }

@@ -17,7 +17,7 @@ lenso-capability-federated-auth={path="../lenso-capability-federated-auth"}
 lenso-capability-http-client = { version = "0.2.2", git = "https://github.com/LioRael/lenso-web", rev = "4fa0cf75dcc7d7ece5021bad3f15fef798016a10" }
 lenso-capability-identity-directory={path="../lenso-capability-identity-directory"}
 lenso-capability-oauth-flow={path="../lenso-capability-oauth-flow"}
-lenso-capability-secrets={git="https://github.com/LioRael/lenso-secrets-module",rev="161e8853cda3c18012c3551de7aae1b78d581046"}
+lenso-capability-secrets={git="https://github.com/LioRael/lenso-secrets-module",rev="687f1abc28adf052607010a4f5f100f6208bf454"}
 lenso-kernel = "0.1.9"
 lenso-native-adapter = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "48cf37b6475a0dbbe4ad8492888ed7c6c17abae4" }
 serde.workspace=true
