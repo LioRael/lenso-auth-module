@@ -1,27 +1,26 @@
 //! Anonymous authentication over the shared Directory and Credential Issuer roles.
 
-use std::{cell::RefCell, collections::BTreeMap, fmt, rc::Rc};
+use std::collections::BTreeMap;
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use lenso::{Port, provides};
+use lenso_capability_anonymous_auth as anonymous;
 use lenso_capability_anonymous_auth::{
-    Anonymous, AnonymousEndpoint, AnonymousProvider, SignInError, SignInRequest, SignInResponse,
+    Anonymous, AnonymousProvider, SignInError, SignInRequest, SignInResponse,
 };
+use lenso_capability_credential_issuer as credential_issuer;
 use lenso_capability_credential_issuer::{
-    CredentialIssuerClient, CredentialIssuerIssueInvocationError, IssueError, IssueRequest,
+    CredentialIssuerIssueInvocationError, IssueError, IssueRequest,
 };
+use lenso_capability_identity_directory as directory;
 use lenso_capability_identity_directory::{
-    DirectoryClient, DirectoryEnsureIdentityInvocationError, EnsureIdentityError,
-    EnsureIdentityRequest,
+    DirectoryEnsureIdentityInvocationError, EnsureIdentityError, EnsureIdentityRequest,
 };
-use lenso_kernel::{
-    ActivateContext, DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle,
-    NativeRequestEndpoint, NativeRequestFuture, RuntimeFailure,
-};
-use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_kernel::{InvocationContext, NativeRequestFuture, RuntimeFailure};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, lenso::ModuleConfig)]
 #[serde(deny_unknown_fields)]
 pub struct AnonymousAuthConfig {
     audience: Vec<String>,
@@ -44,67 +43,36 @@ impl AnonymousAuthConfig {
     }
 }
 
-#[lenso::module]
-fn instantiate_auth_module(
-    context: NativeModuleFactoryContext<'_>,
-) -> Result<NativeModuleInstance, RuntimeFailure> {
-    let config: AnonymousAuthConfig =
-        serde_json::from_str(context.configuration()).map_err(|error| {
-            RuntimeFailure::InvalidResolvedPlan {
-                detail: error.to_string(),
-            }
-        })?;
-    AnonymousAuthConfig::new(config.audience.clone(), config.session_ttl_seconds)?;
-    let active = Rc::new(RefCell::new(None));
-    let endpoint = Rc::new(AnonymousEndpoint::new(AnonymousAuthProvider {
-        active: active.clone(),
-    })) as Rc<dyn NativeRequestEndpoint>;
-    Ok(NativeModuleInstance::with_lifecycle(
-        vec![endpoint],
-        AnonymousLifecycle { config, active },
-    ))
+fn validate_config(config: &AnonymousAuthConfig) -> Result<(), RuntimeFailure> {
+    AnonymousAuthConfig::new(config.audience.clone(), config.session_ttl_seconds).map(|_| ())
 }
 
-struct Active {
-    directory: DirectoryClient,
-    issuer: CredentialIssuerClient,
+#[lenso::module(validate = validate_config)]
+#[derive(Clone, Debug)]
+struct AnonymousAuthModule {
+    #[config]
     config: AnonymousAuthConfig,
-}
-impl fmt::Debug for Active {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Active").finish_non_exhaustive()
-    }
-}
-#[derive(Clone)]
-struct AnonymousAuthProvider {
-    active: Rc<RefCell<Option<Rc<Active>>>>,
-}
-impl fmt::Debug for AnonymousAuthProvider {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AnonymousAuthProvider")
-            .field("active", &self.active.borrow().is_some())
-            .finish()
-    }
+    directory: Port<directory::DirectoryClient>,
+    issuer: Port<credential_issuer::CredentialIssuerClient>,
 }
 
-impl AnonymousProvider for AnonymousAuthProvider {
+#[provides(anonymous::Anonymous)]
+impl AnonymousProvider for AnonymousAuthModule {
     fn sign_in(
         &self,
         context: InvocationContext,
         request: SignInRequest,
     ) -> NativeRequestFuture<Anonymous> {
-        let active = self.active.borrow().clone();
+        let directory = self.directory.clone();
+        let issuer = self.issuer.clone();
+        let config = self.config.clone();
         Box::pin(async move {
-            let active = active.ok_or(RuntimeFailure::ModuleFailure {
-                detail: "Anonymous Auth is not active".to_owned(),
-            })?;
             let external_subject = match request.device_id {
                 Some(value) if valid_device(&value) => format!("device:{value}"),
                 Some(_) => return Ok(Err(SignInError::InvalidDevice)),
                 None => random_external()?,
             };
-            let identity = active
-                .directory
+            let identity = directory
                 .ensure_identity_with_context(
                     context.clone(),
                     EnsureIdentityRequest {
@@ -124,28 +92,25 @@ impl AnonymousProvider for AnonymousAuthProvider {
                 Err(DirectoryEnsureIdentityInvocationError::Runtime(error)) => return Err(error),
             };
             let expires_at = (OffsetDateTime::now_utc()
-                + Duration::seconds(
-                    i64::try_from(active.config.session_ttl_seconds).expect("validated"),
-                ))
+                + Duration::seconds(i64::try_from(config.session_ttl_seconds).expect("validated")))
             .format(&Rfc3339)
             .map_err(|error| RuntimeFailure::ModuleFailure {
                 detail: error.to_string(),
             })?;
-            let issued = active
-                .issuer
+            let credential = issuer
                 .issue_with_context(
                     context,
                     IssueRequest {
                         subject: identity.subject.clone(),
                         actor_kind: "anonymous".to_owned(),
                         assurance: "anonymous".to_owned(),
-                        audience: active.config.audience.clone(),
+                        audience: config.audience.clone(),
                         claims: BTreeMap::default(),
                         expires_at,
                     },
                 )
                 .await;
-            match issued {
+            match credential {
                 Ok(value) => Ok(Ok(SignInResponse {
                     subject: identity.subject,
                     session_id: value.session_id,
@@ -164,31 +129,6 @@ impl AnonymousProvider for AnonymousAuthProvider {
                 Err(CredentialIssuerIssueInvocationError::Runtime(error)) => Err(error),
             }
         })
-    }
-}
-
-#[derive(Debug)]
-struct AnonymousLifecycle {
-    config: AnonymousAuthConfig,
-    active: Rc<RefCell<Option<Rc<Active>>>>,
-}
-impl ModuleLifecycle for AnonymousLifecycle {
-    fn activate(&self, context: ActivateContext) -> ModuleFuture {
-        let dependencies = context.dependencies().clone();
-        let active = self.active.clone();
-        let config = self.config.clone();
-        Box::pin(async move {
-            active.replace(Some(Rc::new(Active {
-                directory: DirectoryClient::from_dependencies(&dependencies)?,
-                issuer: CredentialIssuerClient::from_dependencies(&dependencies)?,
-                config,
-            })));
-            Ok(())
-        })
-    }
-    fn deactivate(&self, _context: DeactivateContext) -> ModuleFuture {
-        self.active.borrow_mut().take();
-        Box::pin(futures::future::ready(Ok(())))
     }
 }
 

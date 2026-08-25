@@ -2,17 +2,16 @@
 mod operator;
 mod schema;
 
+use lenso::{ActivateContext, DeactivateContext, Lifecycle, Port, provides};
+use lenso_capability_device_auth as device;
 use lenso_capability_device_auth::{
-    DeviceEndpoint, DeviceList, DeviceObserve, DeviceProvider, DeviceSetTrust, ListError,
-    ListRequest, ListResponse, ListResponseDevicesItem, ObserveError, ObserveRequest,
-    ObserveResponse, SetTrustError, SetTrustRequest, SetTrustResponse,
+    DeviceList, DeviceObserve, DeviceProvider, DeviceSetTrust, ListError, ListRequest,
+    ListResponse, ListResponseDevicesItem, ObserveError, ObserveRequest, ObserveResponse,
+    SetTrustError, SetTrustRequest, SetTrustResponse,
 };
-use lenso_capability_secrets::{ResolveRequest, SecretsClient, SecretsInvocationError};
-use lenso_kernel::{
-    DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle, NativeRequestEndpoint,
-    NativeRequestFuture, PrepareContext, RuntimeFailure,
-};
-use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_capability_secrets as secrets;
+use lenso_capability_secrets::{ResolveRequest, SecretsInvocationError};
+use lenso_kernel::{InvocationContext, NativeRequestFuture, RuntimeFailure};
 use lenso_postgres_kit::OwnedPostgres;
 pub use operator::{DeviceAuthOperator, DeviceOperatorError};
 use schema::schema_plan;
@@ -24,7 +23,7 @@ use zeroize::Zeroizing;
 
 const DEPENDENCY_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, lenso::ModuleConfig)]
 #[serde(deny_unknown_fields)]
 pub struct DeviceAuthConfig {
     schema: String,
@@ -51,39 +50,27 @@ impl DeviceAuthConfig {
     }
 }
 
-#[lenso::module]
-fn instantiate_auth_module(
-    context: NativeModuleFactoryContext<'_>,
-) -> Result<NativeModuleInstance, RuntimeFailure> {
-    let config: DeviceAuthConfig =
-        serde_json::from_str(context.configuration()).map_err(|error| {
-            RuntimeFailure::InvalidResolvedPlan {
-                detail: error.to_string(),
-            }
-        })?;
-    DeviceAuthConfig::new(config.schema.clone(), config.database_url_secret.clone())?;
-    let state = Rc::new(RefCell::new(None));
-    let endpoint = Rc::new(DeviceEndpoint::new(DeviceAuthProvider {
-        state: state.clone(),
-    })) as Rc<dyn NativeRequestEndpoint>;
-    Ok(NativeModuleInstance::with_lifecycle(
-        vec![endpoint],
-        DeviceLifecycle { config, state },
-    ))
+fn validate_config(config: &DeviceAuthConfig) -> Result<(), RuntimeFailure> {
+    DeviceAuthConfig::new(config.schema.clone(), config.database_url_secret.clone()).map(|_| ())
 }
 
+#[lenso::module(lifecycle, validate = validate_config)]
 #[derive(Clone)]
-struct DeviceAuthProvider {
+struct DeviceAuthModule {
+    #[config]
+    config: DeviceAuthConfig,
+    secrets: Port<secrets::SecretsClient>,
     state: Rc<RefCell<Option<OwnedPostgres>>>,
 }
-impl fmt::Debug for DeviceAuthProvider {
+#[allow(clippy::missing_fields_in_debug)]
+impl fmt::Debug for DeviceAuthModule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DeviceAuthProvider")
             .field("prepared", &self.state.borrow().is_some())
             .finish()
     }
 }
-impl DeviceAuthProvider {
+impl DeviceAuthModule {
     fn postgres(&self) -> Result<OwnedPostgres, RuntimeFailure> {
         self.state
             .borrow()
@@ -93,7 +80,8 @@ impl DeviceAuthProvider {
             })
     }
 }
-impl DeviceProvider for DeviceAuthProvider {
+#[provides(device::Device)]
+impl DeviceProvider for DeviceAuthModule {
     fn observe(
         &self,
         _context: InvocationContext,
@@ -177,60 +165,50 @@ impl DeviceProvider for DeviceAuthProvider {
     }
 }
 
-#[derive(Debug)]
-struct DeviceLifecycle {
-    config: DeviceAuthConfig,
-    state: Rc<RefCell<Option<OwnedPostgres>>>,
-}
-impl ModuleLifecycle for DeviceLifecycle {
-    fn prepare(&self, context: PrepareContext) -> ModuleFuture {
+impl Lifecycle for DeviceAuthModule {
+    async fn activate(&self, context: ActivateContext) -> Result<(), RuntimeFailure> {
         let config = self.config.clone();
         let state = self.state.clone();
-        let dependencies = context.dependencies().clone();
         let cancellation = context.cancellation();
-        Box::pin(async move {
-            let secrets = SecretsClient::from_dependencies(&dependencies)?;
-            let invocation =
-                dependencies.invocation_context_after(DEPENDENCY_TIMEOUT, cancellation)?;
-            let database_url = secrets
-                .resolve_with_context(
-                    invocation,
-                    ResolveRequest {
-                        reference: config.database_url_secret,
-                    },
-                )
-                .await
-                .map(|value| Zeroizing::new(value.value))
-                .map_err(|error| match error {
-                    SecretsInvocationError::Domain(_) => RuntimeFailure::ModuleFailure {
-                        detail: "device database secret was rejected".to_owned(),
-                    },
-                    SecretsInvocationError::Runtime(error) => error,
-                })?;
-            let postgres = OwnedPostgres::prepare(
-                &database_url,
-                schema_plan(config.schema).map_err(|error| {
-                    RuntimeFailure::InvalidResolvedPlan {
-                        detail: error.to_string(),
-                    }
-                })?,
+        let invocation = context
+            .dependencies()
+            .invocation_context_after(DEPENDENCY_TIMEOUT, cancellation)?;
+        let database_url = self
+            .secrets
+            .resolve_with_context(
+                invocation,
+                ResolveRequest {
+                    reference: config.database_url_secret,
+                },
             )
             .await
-            .map_err(|error| RuntimeFailure::ModuleFailure {
-                detail: error.to_string(),
+            .map(|value| Zeroizing::new(value.value))
+            .map_err(|error| match error {
+                SecretsInvocationError::Domain(_) => RuntimeFailure::ModuleFailure {
+                    detail: "device database secret was rejected".to_owned(),
+                },
+                SecretsInvocationError::Runtime(error) => error,
             })?;
-            state.replace(Some(postgres));
-            Ok(())
-        })
+        let postgres = OwnedPostgres::prepare(
+            &database_url,
+            schema_plan(config.schema).map_err(|error| RuntimeFailure::InvalidResolvedPlan {
+                detail: error.to_string(),
+            })?,
+        )
+        .await
+        .map_err(|error| RuntimeFailure::ModuleFailure {
+            detail: error.to_string(),
+        })?;
+        state.replace(Some(postgres));
+        Ok(())
     }
-    fn deactivate(&self, _context: DeactivateContext) -> ModuleFuture {
+
+    async fn deactivate(&self, _context: DeactivateContext) -> Result<(), RuntimeFailure> {
         let postgres = self.state.borrow_mut().take();
-        Box::pin(async move {
-            if let Some(postgres) = postgres {
-                postgres.pool().close().await;
-            }
-            Ok(())
-        })
+        if let Some(postgres) = postgres {
+            postgres.pool().close().await;
+        }
+        Ok(())
     }
 }
 fn valid(value: &str) -> bool {

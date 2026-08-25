@@ -3,7 +3,7 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
-use lenso_module_authoring::CapabilityClient;
+use lenso_module_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
 pub const CAPABILITY_ID: &str = "lenso.auth.credential-issuer@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
@@ -18,6 +18,10 @@ macro_rules! __lenso_provided_credential_issuer { () => { "{\"capability_id\":\"
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __lenso_required_credential_issuer_client { () => { "{\"capability_id\":\"lenso.auth.credential-issuer@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_credential_issuer_client { () => { "{\"capability_id\":\"lenso.auth.credential-issuer@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
 
 pub const ISSUE_OPERATION: &str = "issue";
 pub const REVOKE_OPERATION: &str = "revoke";
@@ -270,6 +274,9 @@ pub trait __LensoIntoCredentialIssuerIssueResult {
 impl __LensoIntoCredentialIssuerIssueResult for Result<IssueResponse, IssueError> {
     fn __lenso_into_result(self) -> Result<Result<IssueResponse, IssueError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoCredentialIssuerIssueResult for Result<Result<IssueResponse, IssueError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<IssueResponse, IssueError>, RuntimeFailure> { self }
+}
 impl __LensoIntoCredentialIssuerIssueResult for Result<IssueResponse, lenso_module_authoring::ModuleError<IssueError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<IssueResponse, IssueError>, RuntimeFailure> {
         match self {
@@ -295,6 +302,9 @@ pub trait __LensoIntoCredentialIssuerRevokeResult {
 }
 impl __LensoIntoCredentialIssuerRevokeResult for Result<RevokeResponse, RevokeError> {
     fn __lenso_into_result(self) -> Result<Result<RevokeResponse, RevokeError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoCredentialIssuerRevokeResult for Result<Result<RevokeResponse, RevokeError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<RevokeResponse, RevokeError>, RuntimeFailure> { self }
 }
 impl __LensoIntoCredentialIssuerRevokeResult for Result<RevokeResponse, lenso_module_authoring::ModuleError<RevokeError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<RevokeResponse, RevokeError>, RuntimeFailure> {
@@ -481,6 +491,27 @@ impl CapabilityClient for CredentialIssuerClient {
         RuntimeFailure::ModuleFailure {
             detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
         }
+    }
+}
+
+impl CapabilityClientMany for CredentialIssuerClient {
+    fn many_from_dependencies(
+        dependencies: &ModuleDependencies,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        dependencies
+            .bindings()
+            .iter()
+            .filter(|binding| binding.capability_id() == CAPABILITY_ID)
+            .map(|binding| {
+                Ok(BoundCapabilityClient::new(
+                    binding.provider_instance(),
+                    Self {
+                    issue: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<CredentialIssuerIssue>()?,
+                    revoke: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<CredentialIssuerRevoke>()?,
+                    },
+                ))
+            })
+            .collect()
     }
 }
 

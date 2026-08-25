@@ -3,7 +3,7 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
-use lenso_module_authoring::CapabilityClient;
+use lenso_module_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
 pub const CAPABILITY_ID: &str = "lenso.auth@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
@@ -18,6 +18,10 @@ macro_rules! __lenso_provided_auth { () => { "{\"capability_id\":\"lenso.auth@1\
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __lenso_required_auth_client { () => { "{\"capability_id\":\"lenso.auth@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_auth_client { () => { "{\"capability_id\":\"lenso.auth@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
 
 pub const AUTHENTICATE_OPERATION: &str = "authenticate";
 
@@ -220,6 +224,9 @@ pub trait __LensoIntoAuthAuthenticateResult {
 impl __LensoIntoAuthAuthenticateResult for Result<AuthenticateResponse, AuthenticateError> {
     fn __lenso_into_result(self) -> Result<Result<AuthenticateResponse, AuthenticateError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoAuthAuthenticateResult for Result<Result<AuthenticateResponse, AuthenticateError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<AuthenticateResponse, AuthenticateError>, RuntimeFailure> { self }
+}
 impl __LensoIntoAuthAuthenticateResult for Result<AuthenticateResponse, lenso_module_authoring::ModuleError<AuthenticateError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<AuthenticateResponse, AuthenticateError>, RuntimeFailure> {
         match self {
@@ -373,6 +380,26 @@ impl CapabilityClient for AuthClient {
         RuntimeFailure::ModuleFailure {
             detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
         }
+    }
+}
+
+impl CapabilityClientMany for AuthClient {
+    fn many_from_dependencies(
+        dependencies: &ModuleDependencies,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        dependencies
+            .bindings()
+            .iter()
+            .filter(|binding| binding.capability_id() == CAPABILITY_ID)
+            .map(|binding| {
+                Ok(BoundCapabilityClient::new(
+                    binding.provider_instance(),
+                    Self {
+                    authenticate: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<Auth>()?,
+                    },
+                ))
+            })
+            .collect()
     }
 }
 

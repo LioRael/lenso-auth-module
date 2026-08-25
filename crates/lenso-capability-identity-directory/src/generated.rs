@@ -3,7 +3,7 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
-use lenso_module_authoring::CapabilityClient;
+use lenso_module_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
 pub const CAPABILITY_ID: &str = "lenso.identity.directory@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
@@ -18,6 +18,10 @@ macro_rules! __lenso_provided_directory { () => { "{\"capability_id\":\"lenso.id
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __lenso_required_directory_client { () => { "{\"capability_id\":\"lenso.identity.directory@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_directory_client { () => { "{\"capability_id\":\"lenso.identity.directory@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
 
 pub const ENSURE_IDENTITY_OPERATION: &str = "ensure_identity";
 pub const READ_STATUS_OPERATION: &str = "read_status";
@@ -249,6 +253,9 @@ pub trait __LensoIntoDirectoryEnsureIdentityResult {
 impl __LensoIntoDirectoryEnsureIdentityResult for Result<EnsureIdentityResponse, EnsureIdentityError> {
     fn __lenso_into_result(self) -> Result<Result<EnsureIdentityResponse, EnsureIdentityError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoDirectoryEnsureIdentityResult for Result<Result<EnsureIdentityResponse, EnsureIdentityError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<EnsureIdentityResponse, EnsureIdentityError>, RuntimeFailure> { self }
+}
 impl __LensoIntoDirectoryEnsureIdentityResult for Result<EnsureIdentityResponse, lenso_module_authoring::ModuleError<EnsureIdentityError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<EnsureIdentityResponse, EnsureIdentityError>, RuntimeFailure> {
         match self {
@@ -274,6 +281,9 @@ pub trait __LensoIntoDirectoryReadStatusResult {
 }
 impl __LensoIntoDirectoryReadStatusResult for Result<ReadStatusResponse, ReadStatusError> {
     fn __lenso_into_result(self) -> Result<Result<ReadStatusResponse, ReadStatusError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoDirectoryReadStatusResult for Result<Result<ReadStatusResponse, ReadStatusError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<ReadStatusResponse, ReadStatusError>, RuntimeFailure> { self }
 }
 impl __LensoIntoDirectoryReadStatusResult for Result<ReadStatusResponse, lenso_module_authoring::ModuleError<ReadStatusError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<ReadStatusResponse, ReadStatusError>, RuntimeFailure> {
@@ -460,6 +470,27 @@ impl CapabilityClient for DirectoryClient {
         RuntimeFailure::ModuleFailure {
             detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
         }
+    }
+}
+
+impl CapabilityClientMany for DirectoryClient {
+    fn many_from_dependencies(
+        dependencies: &ModuleDependencies,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        dependencies
+            .bindings()
+            .iter()
+            .filter(|binding| binding.capability_id() == CAPABILITY_ID)
+            .map(|binding| {
+                Ok(BoundCapabilityClient::new(
+                    binding.provider_instance(),
+                    Self {
+                    ensure_identity: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<DirectoryEnsureIdentity>()?,
+                    read_status: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<DirectoryReadStatus>()?,
+                    },
+                ))
+            })
+            .collect()
     }
 }
 

@@ -7,23 +7,23 @@ mod storage;
 use std::{cell::RefCell, collections::BTreeMap, fmt, rc::Rc, time::Duration as StdDuration};
 
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use lenso::{ActivateContext, DeactivateContext, Lifecycle, Port, provides};
+use lenso_capability_credential_issuer as credential_issuer;
 use lenso_capability_credential_issuer::{
     CredentialIssuerClient, CredentialIssuerIssueInvocationError, IssueError, IssueRequest,
 };
+use lenso_capability_identity_directory as directory;
 use lenso_capability_identity_directory::{
-    DirectoryClient, DirectoryEnsureIdentityInvocationError, EnsureIdentityError,
-    EnsureIdentityRequest,
+    DirectoryEnsureIdentityInvocationError, EnsureIdentityError, EnsureIdentityRequest,
 };
+use lenso_capability_password_auth as password;
 use lenso_capability_password_auth::{
-    LoginError, LoginRequest, LoginResponse, PasswordEndpoint, PasswordLogin, PasswordProvider,
-    PasswordRegister, RegisterError, RegisterRequest, RegisterResponse,
+    LoginError, LoginRequest, LoginResponse, PasswordLogin, PasswordProvider, PasswordRegister,
+    RegisterError, RegisterRequest, RegisterResponse,
 };
-use lenso_capability_secrets::{ResolveRequest, SecretsClient, SecretsInvocationError};
-use lenso_kernel::{
-    ActivateContext, DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle,
-    NativeRequestEndpoint, NativeRequestFuture, PrepareContext, RuntimeFailure,
-};
-use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_capability_secrets as secrets;
+use lenso_capability_secrets::{ResolveRequest, SecretsInvocationError};
+use lenso_kernel::{InvocationContext, NativeRequestFuture, RuntimeFailure};
 use lenso_postgres_kit::OwnedPostgres;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -36,7 +36,7 @@ pub use operator::{PasswordAuthOperator, PasswordOperatorError};
 
 const DEPENDENCY_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, lenso::ModuleConfig)]
 #[serde(deny_unknown_fields)]
 pub struct PasswordAuthConfig {
     schema: String,
@@ -103,40 +103,16 @@ pub enum PasswordConfigError {
     InvalidRateLimit,
 }
 
-#[lenso::module]
-fn instantiate_auth_module(
-    context: NativeModuleFactoryContext<'_>,
-) -> Result<NativeModuleInstance, RuntimeFailure> {
-    let config: PasswordAuthConfig =
-        serde_json::from_str(context.configuration()).map_err(|error| {
-            RuntimeFailure::InvalidResolvedPlan {
-                detail: format!("Password Auth configuration is invalid: {error}"),
-            }
-        })?;
+fn validate_config(config: &PasswordAuthConfig) -> Result<(), RuntimeFailure> {
     config
         .validate()
         .map_err(|error| RuntimeFailure::InvalidResolvedPlan {
             detail: error.to_string(),
-        })?;
-    let postgres = Rc::new(RefCell::new(None));
-    let active = Rc::new(RefCell::new(None));
-    let endpoint = Rc::new(PasswordEndpoint::new(PasswordAuthProvider {
-        active: active.clone(),
-    })) as Rc<dyn NativeRequestEndpoint>;
-    Ok(NativeModuleInstance::with_lifecycle(
-        vec![endpoint],
-        PasswordLifecycle {
-            config,
-            postgres,
-            active,
-        },
-    ))
+        })
 }
 
 struct ActivePassword {
     postgres: OwnedPostgres,
-    directory: DirectoryClient,
-    issuer: CredentialIssuerClient,
     config: PasswordAuthConfig,
 }
 impl fmt::Debug for ActivePassword {
@@ -147,18 +123,26 @@ impl fmt::Debug for ActivePassword {
     }
 }
 
+#[lenso::module(lifecycle, validate = validate_config)]
 #[derive(Clone)]
-struct PasswordAuthProvider {
+struct PasswordAuthModule {
+    #[config]
+    config: PasswordAuthConfig,
+    secrets: Port<secrets::SecretsClient>,
+    directory: Port<directory::DirectoryClient>,
+    issuer: Port<credential_issuer::CredentialIssuerClient>,
+    postgres: Rc<RefCell<Option<OwnedPostgres>>>,
     active: Rc<RefCell<Option<Rc<ActivePassword>>>>,
 }
-impl fmt::Debug for PasswordAuthProvider {
+#[allow(clippy::missing_fields_in_debug)]
+impl fmt::Debug for PasswordAuthModule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PasswordAuthProvider")
             .field("active", &self.active.borrow().is_some())
             .finish()
     }
 }
-impl PasswordAuthProvider {
+impl PasswordAuthModule {
     fn active(&self) -> Result<Rc<ActivePassword>, RuntimeFailure> {
         self.active
             .borrow()
@@ -169,13 +153,16 @@ impl PasswordAuthProvider {
     }
 }
 
-impl PasswordProvider for PasswordAuthProvider {
+#[provides(password::Password)]
+impl PasswordProvider for PasswordAuthModule {
     fn register(
         &self,
         context: InvocationContext,
         request: RegisterRequest,
     ) -> NativeRequestFuture<PasswordRegister> {
         let active = self.active();
+        let directory = self.directory.clone();
+        let issuer = self.issuer.clone();
         Box::pin(async move {
             let active = active?;
             let identifier =
@@ -188,8 +175,7 @@ impl PasswordProvider for PasswordAuthProvider {
                 return Ok(Err(RegisterError::WeakPassword));
             }
             let hash = hash_password(&request.password).map_err(runtime)?;
-            let identity = active
-                .directory
+            let identity = directory
                 .ensure_identity_with_context(
                     context.clone(),
                     EnsureIdentityRequest {
@@ -214,8 +200,8 @@ impl PasswordProvider for PasswordAuthProvider {
             {
                 return Ok(Err(RegisterError::IdentifierTaken));
             }
-            let issued = issue(&active, context, &identity.subject).await;
-            match issued {
+            let credential = issue(&active, &issuer, context, &identity.subject).await;
+            match credential {
                 Ok(value) => Ok(Ok(RegisterResponse {
                     subject: identity.subject,
                     credential: value.credential,
@@ -234,6 +220,7 @@ impl PasswordProvider for PasswordAuthProvider {
         request: LoginRequest,
     ) -> NativeRequestFuture<PasswordLogin> {
         let active = self.active();
+        let issuer = self.issuer.clone();
         Box::pin(async move {
             let active = active?;
             let Some(identifier) = normalize_identifier(&request.identifier) else {
@@ -266,7 +253,7 @@ impl PasswordProvider for PasswordAuthProvider {
                 .await
                 .map_err(runtime)?;
             let subject = credential.expect("checked").0;
-            match issue(&active, context, &subject).await {
+            match issue(&active, &issuer, context, &subject).await {
                 Ok(value) => Ok(Ok(LoginResponse {
                     subject,
                     credential: value.credential,
@@ -282,6 +269,7 @@ impl PasswordProvider for PasswordAuthProvider {
 
 async fn issue(
     active: &ActivePassword,
+    issuer: &CredentialIssuerClient,
     context: InvocationContext,
     subject: &str,
 ) -> Result<lenso_capability_credential_issuer::IssueResponse, IssueCallError> {
@@ -293,8 +281,7 @@ async fn issue(
             detail: error.to_string(),
         })
     })?;
-    active
-        .issuer
+    issuer
         .issue_with_context(
             context,
             IssueRequest {
@@ -325,80 +312,54 @@ enum IssueCallError {
     Runtime(RuntimeFailure),
 }
 
-#[derive(Debug)]
-struct PasswordLifecycle {
-    config: PasswordAuthConfig,
-    postgres: Rc<RefCell<Option<OwnedPostgres>>>,
-    active: Rc<RefCell<Option<Rc<ActivePassword>>>>,
-}
-impl ModuleLifecycle for PasswordLifecycle {
-    fn prepare(&self, context: PrepareContext) -> ModuleFuture {
+impl Lifecycle for PasswordAuthModule {
+    async fn activate(&self, context: ActivateContext) -> Result<(), RuntimeFailure> {
         let config = self.config.clone();
         let state = self.postgres.clone();
         let dependencies = context.dependencies().clone();
         let cancellation = context.cancellation();
-        Box::pin(async move {
-            let secrets = SecretsClient::from_dependencies(&dependencies)?;
-            let invocation =
-                dependencies.invocation_context_after(DEPENDENCY_TIMEOUT, cancellation)?;
-            let database_url = secrets
-                .resolve_with_context(
-                    invocation,
-                    ResolveRequest {
-                        reference: config.database_url_secret.clone(),
-                    },
-                )
-                .await
-                .map(|value| Zeroizing::new(value.value))
-                .map_err(|error| match error {
-                    SecretsInvocationError::Domain(_) => RuntimeFailure::ModuleFailure {
-                        detail: "password database secret was rejected".to_owned(),
-                    },
-                    SecretsInvocationError::Runtime(error) => error,
-                })?;
-            let postgres = OwnedPostgres::prepare(
-                &database_url,
-                schema_plan(config.schema).map_err(|error| {
-                    RuntimeFailure::InvalidResolvedPlan {
-                        detail: error.to_string(),
-                    }
-                })?,
+        let invocation = dependencies.invocation_context_after(DEPENDENCY_TIMEOUT, cancellation)?;
+        let database_url = self
+            .secrets
+            .resolve_with_context(
+                invocation,
+                ResolveRequest {
+                    reference: config.database_url_secret.clone(),
+                },
             )
             .await
-            .map_err(|error| RuntimeFailure::ModuleFailure {
-                detail: error.to_string(),
+            .map(|value| Zeroizing::new(value.value))
+            .map_err(|error| match error {
+                SecretsInvocationError::Domain(_) => RuntimeFailure::ModuleFailure {
+                    detail: "password database secret was rejected".to_owned(),
+                },
+                SecretsInvocationError::Runtime(error) => error,
             })?;
-            state.replace(Some(postgres));
-            Ok(())
-        })
-    }
-    fn activate(&self, context: ActivateContext) -> ModuleFuture {
-        let postgres = self.postgres.borrow().clone();
+        let postgres = OwnedPostgres::prepare(
+            &database_url,
+            schema_plan(config.schema.clone()).map_err(|error| {
+                RuntimeFailure::InvalidResolvedPlan {
+                    detail: error.to_string(),
+                }
+            })?,
+        )
+        .await
+        .map_err(|error| RuntimeFailure::ModuleFailure {
+            detail: error.to_string(),
+        })?;
+        state.replace(Some(postgres.clone()));
         let active = self.active.clone();
-        let config = self.config.clone();
-        let dependencies = context.dependencies().clone();
-        Box::pin(async move {
-            let postgres = postgres.ok_or(RuntimeFailure::ModuleFailure {
-                detail: "Password Auth was not prepared".to_owned(),
-            })?;
-            active.replace(Some(Rc::new(ActivePassword {
-                postgres,
-                directory: DirectoryClient::from_dependencies(&dependencies)?,
-                issuer: CredentialIssuerClient::from_dependencies(&dependencies)?,
-                config,
-            })));
-            Ok(())
-        })
+        active.replace(Some(Rc::new(ActivePassword { postgres, config })));
+        Ok(())
     }
-    fn deactivate(&self, _context: DeactivateContext) -> ModuleFuture {
+
+    async fn deactivate(&self, _context: DeactivateContext) -> Result<(), RuntimeFailure> {
         self.active.borrow_mut().take();
         let postgres = self.postgres.borrow_mut().take();
-        Box::pin(async move {
-            if let Some(postgres) = postgres {
-                postgres.pool().close().await;
-            }
-            Ok(())
-        })
+        if let Some(postgres) = postgres {
+            postgres.pool().close().await;
+        }
+        Ok(())
     }
 }
 

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider",
+    "authorization_endpoint",
+    "token_endpoint",
+    "user_endpoint",
+    "client_id",
+    "client_secret_ref",
+    "redirect_uri",
+    "scopes",
+    "audience",
+    "flow_ttl_seconds",
+    "session_ttl_seconds"
+  ],
+  "properties": {
+    "provider": { "enum": ["github", "google"] },
+    "authorization_endpoint": { "type": "string" },
+    "token_endpoint": { "type": "string" },
+    "user_endpoint": { "type": "string" },
+    "client_id": { "type": "string" },
+    "client_secret_ref": { "type": "string" },
+    "redirect_uri": { "type": "string" },
+    "scopes": { "type": "array", "items": { "type": "string" } },
+    "audience": { "type": "array", "items": { "type": "string" } },
+    "flow_ttl_seconds": { "type": "integer" },
+    "session_ttl_seconds": { "type": "integer" }
+  }
+}

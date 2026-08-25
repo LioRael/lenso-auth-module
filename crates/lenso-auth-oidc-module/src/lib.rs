@@ -4,25 +4,26 @@ mod schema;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use lenso::{ActivateContext, DeactivateContext, Lifecycle, Port, provides};
+use lenso_capability_credential_issuer as credential_issuer;
 use lenso_capability_credential_issuer::{
-    CredentialIssuerClient, CredentialIssuerIssueInvocationError, IssueError, IssueRequest,
+    CredentialIssuerIssueInvocationError, IssueError, IssueRequest,
 };
+use lenso_capability_identity_directory as directory;
 use lenso_capability_identity_directory::{
-    DirectoryClient, DirectoryReadStatusInvocationError, ReadStatusError, ReadStatusRequest,
+    DirectoryReadStatusInvocationError, ReadStatusError, ReadStatusRequest,
     ReadStatusResponseStatus,
 };
+use lenso_capability_oidc_provider as oidc;
 use lenso_capability_oidc_provider::{
     AuthorizeError, AuthorizeRequest, AuthorizeResponse, ExchangeError, ExchangeRequest,
     ExchangeResponse, JwksRequest, JwksResponse, MetadataRequest, MetadataResponse,
-    OidcProviderAuthorize, OidcProviderEndpoint, OidcProviderExchange, OidcProviderJwks,
-    OidcProviderMetadata, OidcProviderProvider,
+    OidcProviderAuthorize, OidcProviderExchange, OidcProviderJwks, OidcProviderMetadata,
+    OidcProviderProvider,
 };
+use lenso_capability_secrets as secrets;
 use lenso_capability_secrets::{ResolveRequest, SecretsClient, SecretsInvocationError};
-use lenso_kernel::{
-    ActivateContext, DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle,
-    NativeRequestEndpoint, NativeRequestFuture, PrepareContext, RuntimeFailure,
-};
-use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_kernel::{InvocationContext, NativeRequestFuture, RuntimeFailure};
 use lenso_postgres_kit::OwnedPostgres;
 pub use operator::{OidcOperator, OidcOperatorError};
 use schema::schema_plan;
@@ -89,26 +90,8 @@ impl OidcConfig {
         Ok(())
     }
 }
-#[lenso::module]
-fn instantiate_auth_module(
-    context: NativeModuleFactoryContext<'_>,
-) -> Result<NativeModuleInstance, RuntimeFailure> {
-    let config: OidcConfig =
-        serde_json::from_str(context.configuration()).map_err(|e| invalid(&e.to_string()))?;
-    config.validate()?;
-    let prepared = Rc::new(RefCell::new(None));
-    let active = Rc::new(RefCell::new(None));
-    let endpoint = Rc::new(OidcProviderEndpoint::new(Provider {
-        active: active.clone(),
-    })) as Rc<dyn NativeRequestEndpoint>;
-    Ok(NativeModuleInstance::with_lifecycle(
-        vec![endpoint],
-        Lifecycle {
-            config,
-            prepared,
-            active,
-        },
-    ))
+fn validate_config(config: &OidcConfig) -> Result<(), RuntimeFailure> {
+    config.validate()
 }
 #[derive(Clone)]
 struct Prepared {
@@ -126,8 +109,6 @@ impl fmt::Debug for Prepared {
 struct Active {
     prepared: Prepared,
     config: OidcConfig,
-    directory: DirectoryClient,
-    issuer: CredentialIssuerClient,
 }
 impl fmt::Debug for Active {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -136,18 +117,30 @@ impl fmt::Debug for Active {
             .finish_non_exhaustive()
     }
 }
+#[lenso::module(
+    lifecycle,
+    validate = validate_config,
+    configuration_schema = "configuration.schema.json"
+)]
 #[derive(Clone)]
-struct Provider {
+struct OidcModule {
+    #[config]
+    config: OidcConfig,
+    secrets: Port<secrets::SecretsClient>,
+    directory: Port<directory::DirectoryClient>,
+    issuer: Port<credential_issuer::CredentialIssuerClient>,
+    prepared: Rc<RefCell<Option<Prepared>>>,
     active: Rc<RefCell<Option<Rc<Active>>>>,
 }
-impl fmt::Debug for Provider {
+#[allow(clippy::missing_fields_in_debug)]
+impl fmt::Debug for OidcModule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OidcProvider")
             .field("active", &self.active.borrow().is_some())
             .finish()
     }
 }
-impl Provider {
+impl OidcModule {
     fn active(&self) -> Result<Rc<Active>, RuntimeFailure> {
         self.active
             .borrow()
@@ -155,7 +148,8 @@ impl Provider {
             .ok_or_else(|| failure("OIDC Provider is not active"))
     }
 }
-impl OidcProviderProvider for Provider {
+#[provides(oidc::OidcProvider)]
+impl OidcProviderProvider for OidcModule {
     fn metadata(
         &self,
         _: InvocationContext,
@@ -203,6 +197,7 @@ impl OidcProviderProvider for Provider {
         r: AuthorizeRequest,
     ) -> NativeRequestFuture<OidcProviderAuthorize> {
         let active = self.active();
+        let directory = self.directory.clone();
         Box::pin(async move {
             let a = active?;
             if !context
@@ -227,8 +222,7 @@ impl OidcProviderProvider for Provider {
             if !valid_pkce(&r.code_challenge) {
                 return Ok(Err(AuthorizeError::InvalidPkce));
             }
-            match a
-                .directory
+            match directory
                 .read_status_with_context(
                     context,
                     ReadStatusRequest {
@@ -266,6 +260,7 @@ impl OidcProviderProvider for Provider {
         r: ExchangeRequest,
     ) -> NativeRequestFuture<OidcProviderExchange> {
         let active = self.active();
+        let issuer = self.issuer.clone();
         Box::pin(async move {
             let a = active?;
             if r.grant_type != "authorization_code"
@@ -298,8 +293,7 @@ impl OidcProviderProvider for Provider {
             let nonce: Option<String> = row.try_get("nonce").map_err(db)?;
             let token_exp = OffsetDateTime::now_utc()
                 + Duration::seconds(i64::try_from(a.config.token_ttl_seconds).expect("validated"));
-            let issued = a
-                .issuer
+            let credential = issuer
                 .issue_with_context(
                     context,
                     IssueRequest {
@@ -315,7 +309,7 @@ impl OidcProviderProvider for Provider {
                     },
                 )
                 .await;
-            let issued = match issued {
+            let credential = match credential {
                 Ok(v) => v,
                 Err(CredentialIssuerIssueInvocationError::Domain(IssueError::Disabled)) => {
                     return Ok(Err(ExchangeError::DisabledSubject));
@@ -338,12 +332,12 @@ impl OidcProviderProvider for Provider {
             let id_token = jsonwebtoken::encode(&header, &claims, &a.prepared.signing_key)
                 .map_err(|e| failure(&format!("OIDC ID token signing failed: {e}")))?;
             Ok(Ok(ExchangeResponse {
-                access_token: issued.credential,
+                access_token: credential.credential,
                 token_type: "Bearer".to_owned(),
                 expires_in: i64::try_from(a.config.token_ttl_seconds).expect("validated"),
                 id_token,
                 scope,
-                session_id: issued.session_id,
+                session_id: credential.session_id,
             }))
         })
     }
@@ -358,67 +352,48 @@ struct IdClaims {
     #[serde(skip_serializing_if = "Option::is_none")]
     nonce: Option<String>,
 }
-#[derive(Debug)]
-struct Lifecycle {
-    config: OidcConfig,
-    prepared: Rc<RefCell<Option<Prepared>>>,
-    active: Rc<RefCell<Option<Rc<Active>>>>,
-}
-impl ModuleLifecycle for Lifecycle {
-    fn prepare(&self, context: PrepareContext) -> ModuleFuture {
+impl Lifecycle for OidcModule {
+    async fn activate(&self, context: ActivateContext) -> Result<(), RuntimeFailure> {
         let c = self.config.clone();
         let deps = context.dependencies().clone();
         let cancel = context.cancellation();
         let prepared = self.prepared.clone();
-        Box::pin(async move {
-            let secrets = SecretsClient::from_dependencies(&deps)?;
-            let dbs = resolve(&secrets, &deps, cancel.clone(), &c.database_url_secret).await?;
-            let pem = resolve(&secrets, &deps, cancel.clone(), &c.signing_key_secret).await?;
-            let pepper = resolve(&secrets, &deps, cancel, &c.code_pepper_secret).await?;
-            if pepper.len() < 32 {
-                return Err(failure("OIDC code pepper must contain at least 32 bytes"));
-            }
-            let signing = EncodingKey::from_rsa_pem(pem.as_bytes())
-                .map_err(|e| failure(&format!("invalid OIDC RSA signing key: {e}")))?;
-            verify_signing_key(&signing, &c.jwks, c.key_id.as_deref())?;
-            let postgres = OwnedPostgres::prepare(
-                &dbs,
-                schema_plan(c.schema).map_err(|e| invalid(&e.to_string()))?,
-            )
-            .await
-            .map_err(|e| failure(&e.to_string()))?;
-            prepared.replace(Some(Prepared {
-                postgres,
-                signing_key: Rc::new(signing),
-                pepper: Zeroizing::new(pepper.as_bytes().to_vec()),
-            }));
-            Ok(())
-        })
-    }
-    fn activate(&self, context: ActivateContext) -> ModuleFuture {
-        let prepared = self.prepared.borrow().clone();
+        let dbs = resolve(&self.secrets, &deps, cancel.clone(), &c.database_url_secret).await?;
+        let pem = resolve(&self.secrets, &deps, cancel.clone(), &c.signing_key_secret).await?;
+        let pepper = resolve(&self.secrets, &deps, cancel, &c.code_pepper_secret).await?;
+        if pepper.len() < 32 {
+            return Err(failure("OIDC code pepper must contain at least 32 bytes"));
+        }
+        let signing = EncodingKey::from_rsa_pem(pem.as_bytes())
+            .map_err(|e| failure(&format!("invalid OIDC RSA signing key: {e}")))?;
+        verify_signing_key(&signing, &c.jwks, c.key_id.as_deref())?;
+        let postgres = OwnedPostgres::prepare(
+            &dbs,
+            schema_plan(c.schema.clone()).map_err(|e| invalid(&e.to_string()))?,
+        )
+        .await
+        .map_err(|e| failure(&e.to_string()))?;
+        let prepared_value = Prepared {
+            postgres,
+            signing_key: Rc::new(signing),
+            pepper: Zeroizing::new(pepper.as_bytes().to_vec()),
+        };
+        prepared.replace(Some(prepared_value.clone()));
         let active = self.active.clone();
-        let config = self.config.clone();
-        let deps = context.dependencies().clone();
-        Box::pin(async move {
-            active.replace(Some(Rc::new(Active {
-                prepared: prepared.ok_or_else(|| failure("OIDC Provider was not prepared"))?,
-                config,
-                directory: DirectoryClient::from_dependencies(&deps)?,
-                issuer: CredentialIssuerClient::from_dependencies(&deps)?,
-            })));
-            Ok(())
-        })
+        active.replace(Some(Rc::new(Active {
+            prepared: prepared_value,
+            config: c,
+        })));
+        Ok(())
     }
-    fn deactivate(&self, _: DeactivateContext) -> ModuleFuture {
+
+    async fn deactivate(&self, _: DeactivateContext) -> Result<(), RuntimeFailure> {
         self.active.borrow_mut().take();
         let prepared = self.prepared.borrow_mut().take();
-        Box::pin(async move {
-            if let Some(p) = prepared {
-                p.postgres.pool().close().await;
-            }
-            Ok(())
-        })
+        if let Some(p) = prepared {
+            p.postgres.pool().close().await;
+        }
+        Ok(())
     }
 }
 async fn resolve(

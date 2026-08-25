@@ -7,16 +7,15 @@ use aes_gcm::{
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
+use lenso::{ActivateContext, DeactivateContext, Lifecycle, Port, provides};
+use lenso_capability_oauth_flow as oauth_flow;
 use lenso_capability_oauth_flow::{
     ConsumeError, ConsumeRequest, ConsumeResponse, CreateError, CreateRequest, CreateResponse,
-    OauthFlowConsume, OauthFlowCreate, OauthFlowEndpoint, OauthFlowProvider,
+    OauthFlowConsume, OauthFlowCreate, OauthFlowProvider,
 };
+use lenso_capability_secrets as secrets;
 use lenso_capability_secrets::{ResolveRequest, SecretsClient, SecretsInvocationError};
-use lenso_kernel::{
-    DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle, NativeRequestEndpoint,
-    NativeRequestFuture, PrepareContext, RuntimeFailure,
-};
-use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_kernel::{InvocationContext, NativeRequestFuture, RuntimeFailure};
 use lenso_postgres_kit::OwnedPostgres;
 pub use operator::{OAuthFlowOperator, OAuthFlowOperatorError};
 use schema::schema_plan;
@@ -27,23 +26,14 @@ use std::{cell::RefCell, fmt, rc::Rc, time::Duration as StdDuration};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use zeroize::Zeroizing;
 const TIMEOUT: StdDuration = StdDuration::from_secs(10);
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, lenso::ModuleConfig)]
 #[serde(deny_unknown_fields)]
 pub struct OAuthFlowConfig {
     schema: String,
     database_url_secret: String,
     encryption_key_secret: String,
 }
-#[lenso::module]
-fn instantiate_auth_module(
-    context: NativeModuleFactoryContext<'_>,
-) -> Result<NativeModuleInstance, RuntimeFailure> {
-    let config: OAuthFlowConfig =
-        serde_json::from_str(context.configuration()).map_err(|error| {
-            RuntimeFailure::InvalidResolvedPlan {
-                detail: error.to_string(),
-            }
-        })?;
+fn validate_config(config: &OAuthFlowConfig) -> Result<(), RuntimeFailure> {
     schema_plan(config.schema.clone()).map_err(|error| RuntimeFailure::InvalidResolvedPlan {
         detail: error.to_string(),
     })?;
@@ -55,14 +45,7 @@ fn instantiate_auth_module(
             detail: "invalid OAuth Flow secret references".to_owned(),
         });
     }
-    let state = Rc::new(RefCell::new(None));
-    let endpoint = Rc::new(OauthFlowEndpoint::new(Provider {
-        state: state.clone(),
-    })) as Rc<dyn NativeRequestEndpoint>;
-    Ok(NativeModuleInstance::with_lifecycle(
-        vec![endpoint],
-        Lifecycle { config, state },
-    ))
+    Ok(())
 }
 #[derive(Clone)]
 struct Prepared {
@@ -76,16 +59,20 @@ impl fmt::Debug for Prepared {
             .finish_non_exhaustive()
     }
 }
+#[lenso::module(lifecycle, validate = validate_config)]
 #[derive(Clone)]
-struct Provider {
+struct OAuthFlowModule {
+    #[config]
+    config: OAuthFlowConfig,
+    secrets: Port<secrets::SecretsClient>,
     state: Rc<RefCell<Option<Prepared>>>,
 }
-impl fmt::Debug for Provider {
+impl fmt::Debug for OAuthFlowModule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OAuthFlowProvider").finish_non_exhaustive()
     }
 }
-impl Provider {
+impl OAuthFlowModule {
     fn prepared(&self) -> Result<Prepared, RuntimeFailure> {
         self.state
             .borrow()
@@ -95,7 +82,8 @@ impl Provider {
             })
     }
 }
-impl OauthFlowProvider for Provider {
+#[provides(oauth_flow::OauthFlow)]
+impl OauthFlowProvider for OAuthFlowModule {
     fn create(
         &self,
         _: InvocationContext,
@@ -196,63 +184,52 @@ impl OauthFlowProvider for Provider {
         })
     }
 }
-#[derive(Debug)]
-struct Lifecycle {
-    config: OAuthFlowConfig,
-    state: Rc<RefCell<Option<Prepared>>>,
-}
-impl ModuleLifecycle for Lifecycle {
-    fn prepare(&self, context: PrepareContext) -> ModuleFuture {
+impl Lifecycle for OAuthFlowModule {
+    async fn activate(&self, context: ActivateContext) -> Result<(), RuntimeFailure> {
         let config = self.config.clone();
         let dependencies = context.dependencies().clone();
         let cancellation = context.cancellation();
         let state = self.state.clone();
-        Box::pin(async move {
-            let secrets = SecretsClient::from_dependencies(&dependencies)?;
-            let db = resolve(
-                &secrets,
-                &dependencies,
-                cancellation.clone(),
-                &config.database_url_secret,
-            )
-            .await?;
-            let key = resolve(
-                &secrets,
-                &dependencies,
-                cancellation,
-                &config.encryption_key_secret,
-            )
-            .await?;
-            if key.len() != 32 {
-                return Err(failure(
-                    "OAuth encryption key must contain exactly 32 bytes",
-                ));
-            }
-            let postgres = OwnedPostgres::prepare(
-                &db,
-                schema_plan(config.schema).map_err(|error| {
-                    RuntimeFailure::InvalidResolvedPlan {
-                        detail: error.to_string(),
-                    }
-                })?,
-            )
-            .await
-            .map_err(|error| failure(&error.to_string()))?;
-            state.replace(Some(Prepared {
-                postgres,
-                key: Zeroizing::new(key.as_bytes().to_vec()),
-            }));
-            Ok(())
-        })
+        let db = resolve(
+            &self.secrets,
+            &dependencies,
+            cancellation.clone(),
+            &config.database_url_secret,
+        )
+        .await?;
+        let key = resolve(
+            &self.secrets,
+            &dependencies,
+            cancellation,
+            &config.encryption_key_secret,
+        )
+        .await?;
+        if key.len() != 32 {
+            return Err(failure(
+                "OAuth encryption key must contain exactly 32 bytes",
+            ));
+        }
+        let postgres = OwnedPostgres::prepare(
+            &db,
+            schema_plan(config.schema).map_err(|error| RuntimeFailure::InvalidResolvedPlan {
+                detail: error.to_string(),
+            })?,
+        )
+        .await
+        .map_err(|error| failure(&error.to_string()))?;
+        state.replace(Some(Prepared {
+            postgres,
+            key: Zeroizing::new(key.as_bytes().to_vec()),
+        }));
+        Ok(())
     }
-    fn deactivate(&self, _: DeactivateContext) -> ModuleFuture {
+
+    async fn deactivate(&self, _: DeactivateContext) -> Result<(), RuntimeFailure> {
         let prepared = self.state.borrow_mut().take();
-        Box::pin(async move {
-            if let Some(prepared) = prepared {
-                prepared.postgres.pool().close().await;
-            }
-            Ok(())
-        })
+        if let Some(prepared) = prepared {
+            prepared.postgres.pool().close().await;
+        }
+        Ok(())
     }
 }
 async fn resolve(

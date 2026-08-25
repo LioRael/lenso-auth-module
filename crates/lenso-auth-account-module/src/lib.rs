@@ -7,32 +7,32 @@ mod storage;
 use std::{cell::RefCell, fmt, rc::Rc, time::Duration as StdDuration};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use lenso::{ActivateContext, DeactivateContext, Lifecycle, Port, provides};
 use lenso_auth_sdk::{ActorAssertionIssuer, Validity, absent_response, authenticated_response};
+use lenso_capability_account_admin as account_admin;
 use lenso_capability_account_admin::{
-    AccountAdminEndpoint, AccountAdminListSessions, AccountAdminListSubjects, AccountAdminProvider,
-    AccountAdminSetSubjectStatus, ListSessionsError, ListSessionsRequest, ListSessionsResponse,
-    ListSessionsResponseSessionsItem, ListSubjectsError, ListSubjectsRequest, ListSubjectsResponse,
-    ListSubjectsResponseSubjectsItem, ListSubjectsResponseSubjectsItemStatus,
-    SetSubjectStatusError, SetSubjectStatusRequest, SetSubjectStatusRequestStatus,
-    SetSubjectStatusResponse,
+    AccountAdminListSessions, AccountAdminListSubjects, AccountAdminSetSubjectStatus,
+    ListSessionsError, ListSessionsRequest, ListSessionsResponse, ListSessionsResponseSessionsItem,
+    ListSubjectsError, ListSubjectsRequest, ListSubjectsResponse, ListSubjectsResponseSubjectsItem,
+    ListSubjectsResponseSubjectsItemStatus, SetSubjectStatusError, SetSubjectStatusRequest,
+    SetSubjectStatusRequestStatus, SetSubjectStatusResponse,
 };
-use lenso_capability_auth::{Auth, AuthEndpoint, AuthProvider, AuthRequest, AuthenticateError};
+use lenso_capability_auth as auth;
+use lenso_capability_auth::{Auth, AuthRequest, AuthenticateError};
+use lenso_capability_credential_issuer as credential_issuer;
 use lenso_capability_credential_issuer::{
-    CredentialIssuerEndpoint, CredentialIssuerIssue, CredentialIssuerProvider,
-    CredentialIssuerRevoke, IssueError, IssueRequest, IssueResponse, RevokeError, RevokeRequest,
-    RevokeResponse,
+    CredentialIssuerIssue, CredentialIssuerRevoke, IssueError, IssueRequest, IssueResponse,
+    RevokeError, RevokeRequest, RevokeResponse,
 };
+use lenso_capability_identity_directory as directory;
 use lenso_capability_identity_directory::{
-    DirectoryEndpoint, DirectoryEnsureIdentity, DirectoryProvider, DirectoryReadStatus,
-    EnsureIdentityError, EnsureIdentityRequest, EnsureIdentityResponse, ReadStatusError,
-    ReadStatusRequest, ReadStatusResponse, ReadStatusResponseStatus,
+    DirectoryEnsureIdentity, DirectoryReadStatus, EnsureIdentityError, EnsureIdentityRequest,
+    EnsureIdentityResponse, ReadStatusError, ReadStatusRequest, ReadStatusResponse,
+    ReadStatusResponseStatus,
 };
+use lenso_capability_secrets as secrets;
 use lenso_capability_secrets::{ResolveRequest, SecretsClient, SecretsInvocationError};
-use lenso_kernel::{
-    DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle, NativeRequestEndpoint,
-    NativeRequestFuture, PrepareContext, RuntimeFailure,
-};
-use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_kernel::{InvocationContext, NativeRequestFuture, RuntimeFailure};
 use lenso_postgres_kit::OwnedPostgres;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -149,36 +149,25 @@ pub fn assertion_public_key(signing_secret: impl AsRef<[u8]>) -> String {
     ActorAssertionIssuer::new("key-derivation", signing_secret).public_key_base64()
 }
 
-#[lenso::module]
-fn instantiate_auth_module(
-    context: NativeModuleFactoryContext<'_>,
-) -> Result<NativeModuleInstance, RuntimeFailure> {
-    let config: AccountAuthConfig =
-        serde_json::from_str(context.configuration()).map_err(|error| {
-            RuntimeFailure::InvalidResolvedPlan {
-                detail: format!("Account Auth configuration is invalid: {error}"),
-            }
-        })?;
+fn validate_config(config: &AccountAuthConfig) -> Result<(), RuntimeFailure> {
     config
         .validate()
         .map_err(|error| RuntimeFailure::InvalidResolvedPlan {
             detail: error.to_string(),
-        })?;
-    let state = Rc::new(RefCell::new(None));
-    let provider = AccountProvider {
-        state: state.clone(),
-        admin_callers: config.admin_callers.clone(),
-    };
-    let endpoints: Vec<Rc<dyn NativeRequestEndpoint>> = vec![
-        Rc::new(AuthEndpoint::new(provider.clone())),
-        Rc::new(DirectoryEndpoint::new(provider.clone())),
-        Rc::new(CredentialIssuerEndpoint::new(provider.clone())),
-        Rc::new(AccountAdminEndpoint::new(provider)),
-    ];
-    Ok(NativeModuleInstance::with_lifecycle(
-        endpoints,
-        AccountLifecycle { config, state },
-    ))
+        })
+}
+
+#[lenso::module(
+    lifecycle,
+    configuration_schema = "configuration.schema.json",
+    validate = validate_config
+)]
+#[derive(Clone)]
+struct AccountAuthModule {
+    #[config]
+    config: AccountAuthConfig,
+    secrets: Port<secrets::SecretsClient>,
+    state: Rc<RefCell<Option<PreparedAccount>>>,
 }
 
 #[derive(Clone)]
@@ -196,21 +185,25 @@ impl fmt::Debug for PreparedAccount {
     }
 }
 
-#[derive(Clone)]
-struct AccountProvider {
-    state: Rc<RefCell<Option<PreparedAccount>>>,
-    admin_callers: Vec<String>,
-}
-impl fmt::Debug for AccountProvider {
+#[allow(clippy::missing_fields_in_debug)]
+impl fmt::Debug for AccountAuthModule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AccountProvider")
+        f.debug_struct("AccountAuthModule")
             .field("prepared", &self.state.borrow().is_some())
-            .field("admin_caller_count", &self.admin_callers.len())
+            .field("admin_caller_count", &self.config.admin_callers.len())
             .finish()
     }
 }
 
-impl AccountProvider {
+#[provides(
+    auth::Auth,
+    directory::Directory,
+    credential_issuer::CredentialIssuer,
+    account_admin::AccountAdmin
+)]
+impl AccountAuthModule {}
+
+impl AccountAuthModule {
     fn prepared(&self) -> Result<PreparedAccount, RuntimeFailure> {
         self.state
             .borrow()
@@ -221,13 +214,16 @@ impl AccountProvider {
     }
 
     fn admin_authorized(&self, context: &InvocationContext) -> bool {
-        context
-            .caller_instance()
-            .is_some_and(|caller| self.admin_callers.iter().any(|allowed| allowed == caller))
+        context.caller_instance().is_some_and(|caller| {
+            self.config
+                .admin_callers
+                .iter()
+                .any(|allowed| allowed == caller)
+        })
     }
 }
 
-impl DirectoryProvider for AccountProvider {
+impl AccountAuthModule {
     fn ensure_identity(
         &self,
         _context: InvocationContext,
@@ -288,7 +284,7 @@ impl DirectoryProvider for AccountProvider {
     }
 }
 
-impl CredentialIssuerProvider for AccountProvider {
+impl AccountAuthModule {
     fn issue(
         &self,
         _context: InvocationContext,
@@ -372,7 +368,8 @@ impl CredentialIssuerProvider for AccountProvider {
     }
 }
 
-impl AccountAdminProvider for AccountProvider {
+impl AccountAuthModule {
+    #[allow(clippy::needless_pass_by_value)]
     fn list_subjects(
         &self,
         context: InvocationContext,
@@ -454,6 +451,7 @@ impl AccountAdminProvider for AccountProvider {
         })
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn set_subject_status(
         &self,
         context: InvocationContext,
@@ -527,6 +525,7 @@ impl AccountAdminProvider for AccountProvider {
         })
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn list_sessions(
         &self,
         context: InvocationContext,
@@ -621,7 +620,7 @@ impl AccountAdminProvider for AccountProvider {
     }
 }
 
-impl AuthProvider for AccountProvider {
+impl AccountAuthModule {
     fn authenticate(
         &self,
         _context: InvocationContext,
@@ -674,83 +673,71 @@ impl AuthProvider for AccountProvider {
     }
 }
 
-#[derive(Debug)]
-struct AccountLifecycle {
-    config: AccountAuthConfig,
-    state: Rc<RefCell<Option<PreparedAccount>>>,
-}
-impl ModuleLifecycle for AccountLifecycle {
-    fn prepare(&self, context: PrepareContext) -> ModuleFuture {
+impl Lifecycle for AccountAuthModule {
+    async fn activate(&self, context: ActivateContext) -> Result<(), RuntimeFailure> {
         let config = self.config.clone();
         let state = self.state.clone();
         let dependencies = context.dependencies().clone();
         let cancellation = context.cancellation();
-        Box::pin(async move {
-            let secrets = SecretsClient::from_dependencies(&dependencies)?;
-            let database_url = resolve(
-                &secrets,
-                &dependencies,
-                cancellation.clone(),
-                &config.database_url_secret,
-            )
-            .await?;
-            let signing = resolve(
-                &secrets,
-                &dependencies,
-                cancellation.clone(),
-                &config.assertion_signing_key_secret,
-            )
-            .await?;
-            let pepper = resolve(
-                &secrets,
-                &dependencies,
-                cancellation,
-                &config.token_pepper_secret,
-            )
-            .await?;
-            if signing.len() < 32 || pepper.len() < 32 {
-                return Err(RuntimeFailure::ModuleFailure {
-                    detail: "signing key and token pepper must contain at least 32 bytes"
-                        .to_owned(),
-                });
-            }
-            let issuer = ActorAssertionIssuer::new(&config.issuer, signing.as_bytes());
-            if issuer.public_key_base64() != config.assertion_public_key {
-                return Err(RuntimeFailure::ModuleFailure {
-                    detail: "signing key does not match public key".to_owned(),
-                });
-            }
-            let postgres = OwnedPostgres::prepare(
-                &database_url,
-                schema_plan(config.schema).map_err(|error| {
-                    RuntimeFailure::InvalidResolvedPlan {
-                        detail: error.to_string(),
-                    }
-                })?,
-            )
-            .await
-            .map_err(|error| RuntimeFailure::ModuleFailure {
+        let database_url = resolve(
+            &self.secrets,
+            &dependencies,
+            cancellation.clone(),
+            &config.database_url_secret,
+        )
+        .await?;
+        let signing = resolve(
+            &self.secrets,
+            &dependencies,
+            cancellation.clone(),
+            &config.assertion_signing_key_secret,
+        )
+        .await?;
+        let pepper = resolve(
+            &self.secrets,
+            &dependencies,
+            cancellation,
+            &config.token_pepper_secret,
+        )
+        .await?;
+        if signing.len() < 32 || pepper.len() < 32 {
+            return Err(RuntimeFailure::ModuleFailure {
+                detail: "signing key and token pepper must contain at least 32 bytes".to_owned(),
+            });
+        }
+        let issuer = ActorAssertionIssuer::new(&config.issuer, signing.as_bytes());
+        if issuer.public_key_base64() != config.assertion_public_key {
+            return Err(RuntimeFailure::ModuleFailure {
+                detail: "signing key does not match public key".to_owned(),
+            });
+        }
+        let postgres = OwnedPostgres::prepare(
+            &database_url,
+            schema_plan(config.schema).map_err(|error| RuntimeFailure::InvalidResolvedPlan {
                 detail: error.to_string(),
-            })?;
-            state.replace(Some(PreparedAccount {
-                postgres,
-                issuer,
-                pepper: Zeroizing::new(pepper.as_bytes().to_vec()),
-                assertion_ttl: Duration::seconds(
-                    i64::try_from(config.assertion_ttl_seconds).expect("validated"),
-                ),
-            }));
-            Ok(())
-        })
+            })?,
+        )
+        .await
+        .map_err(|error| RuntimeFailure::ModuleFailure {
+            detail: error.to_string(),
+        })?;
+        state.replace(Some(PreparedAccount {
+            postgres,
+            issuer,
+            pepper: Zeroizing::new(pepper.as_bytes().to_vec()),
+            assertion_ttl: Duration::seconds(
+                i64::try_from(config.assertion_ttl_seconds).expect("validated"),
+            ),
+        }));
+        Ok(())
     }
-    fn deactivate(&self, _context: DeactivateContext) -> ModuleFuture {
+
+    async fn deactivate(&self, _context: DeactivateContext) -> Result<(), RuntimeFailure> {
         let prepared = self.state.borrow_mut().take();
-        Box::pin(async move {
-            if let Some(prepared) = prepared {
-                prepared.postgres.pool().close().await;
-            }
-            Ok(())
-        })
+        if let Some(prepared) = prepared {
+            prepared.postgres.pool().close().await;
+        }
+        Ok(())
     }
 }
 

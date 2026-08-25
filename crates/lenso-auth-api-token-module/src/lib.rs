@@ -6,17 +6,15 @@ mod storage;
 
 use std::{cell::RefCell, fmt, rc::Rc, time::Duration as StdDuration};
 
+use lenso::{ActivateContext, DeactivateContext, Lifecycle, Port, provides};
 use lenso_auth_sdk::{ActorAssertionIssuer, Validity, absent_response, authenticated_response};
+use lenso_capability_auth as auth;
 use lenso_capability_auth::{
-    Auth, AuthEndpoint, AuthInvocationError, AuthProvider, AuthRequest, AuthResponse,
-    AuthenticateError,
+    Auth, AuthInvocationError, AuthProvider, AuthRequest, AuthResponse, AuthenticateError,
 };
+use lenso_capability_secrets as secrets;
 use lenso_capability_secrets::{ResolveRequest, SecretsClient, SecretsInvocationError};
-use lenso_kernel::{
-    DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle, NativeRequestEndpoint,
-    NativeRequestFuture, PrepareContext, RuntimeFailure,
-};
-use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_kernel::{InvocationContext, NativeRequestFuture, RuntimeFailure};
 use lenso_postgres_kit::OwnedPostgres;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -34,7 +32,7 @@ const MAX_ASSERTION_TTL_SECONDS: u64 = 3_600;
 const PREPARE_DEPENDENCY_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 
 /// Immutable Plan configuration. It contains only secret references and public data.
-#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize, lenso::ModuleConfig)]
 #[serde(deny_unknown_fields)]
 pub struct ApiTokenAuthConfig {
     schema: String,
@@ -154,31 +152,12 @@ pub fn assertion_public_key(signing_secret: impl AsRef<[u8]>) -> String {
     ActorAssertionIssuer::new("key-derivation", signing_secret).public_key_base64()
 }
 
-/// Factory for one PostgreSQL-backed API Token Auth Module Instance.
-#[lenso::module]
-fn instantiate_auth_module(
-    context: NativeModuleFactoryContext<'_>,
-) -> Result<NativeModuleInstance, RuntimeFailure> {
-    let config =
-        serde_json::from_str::<ApiTokenAuthConfig>(context.configuration()).map_err(|error| {
-            RuntimeFailure::InvalidResolvedPlan {
-                detail: format!("API Token Auth configuration is invalid: {error}"),
-            }
-        })?;
+fn validate_config(config: &ApiTokenAuthConfig) -> Result<(), RuntimeFailure> {
     config
         .validate()
         .map_err(|error| RuntimeFailure::InvalidResolvedPlan {
             detail: format!("API Token Auth configuration is invalid: {error}"),
-        })?;
-    let state = Rc::new(RefCell::new(None));
-    let provider = ApiTokenAuthProvider {
-        state: state.clone(),
-    };
-    let endpoint = Rc::new(AuthEndpoint::new(provider)) as Rc<dyn NativeRequestEndpoint>;
-    Ok(NativeModuleInstance::with_lifecycle(
-        vec![endpoint],
-        ApiTokenAuthLifecycle { config, state },
-    ))
+        })
 }
 
 #[derive(Clone)]
@@ -201,12 +180,17 @@ impl fmt::Debug for PreparedAuth {
     }
 }
 
+#[lenso::module(lifecycle, validate = validate_config)]
 #[derive(Clone)]
-struct ApiTokenAuthProvider {
+struct ApiTokenAuthModule {
+    #[config]
+    config: ApiTokenAuthConfig,
+    secrets: Port<secrets::SecretsClient>,
     state: Rc<RefCell<Option<PreparedAuth>>>,
 }
 
-impl fmt::Debug for ApiTokenAuthProvider {
+#[allow(clippy::missing_fields_in_debug)]
+impl fmt::Debug for ApiTokenAuthModule {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("ApiTokenAuthProvider")
@@ -215,7 +199,8 @@ impl fmt::Debug for ApiTokenAuthProvider {
     }
 }
 
-impl AuthProvider for ApiTokenAuthProvider {
+#[provides(auth::Auth)]
+impl AuthProvider for ApiTokenAuthModule {
     fn authenticate(
         &self,
         _context: InvocationContext,
@@ -237,86 +222,75 @@ impl AuthProvider for ApiTokenAuthProvider {
     }
 }
 
-#[derive(Debug)]
-struct ApiTokenAuthLifecycle {
-    config: ApiTokenAuthConfig,
-    state: Rc<RefCell<Option<PreparedAuth>>>,
-}
-
-impl ModuleLifecycle for ApiTokenAuthLifecycle {
-    fn prepare(&self, context: PrepareContext) -> ModuleFuture {
+impl Lifecycle for ApiTokenAuthModule {
+    async fn activate(&self, context: ActivateContext) -> Result<(), RuntimeFailure> {
         let config = self.config.clone();
         let state = self.state.clone();
         let dependencies = context.dependencies().clone();
         let cancellation = context.cancellation();
-        Box::pin(async move {
-            let secrets = SecretsClient::from_dependencies(&dependencies)?;
-            let database_url = resolve_secret(
-                &secrets,
-                &dependencies,
-                cancellation.clone(),
-                &config.database_url_secret,
-            )
-            .await?;
-            let signing_secret = resolve_secret(
-                &secrets,
-                &dependencies,
-                cancellation.clone(),
-                &config.assertion_signing_key_secret,
-            )
-            .await?;
-            let token_pepper = resolve_secret(
-                &secrets,
-                &dependencies,
-                cancellation,
-                &config.token_pepper_secret,
-            )
-            .await?;
-            if signing_secret.len() < 32 || token_pepper.len() < 32 {
-                return Err(RuntimeFailure::ModuleFailure {
-                    detail: "Auth signing key and token pepper must each contain at least 32 bytes"
-                        .to_owned(),
-                });
-            }
-            let issuer = ActorAssertionIssuer::new(&config.issuer, signing_secret.as_bytes());
-            if issuer.public_key_base64() != config.assertion_public_key {
-                return Err(RuntimeFailure::ModuleFailure {
-                    detail: "configured Auth signing key does not match its public key".to_owned(),
-                });
-            }
-            let postgres = OwnedPostgres::prepare(
-                &database_url,
-                schema_plan(config.schema.clone()).map_err(|error| {
-                    RuntimeFailure::InvalidResolvedPlan {
-                        detail: format!("API Token Auth schema plan is invalid: {error}"),
-                    }
-                })?,
-            )
-            .await
-            .map_err(|error| RuntimeFailure::ModuleFailure {
-                detail: format!("API Token Auth storage is unavailable: {error}"),
-            })?;
-            state.replace(Some(PreparedAuth {
-                postgres,
-                issuer,
-                token_pepper: Zeroizing::new(token_pepper.as_bytes().to_vec()),
-                assertion_ttl: Duration::seconds(
-                    i64::try_from(config.assertion_ttl_seconds)
-                        .expect("validated assertion TTL fits i64"),
-                ),
-            }));
-            Ok(())
-        })
+        let database_url = resolve_secret(
+            &self.secrets,
+            &dependencies,
+            cancellation.clone(),
+            &config.database_url_secret,
+        )
+        .await?;
+        let signing_secret = resolve_secret(
+            &self.secrets,
+            &dependencies,
+            cancellation.clone(),
+            &config.assertion_signing_key_secret,
+        )
+        .await?;
+        let token_pepper = resolve_secret(
+            &self.secrets,
+            &dependencies,
+            cancellation,
+            &config.token_pepper_secret,
+        )
+        .await?;
+        if signing_secret.len() < 32 || token_pepper.len() < 32 {
+            return Err(RuntimeFailure::ModuleFailure {
+                detail: "Auth signing key and token pepper must each contain at least 32 bytes"
+                    .to_owned(),
+            });
+        }
+        let issuer = ActorAssertionIssuer::new(&config.issuer, signing_secret.as_bytes());
+        if issuer.public_key_base64() != config.assertion_public_key {
+            return Err(RuntimeFailure::ModuleFailure {
+                detail: "configured Auth signing key does not match its public key".to_owned(),
+            });
+        }
+        let postgres = OwnedPostgres::prepare(
+            &database_url,
+            schema_plan(config.schema.clone()).map_err(|error| {
+                RuntimeFailure::InvalidResolvedPlan {
+                    detail: format!("API Token Auth schema plan is invalid: {error}"),
+                }
+            })?,
+        )
+        .await
+        .map_err(|error| RuntimeFailure::ModuleFailure {
+            detail: format!("API Token Auth storage is unavailable: {error}"),
+        })?;
+        state.replace(Some(PreparedAuth {
+            postgres,
+            issuer,
+            token_pepper: Zeroizing::new(token_pepper.as_bytes().to_vec()),
+            assertion_ttl: Duration::seconds(
+                i64::try_from(config.assertion_ttl_seconds)
+                    .expect("validated assertion TTL fits i64"),
+            ),
+        }));
+        Ok(())
     }
 
-    fn deactivate(&self, _context: DeactivateContext) -> ModuleFuture {
+    async fn deactivate(&self, _context: DeactivateContext) -> Result<(), RuntimeFailure> {
         let prepared = self.state.borrow_mut().take();
-        Box::pin(async move {
-            if let Some(prepared) = prepared {
-                prepared.postgres.pool().close().await;
-            }
-            Ok(())
-        })
+        if let Some(prepared) = prepared {
+            prepared.postgres.pool().close().await;
+        }
+        Ok(())
     }
 }
 

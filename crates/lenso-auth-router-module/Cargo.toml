@@ -9,17 +9,17 @@ repository.workspace=true
 package-id = "lenso.auth.router"
 
 [dependencies]
-lenso = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "1a835b8a213d24635171297160f3b534e5602cce" }
+lenso = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "89199fe33280ecdd6cf44b61fd5f15bc9563d32f" }
 futures.workspace=true
 lenso-capability-auth={path="../lenso-capability-auth"}
 lenso-kernel = "0.1.9"
-lenso-native-adapter = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "1a835b8a213d24635171297160f3b534e5602cce" }
+lenso-native-adapter = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "89199fe33280ecdd6cf44b61fd5f15bc9563d32f" }
 serde.workspace=true
 serde_json.workspace=true
 
 [dev-dependencies]
 lenso-app-plan = "0.1.4"
-lenso-runner = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "1a835b8a213d24635171297160f3b534e5602cce" }
+lenso-runner = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "89199fe33280ecdd6cf44b61fd5f15bc9563d32f" }
 tokio = { version = "1.52", features = ["macros", "rt"] }
 
 [lints]

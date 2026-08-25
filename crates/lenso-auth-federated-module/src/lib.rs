@@ -1,28 +1,29 @@
 //! GitHub and Google OAuth login as keyed instances over HTTP Egress.
+use lenso::{ActivateContext, DeactivateContext, Lifecycle, Port, provides};
+use lenso_capability_credential_issuer as credential_issuer;
 use lenso_capability_credential_issuer::{
-    CredentialIssuerClient, CredentialIssuerIssueInvocationError, IssueError, IssueRequest,
+    CredentialIssuerIssueInvocationError, IssueError, IssueRequest,
 };
+use lenso_capability_federated_auth as federated;
 use lenso_capability_federated_auth::{
-    CompleteError, CompleteRequest, CompleteResponse, FederatedComplete, FederatedEndpoint,
-    FederatedProvider, FederatedStart, StartError, StartRequest, StartResponse,
+    CompleteError, CompleteRequest, CompleteResponse, FederatedComplete, FederatedProvider,
+    FederatedStart, StartError, StartRequest, StartResponse,
 };
+use lenso_capability_http_client as http_client;
 use lenso_capability_http_client::{
     ClientClient as HttpClient, ClientInvocationError, SendRequest, SendRequestHeadersItem,
 };
+use lenso_capability_identity_directory as directory;
 use lenso_capability_identity_directory::{
-    DirectoryClient, DirectoryEnsureIdentityInvocationError, EnsureIdentityError,
-    EnsureIdentityRequest,
+    DirectoryEnsureIdentityInvocationError, EnsureIdentityError, EnsureIdentityRequest,
 };
+use lenso_capability_oauth_flow as oauth_flow;
 use lenso_capability_oauth_flow::{
-    ConsumeRequest, CreateRequest, OauthFlowClient, OauthFlowConsumeInvocationError,
-    OauthFlowCreateInvocationError,
+    ConsumeRequest, CreateRequest, OauthFlowConsumeInvocationError, OauthFlowCreateInvocationError,
 };
-use lenso_capability_secrets::{ResolveRequest, SecretsClient, SecretsInvocationError};
-use lenso_kernel::{
-    ActivateContext, DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle,
-    NativeRequestEndpoint, NativeRequestFuture, PrepareContext, RuntimeFailure,
-};
-use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_capability_secrets as secrets;
+use lenso_capability_secrets::{ResolveRequest, SecretsInvocationError};
+use lenso_kernel::{InvocationContext, NativeRequestFuture, RuntimeFailure};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{cell::RefCell, collections::BTreeMap, fmt, rc::Rc, time::Duration as StdDuration};
@@ -79,38 +80,12 @@ impl FederatedAuthConfig {
         }
     }
 }
-#[lenso::module]
-fn instantiate_auth_module(
-    context: NativeModuleFactoryContext<'_>,
-) -> Result<NativeModuleInstance, RuntimeFailure> {
-    let config: FederatedAuthConfig =
-        serde_json::from_str(context.configuration()).map_err(|error| {
-            RuntimeFailure::InvalidResolvedPlan {
-                detail: error.to_string(),
-            }
-        })?;
-    config.validate()?;
-    let secret = Rc::new(RefCell::new(None));
-    let active = Rc::new(RefCell::new(None));
-    let endpoint = Rc::new(FederatedEndpoint::new(Provider {
-        active: active.clone(),
-    })) as Rc<dyn NativeRequestEndpoint>;
-    Ok(NativeModuleInstance::with_lifecycle(
-        vec![endpoint],
-        Lifecycle {
-            config,
-            secret,
-            active,
-        },
-    ))
+fn validate_config(config: &FederatedAuthConfig) -> Result<(), RuntimeFailure> {
+    config.validate()
 }
 struct Active {
     config: FederatedAuthConfig,
     client_secret: Zeroizing<String>,
-    flow: OauthFlowClient,
-    http: HttpClient,
-    directory: DirectoryClient,
-    issuer: CredentialIssuerClient,
 }
 impl fmt::Debug for Active {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -119,22 +94,36 @@ impl fmt::Debug for Active {
             .finish_non_exhaustive()
     }
 }
+#[lenso::module(
+    lifecycle,
+    validate = validate_config,
+    configuration_schema = "configuration.schema.json"
+)]
 #[derive(Clone)]
-struct Provider {
+struct FederatedAuthModule {
+    #[config]
+    config: FederatedAuthConfig,
+    secrets: Port<secrets::SecretsClient>,
+    flow: Port<oauth_flow::OauthFlowClient>,
+    http: Port<http_client::ClientClient>,
+    directory: Port<directory::DirectoryClient>,
+    issuer: Port<credential_issuer::CredentialIssuerClient>,
     active: Rc<RefCell<Option<Rc<Active>>>>,
 }
-impl fmt::Debug for Provider {
+impl fmt::Debug for FederatedAuthModule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FederatedProvider").finish_non_exhaustive()
     }
 }
-impl FederatedProvider for Provider {
+#[provides(federated::Federated)]
+impl FederatedProvider for FederatedAuthModule {
     fn start(
         &self,
         context: InvocationContext,
         request: StartRequest,
     ) -> NativeRequestFuture<FederatedStart> {
         let active = self.active.borrow().clone();
+        let flow_client = self.flow.clone();
         Box::pin(async move {
             let active = active.ok_or_else(|| failure("Federated Auth is not active"))?;
             if !valid_return(&request.return_to) {
@@ -146,8 +135,7 @@ impl FederatedProvider for Provider {
                 ))
             .format(&Rfc3339)
             .map_err(|error| failure(&error.to_string()))?;
-            let flow = active
-                .flow
+            let flow = flow_client
                 .create_with_context(
                     context,
                     CreateRequest {
@@ -191,13 +179,16 @@ impl FederatedProvider for Provider {
         request: CompleteRequest,
     ) -> NativeRequestFuture<FederatedComplete> {
         let active = self.active.borrow().clone();
+        let flow_client = self.flow.clone();
+        let http = self.http.clone();
+        let directory = self.directory.clone();
+        let issuer = self.issuer.clone();
         Box::pin(async move {
             let active = active.ok_or_else(|| failure("Federated Auth is not active"))?;
             if request.code.is_empty() || request.code.len() > 4096 {
                 return Ok(Err(CompleteError::InvalidCallback));
             }
-            let flow = active
-                .flow
+            let flow = flow_client
                 .consume_with_context(
                     context.clone(),
                     ConsumeRequest {
@@ -214,14 +205,16 @@ impl FederatedProvider for Provider {
                 Err(OauthFlowConsumeInvocationError::Runtime(error)) => return Err(error),
             };
             let token =
-                match exchange_token(&active, &context, &request.code, &flow.code_verifier).await {
+                match exchange_token(&active, &http, &context, &request.code, &flow.code_verifier)
+                    .await
+                {
                     Ok(value) => value,
                     Err(ProviderCall::Rejected) => {
                         return Ok(Err(CompleteError::ProviderRejected));
                     }
                     Err(ProviderCall::Runtime(error)) => return Err(error),
                 };
-            let profile = match load_profile(&active, &context, &token).await {
+            let profile = match load_profile(&active, &http, &context, &token).await {
                 Ok(value) => value,
                 Err(ProviderCall::Rejected) => {
                     return Ok(Err(CompleteError::ProviderRejected));
@@ -230,8 +223,7 @@ impl FederatedProvider for Provider {
             };
             let external = profile_subject(&active.config.provider, &profile)
                 .ok_or_else(|| failure("OAuth profile lacks a verified identity"))?;
-            let identity = active
-                .directory
+            let identity = directory
                 .ensure_identity_with_context(
                     context.clone(),
                     EnsureIdentityRequest {
@@ -261,8 +253,7 @@ impl FederatedProvider for Provider {
                 "provider".to_owned(),
                 Value::String(active.config.name().to_owned()),
             );
-            let issued = active
-                .issuer
+            let credential = issuer
                 .issue_with_context(
                     context,
                     IssueRequest {
@@ -275,7 +266,7 @@ impl FederatedProvider for Provider {
                     },
                 )
                 .await;
-            match issued {
+            match credential {
                 Ok(value) => Ok(Ok(CompleteResponse {
                     provider: active.config.name().to_owned(),
                     subject: identity.subject,
@@ -297,6 +288,7 @@ impl FederatedProvider for Provider {
 }
 async fn exchange_token(
     active: &Active,
+    http: &HttpClient,
     context: &InvocationContext,
     code: &str,
     verifier: &str,
@@ -309,8 +301,7 @@ async fn exchange_token(
         .append_pair("redirect_uri", &active.config.redirect_uri)
         .append_pair("code_verifier", verifier)
         .finish();
-    let response = active
-        .http
+    let response = http
         .send_with_context(
             context.clone(),
             SendRequest {
@@ -344,11 +335,11 @@ async fn exchange_token(
 }
 async fn load_profile(
     active: &Active,
+    http: &HttpClient,
     context: &InvocationContext,
     token: &str,
 ) -> Result<Value, ProviderCall> {
-    let response = active
-        .http
+    let response = http
         .send_with_context(
             context.clone(),
             SendRequest {
@@ -389,63 +380,40 @@ fn profile_subject(kind: &ProviderKind, value: &Value) -> Option<String> {
             .and_then(|_| value.get("sub")?.as_str().map(ToOwned::to_owned)),
     }
 }
-#[derive(Debug)]
-struct Lifecycle {
-    config: FederatedAuthConfig,
-    secret: Rc<RefCell<Option<Zeroizing<String>>>>,
-    active: Rc<RefCell<Option<Rc<Active>>>>,
-}
-impl ModuleLifecycle for Lifecycle {
-    fn prepare(&self, context: PrepareContext) -> ModuleFuture {
+#[allow(clippy::unused_async_trait_impl)]
+impl Lifecycle for FederatedAuthModule {
+    async fn activate(&self, context: ActivateContext) -> Result<(), RuntimeFailure> {
         let config = self.config.clone();
-        let secret = self.secret.clone();
         let deps = context.dependencies().clone();
         let cancel = context.cancellation();
-        Box::pin(async move {
-            let secrets = SecretsClient::from_dependencies(&deps)?;
-            let invocation = deps.invocation_context_after(TIMEOUT, cancel)?;
-            let value = secrets
-                .resolve_with_context(
-                    invocation,
-                    ResolveRequest {
-                        reference: config.client_secret_ref,
-                    },
-                )
-                .await
-                .map_err(|error| match error {
-                    SecretsInvocationError::Domain(_) => {
-                        failure("OAuth client secret was rejected")
-                    }
-                    SecretsInvocationError::Runtime(error) => error,
-                })?;
-            if value.value.is_empty() {
-                return Err(failure("OAuth client secret is empty"));
-            }
-            secret.replace(Some(Zeroizing::new(value.value)));
-            Ok(())
-        })
-    }
-    fn activate(&self, context: ActivateContext) -> ModuleFuture {
-        let config = self.config.clone();
-        let secret = self.secret.borrow_mut().take();
+        let invocation = deps.invocation_context_after(TIMEOUT, cancel)?;
+        let value = self
+            .secrets
+            .resolve_with_context(
+                invocation,
+                ResolveRequest {
+                    reference: config.client_secret_ref.clone(),
+                },
+            )
+            .await
+            .map_err(|error| match error {
+                SecretsInvocationError::Domain(_) => failure("OAuth client secret was rejected"),
+                SecretsInvocationError::Runtime(error) => error,
+            })?;
+        if value.value.is_empty() {
+            return Err(failure("OAuth client secret is empty"));
+        }
         let active = self.active.clone();
-        let deps = context.dependencies().clone();
-        Box::pin(async move {
-            active.replace(Some(Rc::new(Active {
-                config,
-                client_secret: secret.ok_or_else(|| failure("Federated Auth was not prepared"))?,
-                flow: OauthFlowClient::from_dependencies(&deps)?,
-                http: HttpClient::from_dependencies(&deps)?,
-                directory: DirectoryClient::from_dependencies(&deps)?,
-                issuer: CredentialIssuerClient::from_dependencies(&deps)?,
-            })));
-            Ok(())
-        })
+        active.replace(Some(Rc::new(Active {
+            config,
+            client_secret: Zeroizing::new(value.value),
+        })));
+        Ok(())
     }
-    fn deactivate(&self, _: DeactivateContext) -> ModuleFuture {
+
+    async fn deactivate(&self, _: DeactivateContext) -> Result<(), RuntimeFailure> {
         self.active.borrow_mut().take();
-        self.secret.borrow_mut().take();
-        Box::pin(futures::future::ready(Ok(())))
+        Ok(())
     }
 }
 fn valid_return(v: &str) -> bool {
