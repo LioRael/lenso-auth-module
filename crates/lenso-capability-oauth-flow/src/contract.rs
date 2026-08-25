@@ -43,6 +43,7 @@ pub struct CreateResponse {
 }
 
 #[derive(lenso::DomainError)]
+#[allow(clippy::enum_variant_names)]
 pub enum CreateError {
     InvalidProvider,
     InvalidReturnTo,

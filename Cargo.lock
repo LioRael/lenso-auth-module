@@ -1372,8 +1372,7 @@ dependencies = [
 [[package]]
 name = "lenso-capability-http-client"
 version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c75304dad8549e12712d9b57f025bd1d0d2e38a40dafbaea0e69232a79a4b79"
+source = "git+https://github.com/LioRael/lenso-web?rev=af11827b57199b3830caf290de4149ba7697ea72#af11827b57199b3830caf290de4149ba7697ea72"
 dependencies = [
  "futures",
  "lenso-contract-codegen 0.5.2",
