@@ -9,17 +9,17 @@ repository.workspace=true
 package-id = "lenso.auth.federated"
 
 [dependencies]
-lenso = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "1a835b8a213d24635171297160f3b534e5602cce" }
+lenso = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "48cf37b6475a0dbbe4ad8492888ed7c6c17abae4" }
 base64.workspace=true
 futures.workspace=true
 lenso-capability-credential-issuer={path="../lenso-capability-credential-issuer"}
 lenso-capability-federated-auth={path="../lenso-capability-federated-auth"}
-lenso-capability-http-client = { version = "0.2.2", git = "https://github.com/LioRael/lenso-web", rev = "af11827b57199b3830caf290de4149ba7697ea72" }
+lenso-capability-http-client = { version = "0.2.2", git = "https://github.com/LioRael/lenso-web", rev = "4fa0cf75dcc7d7ece5021bad3f15fef798016a10" }
 lenso-capability-identity-directory={path="../lenso-capability-identity-directory"}
 lenso-capability-oauth-flow={path="../lenso-capability-oauth-flow"}
-lenso-capability-secrets={git="https://github.com/LioRael/lenso-secrets-module",rev="e1cd46dd7156241f05ad5eeebbae995831c07da6"}
+lenso-capability-secrets={git="https://github.com/LioRael/lenso-secrets-module",rev="161e8853cda3c18012c3551de7aae1b78d581046"}
 lenso-kernel = "0.1.9"
-lenso-native-adapter = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "1a835b8a213d24635171297160f3b534e5602cce" }
+lenso-native-adapter = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "48cf37b6475a0dbbe4ad8492888ed7c6c17abae4" }
 serde.workspace=true
 serde_json.workspace=true
 time.workspace=true

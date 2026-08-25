@@ -4,28 +4,30 @@ mod schema;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
+use lenso::{ActivateContext, DeactivateContext, Lifecycle, Port, provides};
+use lenso_capability_credential_issuer as credential_issuer;
 use lenso_capability_credential_issuer::{
     CredentialIssuerClient, CredentialIssuerIssueInvocationError, IssueError, IssueRequest,
     IssueResponse,
 };
+use lenso_capability_identity_directory as directory;
 use lenso_capability_identity_directory::{
-    DirectoryClient, DirectoryEnsureIdentityInvocationError, DirectoryReadStatusInvocationError,
+    DirectoryEnsureIdentityInvocationError, DirectoryReadStatusInvocationError,
     EnsureIdentityError, EnsureIdentityRequest, ReadStatusError, ReadStatusRequest,
     ReadStatusResponseStatus,
 };
+use lenso_capability_phone_auth as phone;
 use lenso_capability_phone_auth::{
-    PasswordLoginError, PasswordLoginRequest, PasswordLoginResponse, PhoneEndpoint,
-    PhonePasswordLogin, PhoneProvider, PhoneSetPassword, PhoneStartOtp, PhoneVerifyOtp,
-    SetPasswordError, SetPasswordRequest, SetPasswordResponse, StartOtpError, StartOtpRequest,
+    PasswordLoginError, PasswordLoginRequest, PasswordLoginResponse, PhonePasswordLogin,
+    PhoneProvider, PhoneSetPassword, PhoneStartOtp, PhoneVerifyOtp, SetPasswordError,
+    SetPasswordRequest, SetPasswordResponse, StartOtpError, StartOtpRequest,
     StartOtpRequestPurpose, StartOtpResponse, VerifyOtpError, VerifyOtpRequest, VerifyOtpResponse,
 };
+use lenso_capability_secrets as secrets;
 use lenso_capability_secrets::{ResolveRequest, SecretsClient, SecretsInvocationError};
-use lenso_capability_sms_delivery::{SendRequest, SmsClient, SmsInvocationError};
-use lenso_kernel::{
-    ActivateContext, DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle,
-    NativeRequestEndpoint, NativeRequestFuture, PrepareContext, RuntimeFailure,
-};
-use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_capability_sms_delivery as sms;
+use lenso_capability_sms_delivery::{SendRequest, SmsInvocationError};
+use lenso_kernel::{InvocationContext, NativeRequestFuture, RuntimeFailure};
 use lenso_postgres_kit::OwnedPostgres;
 pub use operator::{PhoneOperator, PhoneOperatorError};
 use schema::schema_plan;
@@ -87,26 +89,8 @@ impl PhoneConfig {
         Ok(())
     }
 }
-#[lenso::module]
-fn instantiate_auth_module(
-    context: NativeModuleFactoryContext<'_>,
-) -> Result<NativeModuleInstance, RuntimeFailure> {
-    let config: PhoneConfig =
-        serde_json::from_str(context.configuration()).map_err(|e| invalid(&e.to_string()))?;
-    config.validate()?;
-    let prepared = Rc::new(RefCell::new(None));
-    let active = Rc::new(RefCell::new(None));
-    let endpoint = Rc::new(PhoneEndpoint::new(Provider {
-        active: active.clone(),
-    })) as Rc<dyn NativeRequestEndpoint>;
-    Ok(NativeModuleInstance::with_lifecycle(
-        vec![endpoint],
-        Lifecycle {
-            config,
-            prepared,
-            active,
-        },
-    ))
+fn validate_config(config: &PhoneConfig) -> Result<(), RuntimeFailure> {
+    config.validate()
 }
 #[derive(Clone)]
 struct Prepared {
@@ -123,27 +107,37 @@ impl fmt::Debug for Prepared {
 struct Active {
     prepared: Prepared,
     config: PhoneConfig,
-    directory: DirectoryClient,
-    issuer: CredentialIssuerClient,
-    sms: SmsClient,
 }
 impl fmt::Debug for Active {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Active").finish_non_exhaustive()
     }
 }
+#[lenso::module(
+    lifecycle,
+    validate = validate_config,
+    configuration_schema = "configuration.schema.json"
+)]
 #[derive(Clone)]
-struct Provider {
+struct PhoneAuthModule {
+    #[config]
+    config: PhoneConfig,
+    secrets: Port<secrets::SecretsClient>,
+    directory: Port<directory::DirectoryClient>,
+    issuer: Port<credential_issuer::CredentialIssuerClient>,
+    sms: Port<sms::SmsClient>,
+    prepared: Rc<RefCell<Option<Prepared>>>,
     active: Rc<RefCell<Option<Rc<Active>>>>,
 }
-impl fmt::Debug for Provider {
+#[allow(clippy::missing_fields_in_debug)]
+impl fmt::Debug for PhoneAuthModule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PhoneProvider")
             .field("active", &self.active.borrow().is_some())
             .finish()
     }
 }
-impl Provider {
+impl PhoneAuthModule {
     fn active(&self) -> Result<Rc<Active>, RuntimeFailure> {
         self.active
             .borrow()
@@ -151,13 +145,15 @@ impl Provider {
             .ok_or_else(|| failure("Phone Auth is not active"))
     }
 }
-impl PhoneProvider for Provider {
+#[provides(phone::Phone)]
+impl PhoneProvider for PhoneAuthModule {
     fn start_otp(
         &self,
         context: InvocationContext,
         r: StartOtpRequest,
     ) -> NativeRequestFuture<PhoneStartOtp> {
         let active = self.active();
+        let sms = self.sms.clone();
         Box::pin(async move {
             let a = active?;
             let Some(phone) = normalize_phone(&r.phone) else {
@@ -195,8 +191,7 @@ impl PhoneProvider for Provider {
                     i64::try_from(a.config.resend_cooldown_seconds).expect("validated"),
                 );
             sqlx::query("INSERT INTO phone_otp_challenges(challenge_id,phone,purpose,code_digest,client_ip,expires_at,resend_after)VALUES($1,$2,$3,$4,$5,$6,$7)").bind(&challenge_id).bind(&phone).bind(purpose).bind(digest).bind(&r.client_ip).bind(expires).bind(resend_after).execute(a.prepared.postgres.pool()).await.map_err(db)?;
-            let delivery = a
-                .sms
+            let delivery = sms
                 .send_with_context(
                     context,
                     SendRequest {
@@ -230,6 +225,8 @@ impl PhoneProvider for Provider {
         r: VerifyOtpRequest,
     ) -> NativeRequestFuture<PhoneVerifyOtp> {
         let active = self.active();
+        let directory = self.directory.clone();
+        let issuer = self.issuer.clone();
         Box::pin(async move {
             let a = active?;
             if !valid_name(&r.challenge_id)
@@ -273,8 +270,7 @@ impl PhoneProvider for Provider {
             sqlx::query("UPDATE phone_otp_challenges SET consumed_at=transaction_timestamp() WHERE challenge_id=$1").bind(&r.challenge_id).execute(&mut*tx).await.map_err(db)?;
             tx.commit().await.map_err(db)?;
             let phone: String = row.try_get("phone").map_err(db)?;
-            let identity = a
-                .directory
+            let identity = directory
                 .ensure_identity_with_context(
                     context.clone(),
                     EnsureIdentityRequest {
@@ -294,7 +290,15 @@ impl PhoneProvider for Provider {
                 Err(DirectoryEnsureIdentityInvocationError::Runtime(e)) => return Err(e),
             };
             sqlx::query("INSERT INTO phone_identities(phone,subject_id)VALUES($1,$2)ON CONFLICT(phone)DO UPDATE SET subject_id=EXCLUDED.subject_id").bind(&phone).bind(&identity.subject).execute(a.prepared.postgres.pool()).await.map_err(db)?;
-            let issued = match issue(&a, context, &identity.subject, "phone-otp", r.device_id).await
+            let credential = match issue(
+                &a,
+                &issuer,
+                context,
+                &identity.subject,
+                "phone-otp",
+                r.device_id,
+            )
+            .await
             {
                 Ok(value) => value,
                 Err(IssueCall::Disabled) => return Ok(Err(VerifyOtpError::Disabled)),
@@ -302,9 +306,9 @@ impl PhoneProvider for Provider {
             };
             Ok(Ok(VerifyOtpResponse {
                 subject: identity.subject,
-                session_id: issued.session_id,
-                credential: issued.credential,
-                expires_at: issued.expires_at,
+                session_id: credential.session_id,
+                credential: credential.credential,
+                expires_at: credential.expires_at,
                 masked_phone: mask_phone(&phone),
             }))
         })
@@ -315,6 +319,7 @@ impl PhoneProvider for Provider {
         r: SetPasswordRequest,
     ) -> NativeRequestFuture<PhoneSetPassword> {
         let active = self.active();
+        let directory = self.directory.clone();
         Box::pin(async move {
             let a = active?;
             if !context
@@ -329,8 +334,7 @@ impl PhoneProvider for Provider {
             if !valid_password(&r.password) {
                 return Ok(Err(SetPasswordError::WeakPassword));
             }
-            match a
-                .directory
+            match directory
                 .read_status_with_context(
                     context,
                     ReadStatusRequest {
@@ -369,6 +373,7 @@ impl PhoneProvider for Provider {
         r: PasswordLoginRequest,
     ) -> NativeRequestFuture<PhonePasswordLogin> {
         let active = self.active();
+        let issuer = self.issuer.clone();
         Box::pin(async move {
             let a = active?;
             let Some(phone) = normalize_phone(&r.phone) else {
@@ -416,16 +421,25 @@ impl PhoneProvider for Provider {
                 .expect("verified row")
                 .try_get("subject_id")
                 .map_err(db)?;
-            let issued = match issue(&a, context, &subject, "phone-password", r.device_id).await {
+            let credential = match issue(
+                &a,
+                &issuer,
+                context,
+                &subject,
+                "phone-password",
+                r.device_id,
+            )
+            .await
+            {
                 Ok(v) => v,
                 Err(IssueCall::Disabled) => return Ok(Err(PasswordLoginError::Disabled)),
                 Err(IssueCall::Runtime(e)) => return Err(e),
             };
             Ok(Ok(PasswordLoginResponse {
                 subject,
-                session_id: issued.session_id,
-                credential: issued.credential,
-                expires_at: issued.expires_at,
+                session_id: credential.session_id,
+                credential: credential.credential,
+                expires_at: credential.expires_at,
                 masked_phone: mask_phone(&phone),
             }))
         })
@@ -437,6 +451,7 @@ enum IssueCall {
 }
 async fn issue(
     a: &Active,
+    issuer: &CredentialIssuerClient,
     context: InvocationContext,
     subject: &str,
     assurance: &str,
@@ -448,7 +463,7 @@ async fn issue(
     if let Some(device) = device {
         claims.insert("device_id".to_owned(), serde_json::Value::String(device));
     }
-    a.issuer
+    issuer
         .issue_with_context(
             context,
             IssueRequest {
@@ -471,63 +486,43 @@ async fn issue(
             CredentialIssuerIssueInvocationError::Runtime(e) => IssueCall::Runtime(e),
         })
 }
-#[derive(Debug)]
-struct Lifecycle {
-    config: PhoneConfig,
-    prepared: Rc<RefCell<Option<Prepared>>>,
-    active: Rc<RefCell<Option<Rc<Active>>>>,
-}
-impl ModuleLifecycle for Lifecycle {
-    fn prepare(&self, context: PrepareContext) -> ModuleFuture {
+impl Lifecycle for PhoneAuthModule {
+    async fn activate(&self, context: ActivateContext) -> Result<(), RuntimeFailure> {
         let c = self.config.clone();
         let deps = context.dependencies().clone();
         let cancel = context.cancellation();
         let state = self.prepared.clone();
-        Box::pin(async move {
-            let secrets = SecretsClient::from_dependencies(&deps)?;
-            let dbs = resolve(&secrets, &deps, cancel.clone(), &c.database_url_secret).await?;
-            let otp = resolve(&secrets, &deps, cancel, &c.otp_secret_ref).await?;
-            if otp.len() < 32 {
-                return Err(failure("OTP secret must contain at least 32 bytes"));
-            }
-            let postgres = OwnedPostgres::prepare(
-                &dbs,
-                schema_plan(c.schema).map_err(|e| invalid(&e.to_string()))?,
-            )
-            .await
-            .map_err(|e| failure(&e.to_string()))?;
-            state.replace(Some(Prepared {
-                postgres,
-                otp_secret: Zeroizing::new(otp.as_bytes().to_vec()),
-            }));
-            Ok(())
-        })
-    }
-    fn activate(&self, context: ActivateContext) -> ModuleFuture {
-        let prepared = self.prepared.borrow().clone();
+        let dbs = resolve(&self.secrets, &deps, cancel.clone(), &c.database_url_secret).await?;
+        let otp = resolve(&self.secrets, &deps, cancel, &c.otp_secret_ref).await?;
+        if otp.len() < 32 {
+            return Err(failure("OTP secret must contain at least 32 bytes"));
+        }
+        let postgres = OwnedPostgres::prepare(
+            &dbs,
+            schema_plan(c.schema.clone()).map_err(|e| invalid(&e.to_string()))?,
+        )
+        .await
+        .map_err(|e| failure(&e.to_string()))?;
+        let prepared = Prepared {
+            postgres,
+            otp_secret: Zeroizing::new(otp.as_bytes().to_vec()),
+        };
+        state.replace(Some(prepared.clone()));
         let active = self.active.clone();
-        let config = self.config.clone();
-        let deps = context.dependencies().clone();
-        Box::pin(async move {
-            active.replace(Some(Rc::new(Active {
-                prepared: prepared.ok_or_else(|| failure("Phone Auth was not prepared"))?,
-                config,
-                directory: DirectoryClient::from_dependencies(&deps)?,
-                issuer: CredentialIssuerClient::from_dependencies(&deps)?,
-                sms: SmsClient::from_dependencies(&deps)?,
-            })));
-            Ok(())
-        })
+        active.replace(Some(Rc::new(Active {
+            prepared,
+            config: c,
+        })));
+        Ok(())
     }
-    fn deactivate(&self, _: DeactivateContext) -> ModuleFuture {
+
+    async fn deactivate(&self, _: DeactivateContext) -> Result<(), RuntimeFailure> {
         self.active.borrow_mut().take();
         let prepared = self.prepared.borrow_mut().take();
-        Box::pin(async move {
-            if let Some(p) = prepared {
-                p.postgres.pool().close().await;
-            }
-            Ok(())
-        })
+        if let Some(p) = prepared {
+            p.postgres.pool().close().await;
+        }
+        Ok(())
     }
 }
 async fn resolve(

@@ -3,7 +3,7 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
-use lenso_module_authoring::CapabilityClient;
+use lenso_module_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
 pub const CAPABILITY_ID: &str = "lenso.message.sms@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
@@ -18,6 +18,10 @@ macro_rules! __lenso_provided_sms { () => { "{\"capability_id\":\"lenso.message.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __lenso_required_sms_client { () => { "{\"capability_id\":\"lenso.message.sms@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_sms_client { () => { "{\"capability_id\":\"lenso.message.sms@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
 
 pub const SEND_OPERATION: &str = "send";
 
@@ -146,6 +150,9 @@ pub trait __LensoIntoSmsSendResult {
 }
 impl __LensoIntoSmsSendResult for Result<SendResponse, SendError> {
     fn __lenso_into_result(self) -> Result<Result<SendResponse, SendError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoSmsSendResult for Result<Result<SendResponse, SendError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<SendResponse, SendError>, RuntimeFailure> { self }
 }
 impl __LensoIntoSmsSendResult for Result<SendResponse, lenso_module_authoring::ModuleError<SendError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<SendResponse, SendError>, RuntimeFailure> {
@@ -300,6 +307,26 @@ impl CapabilityClient for SmsClient {
         RuntimeFailure::ModuleFailure {
             detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
         }
+    }
+}
+
+impl CapabilityClientMany for SmsClient {
+    fn many_from_dependencies(
+        dependencies: &ModuleDependencies,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        dependencies
+            .bindings()
+            .iter()
+            .filter(|binding| binding.capability_id() == CAPABILITY_ID)
+            .map(|binding| {
+                Ok(BoundCapabilityClient::new(
+                    binding.provider_instance(),
+                    Self {
+                    send: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<Sms>()?,
+                    },
+                ))
+            })
+            .collect()
     }
 }
 

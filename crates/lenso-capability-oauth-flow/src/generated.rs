@@ -3,7 +3,7 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
-use lenso_module_authoring::CapabilityClient;
+use lenso_module_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
 pub const CAPABILITY_ID: &str = "lenso.auth.oauth-flow@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
@@ -18,6 +18,10 @@ macro_rules! __lenso_provided_oauth_flow { () => { "{\"capability_id\":\"lenso.a
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __lenso_required_oauth_flow_client { () => { "{\"capability_id\":\"lenso.auth.oauth-flow@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_oauth_flow_client { () => { "{\"capability_id\":\"lenso.auth.oauth-flow@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
 
 pub const CONSUME_OPERATION: &str = "consume";
 pub const CREATE_OPERATION: &str = "create";
@@ -298,6 +302,9 @@ pub trait __LensoIntoOauthFlowConsumeResult {
 impl __LensoIntoOauthFlowConsumeResult for Result<ConsumeResponse, ConsumeError> {
     fn __lenso_into_result(self) -> Result<Result<ConsumeResponse, ConsumeError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoOauthFlowConsumeResult for Result<Result<ConsumeResponse, ConsumeError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<ConsumeResponse, ConsumeError>, RuntimeFailure> { self }
+}
 impl __LensoIntoOauthFlowConsumeResult for Result<ConsumeResponse, lenso_module_authoring::ModuleError<ConsumeError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<ConsumeResponse, ConsumeError>, RuntimeFailure> {
         match self {
@@ -323,6 +330,9 @@ pub trait __LensoIntoOauthFlowCreateResult {
 }
 impl __LensoIntoOauthFlowCreateResult for Result<CreateResponse, CreateError> {
     fn __lenso_into_result(self) -> Result<Result<CreateResponse, CreateError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoOauthFlowCreateResult for Result<Result<CreateResponse, CreateError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<CreateResponse, CreateError>, RuntimeFailure> { self }
 }
 impl __LensoIntoOauthFlowCreateResult for Result<CreateResponse, lenso_module_authoring::ModuleError<CreateError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<CreateResponse, CreateError>, RuntimeFailure> {
@@ -509,6 +519,27 @@ impl CapabilityClient for OauthFlowClient {
         RuntimeFailure::ModuleFailure {
             detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
         }
+    }
+}
+
+impl CapabilityClientMany for OauthFlowClient {
+    fn many_from_dependencies(
+        dependencies: &ModuleDependencies,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        dependencies
+            .bindings()
+            .iter()
+            .filter(|binding| binding.capability_id() == CAPABILITY_ID)
+            .map(|binding| {
+                Ok(BoundCapabilityClient::new(
+                    binding.provider_instance(),
+                    Self {
+                    consume: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<OauthFlowConsume>()?,
+                    create: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<OauthFlowCreate>()?,
+                    },
+                ))
+            })
+            .collect()
     }
 }
 

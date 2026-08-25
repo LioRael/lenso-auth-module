@@ -3,7 +3,7 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
-use lenso_module_authoring::CapabilityClient;
+use lenso_module_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
 pub const CAPABILITY_ID: &str = "lenso.auth.phone@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
@@ -18,6 +18,10 @@ macro_rules! __lenso_provided_phone { () => { "{\"capability_id\":\"lenso.auth.p
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __lenso_required_phone_client { () => { "{\"capability_id\":\"lenso.auth.phone@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_phone_client { () => { "{\"capability_id\":\"lenso.auth.phone@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
 
 pub const PASSWORD_LOGIN_OPERATION: &str = "password_login";
 pub const SET_PASSWORD_OPERATION: &str = "set_password";
@@ -610,6 +614,9 @@ pub trait __LensoIntoPhonePasswordLoginResult {
 impl __LensoIntoPhonePasswordLoginResult for Result<PasswordLoginResponse, PasswordLoginError> {
     fn __lenso_into_result(self) -> Result<Result<PasswordLoginResponse, PasswordLoginError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoPhonePasswordLoginResult for Result<Result<PasswordLoginResponse, PasswordLoginError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<PasswordLoginResponse, PasswordLoginError>, RuntimeFailure> { self }
+}
 impl __LensoIntoPhonePasswordLoginResult for Result<PasswordLoginResponse, lenso_module_authoring::ModuleError<PasswordLoginError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<PasswordLoginResponse, PasswordLoginError>, RuntimeFailure> {
         match self {
@@ -635,6 +642,9 @@ pub trait __LensoIntoPhoneSetPasswordResult {
 }
 impl __LensoIntoPhoneSetPasswordResult for Result<SetPasswordResponse, SetPasswordError> {
     fn __lenso_into_result(self) -> Result<Result<SetPasswordResponse, SetPasswordError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoPhoneSetPasswordResult for Result<Result<SetPasswordResponse, SetPasswordError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<SetPasswordResponse, SetPasswordError>, RuntimeFailure> { self }
 }
 impl __LensoIntoPhoneSetPasswordResult for Result<SetPasswordResponse, lenso_module_authoring::ModuleError<SetPasswordError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<SetPasswordResponse, SetPasswordError>, RuntimeFailure> {
@@ -662,6 +672,9 @@ pub trait __LensoIntoPhoneStartOtpResult {
 impl __LensoIntoPhoneStartOtpResult for Result<StartOtpResponse, StartOtpError> {
     fn __lenso_into_result(self) -> Result<Result<StartOtpResponse, StartOtpError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoPhoneStartOtpResult for Result<Result<StartOtpResponse, StartOtpError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<StartOtpResponse, StartOtpError>, RuntimeFailure> { self }
+}
 impl __LensoIntoPhoneStartOtpResult for Result<StartOtpResponse, lenso_module_authoring::ModuleError<StartOtpError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<StartOtpResponse, StartOtpError>, RuntimeFailure> {
         match self {
@@ -687,6 +700,9 @@ pub trait __LensoIntoPhoneVerifyOtpResult {
 }
 impl __LensoIntoPhoneVerifyOtpResult for Result<VerifyOtpResponse, VerifyOtpError> {
     fn __lenso_into_result(self) -> Result<Result<VerifyOtpResponse, VerifyOtpError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoPhoneVerifyOtpResult for Result<Result<VerifyOtpResponse, VerifyOtpError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<VerifyOtpResponse, VerifyOtpError>, RuntimeFailure> { self }
 }
 impl __LensoIntoPhoneVerifyOtpResult for Result<VerifyOtpResponse, lenso_module_authoring::ModuleError<VerifyOtpError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<VerifyOtpResponse, VerifyOtpError>, RuntimeFailure> {
@@ -945,6 +961,29 @@ impl CapabilityClient for PhoneClient {
         RuntimeFailure::ModuleFailure {
             detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
         }
+    }
+}
+
+impl CapabilityClientMany for PhoneClient {
+    fn many_from_dependencies(
+        dependencies: &ModuleDependencies,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        dependencies
+            .bindings()
+            .iter()
+            .filter(|binding| binding.capability_id() == CAPABILITY_ID)
+            .map(|binding| {
+                Ok(BoundCapabilityClient::new(
+                    binding.provider_instance(),
+                    Self {
+                    password_login: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<PhonePasswordLogin>()?,
+                    set_password: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<PhoneSetPassword>()?,
+                    start_otp: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<PhoneStartOtp>()?,
+                    verify_otp: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<PhoneVerifyOtp>()?,
+                    },
+                ))
+            })
+            .collect()
     }
 }
 

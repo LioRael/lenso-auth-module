@@ -3,7 +3,7 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
-use lenso_module_authoring::CapabilityClient;
+use lenso_module_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
 pub const CAPABILITY_ID: &str = "lenso.auth.device@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
@@ -18,6 +18,10 @@ macro_rules! __lenso_provided_device { () => { "{\"capability_id\":\"lenso.auth.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __lenso_required_device_client { () => { "{\"capability_id\":\"lenso.auth.device@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_device_client { () => { "{\"capability_id\":\"lenso.auth.device@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
 
 pub const LIST_OPERATION: &str = "list";
 pub const OBSERVE_OPERATION: &str = "observe";
@@ -379,6 +383,9 @@ pub trait __LensoIntoDeviceListResult {
 impl __LensoIntoDeviceListResult for Result<ListResponse, ListError> {
     fn __lenso_into_result(self) -> Result<Result<ListResponse, ListError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoDeviceListResult for Result<Result<ListResponse, ListError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<ListResponse, ListError>, RuntimeFailure> { self }
+}
 impl __LensoIntoDeviceListResult for Result<ListResponse, lenso_module_authoring::ModuleError<ListError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<ListResponse, ListError>, RuntimeFailure> {
         match self {
@@ -405,6 +412,9 @@ pub trait __LensoIntoDeviceObserveResult {
 impl __LensoIntoDeviceObserveResult for Result<ObserveResponse, ObserveError> {
     fn __lenso_into_result(self) -> Result<Result<ObserveResponse, ObserveError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoDeviceObserveResult for Result<Result<ObserveResponse, ObserveError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<ObserveResponse, ObserveError>, RuntimeFailure> { self }
+}
 impl __LensoIntoDeviceObserveResult for Result<ObserveResponse, lenso_module_authoring::ModuleError<ObserveError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<ObserveResponse, ObserveError>, RuntimeFailure> {
         match self {
@@ -430,6 +440,9 @@ pub trait __LensoIntoDeviceSetTrustResult {
 }
 impl __LensoIntoDeviceSetTrustResult for Result<SetTrustResponse, SetTrustError> {
     fn __lenso_into_result(self) -> Result<Result<SetTrustResponse, SetTrustError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoDeviceSetTrustResult for Result<Result<SetTrustResponse, SetTrustError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<SetTrustResponse, SetTrustError>, RuntimeFailure> { self }
 }
 impl __LensoIntoDeviceSetTrustResult for Result<SetTrustResponse, lenso_module_authoring::ModuleError<SetTrustError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<SetTrustResponse, SetTrustError>, RuntimeFailure> {
@@ -652,6 +665,28 @@ impl CapabilityClient for DeviceClient {
         RuntimeFailure::ModuleFailure {
             detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
         }
+    }
+}
+
+impl CapabilityClientMany for DeviceClient {
+    fn many_from_dependencies(
+        dependencies: &ModuleDependencies,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        dependencies
+            .bindings()
+            .iter()
+            .filter(|binding| binding.capability_id() == CAPABILITY_ID)
+            .map(|binding| {
+                Ok(BoundCapabilityClient::new(
+                    binding.provider_instance(),
+                    Self {
+                    list: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<DeviceList>()?,
+                    observe: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<DeviceObserve>()?,
+                    set_trust: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<DeviceSetTrust>()?,
+                    },
+                ))
+            })
+            .collect()
     }
 }
 

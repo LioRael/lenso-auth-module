@@ -3,7 +3,7 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
-use lenso_module_authoring::CapabilityClient;
+use lenso_module_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
 pub const CAPABILITY_ID: &str = "lenso.auth.oidc-provider@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
@@ -18,6 +18,10 @@ macro_rules! __lenso_provided_oidc_provider { () => { "{\"capability_id\":\"lens
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __lenso_required_oidc_provider_client { () => { "{\"capability_id\":\"lenso.auth.oidc-provider@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_oidc_provider_client { () => { "{\"capability_id\":\"lenso.auth.oidc-provider@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
 
 pub const AUTHORIZE_OPERATION: &str = "authorize";
 pub const EXCHANGE_OPERATION: &str = "exchange";
@@ -556,6 +560,9 @@ pub trait __LensoIntoOidcProviderAuthorizeResult {
 impl __LensoIntoOidcProviderAuthorizeResult for Result<AuthorizeResponse, AuthorizeError> {
     fn __lenso_into_result(self) -> Result<Result<AuthorizeResponse, AuthorizeError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoOidcProviderAuthorizeResult for Result<Result<AuthorizeResponse, AuthorizeError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<AuthorizeResponse, AuthorizeError>, RuntimeFailure> { self }
+}
 impl __LensoIntoOidcProviderAuthorizeResult for Result<AuthorizeResponse, lenso_module_authoring::ModuleError<AuthorizeError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<AuthorizeResponse, AuthorizeError>, RuntimeFailure> {
         match self {
@@ -581,6 +588,9 @@ pub trait __LensoIntoOidcProviderExchangeResult {
 }
 impl __LensoIntoOidcProviderExchangeResult for Result<ExchangeResponse, ExchangeError> {
     fn __lenso_into_result(self) -> Result<Result<ExchangeResponse, ExchangeError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoOidcProviderExchangeResult for Result<Result<ExchangeResponse, ExchangeError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<ExchangeResponse, ExchangeError>, RuntimeFailure> { self }
 }
 impl __LensoIntoOidcProviderExchangeResult for Result<ExchangeResponse, lenso_module_authoring::ModuleError<ExchangeError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<ExchangeResponse, ExchangeError>, RuntimeFailure> {
@@ -608,6 +618,9 @@ pub trait __LensoIntoOidcProviderJwksResult {
 impl __LensoIntoOidcProviderJwksResult for Result<JwksResponse, JwksError> {
     fn __lenso_into_result(self) -> Result<Result<JwksResponse, JwksError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoOidcProviderJwksResult for Result<Result<JwksResponse, JwksError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<JwksResponse, JwksError>, RuntimeFailure> { self }
+}
 impl __LensoIntoOidcProviderJwksResult for Result<JwksResponse, lenso_module_authoring::ModuleError<JwksError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<JwksResponse, JwksError>, RuntimeFailure> {
         match self {
@@ -633,6 +646,9 @@ pub trait __LensoIntoOidcProviderMetadataResult {
 }
 impl __LensoIntoOidcProviderMetadataResult for Result<MetadataResponse, MetadataError> {
     fn __lenso_into_result(self) -> Result<Result<MetadataResponse, MetadataError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoOidcProviderMetadataResult for Result<Result<MetadataResponse, MetadataError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<MetadataResponse, MetadataError>, RuntimeFailure> { self }
 }
 impl __LensoIntoOidcProviderMetadataResult for Result<MetadataResponse, lenso_module_authoring::ModuleError<MetadataError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<MetadataResponse, MetadataError>, RuntimeFailure> {
@@ -891,6 +907,29 @@ impl CapabilityClient for OidcProviderClient {
         RuntimeFailure::ModuleFailure {
             detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
         }
+    }
+}
+
+impl CapabilityClientMany for OidcProviderClient {
+    fn many_from_dependencies(
+        dependencies: &ModuleDependencies,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        dependencies
+            .bindings()
+            .iter()
+            .filter(|binding| binding.capability_id() == CAPABILITY_ID)
+            .map(|binding| {
+                Ok(BoundCapabilityClient::new(
+                    binding.provider_instance(),
+                    Self {
+                    authorize: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<OidcProviderAuthorize>()?,
+                    exchange: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<OidcProviderExchange>()?,
+                    jwks: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<OidcProviderJwks>()?,
+                    metadata: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<OidcProviderMetadata>()?,
+                    },
+                ))
+            })
+            .collect()
     }
 }
 

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "admin_callers": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "assertion_public_key": {
+      "type": "string"
+    },
+    "assertion_signing_key_secret": {
+      "type": "string"
+    },
+    "assertion_ttl_seconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "database_url_secret": {
+      "type": "string"
+    },
+    "issuer": {
+      "type": "string"
+    },
+    "schema": {
+      "type": "string"
+    },
+    "token_pepper_secret": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "issuer",
+    "assertion_public_key",
+    "database_url_secret",
+    "assertion_signing_key_secret",
+    "token_pepper_secret",
+    "assertion_ttl_seconds"
+  ],
+  "type": "object"
+}
