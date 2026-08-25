@@ -148,6 +148,17 @@ fn valid_name(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
 }
 
+fn valid_device(value: &str) -> bool {
+    valid_name(value)
+}
+fn random_external() -> Result<String, RuntimeFailure> {
+    let mut bytes = [0_u8; 24];
+    getrandom::fill(&mut bytes).map_err(|_| RuntimeFailure::ModuleFailure {
+        detail: "random source unavailable".to_owned(),
+    })?;
+    Ok(format!("ephemeral:{}", URL_SAFE_NO_PAD.encode(bytes)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,14 +175,4 @@ mod tests {
     fn device_name_does_not_inherit_audience_punctuation() {
         assert!(!valid_device("device@example"));
     }
-}
-fn valid_device(value: &str) -> bool {
-    valid_name(value)
-}
-fn random_external() -> Result<String, RuntimeFailure> {
-    let mut bytes = [0_u8; 24];
-    getrandom::fill(&mut bytes).map_err(|_| RuntimeFailure::ModuleFailure {
-        detail: "random source unavailable".to_owned(),
-    })?;
-    Ok(format!("ephemeral:{}", URL_SAFE_NO_PAD.encode(bytes)))
 }
