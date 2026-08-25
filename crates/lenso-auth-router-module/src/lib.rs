@@ -88,7 +88,7 @@ impl AuthProvider for AuthRouterModule {
     }
 }
 
-#[allow(clippy::unused_async_trait_impl)]
+#[allow(unknown_lints, clippy::unused_async_trait_impl)]
 impl Lifecycle for AuthRouterModule {
     async fn activate(&self, _context: ActivateContext) -> Result<(), RuntimeFailure> {
         let routes = self.routes.clone();

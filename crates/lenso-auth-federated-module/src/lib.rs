@@ -380,7 +380,7 @@ fn profile_subject(kind: &ProviderKind, value: &Value) -> Option<String> {
             .and_then(|_| value.get("sub")?.as_str().map(ToOwned::to_owned)),
     }
 }
-#[allow(clippy::unused_async_trait_impl)]
+#[allow(unknown_lints, clippy::unused_async_trait_impl)]
 impl Lifecycle for FederatedAuthModule {
     async fn activate(&self, context: ActivateContext) -> Result<(), RuntimeFailure> {
         let config = self.config.clone();
