@@ -25,7 +25,7 @@ use lenso_kernel::{
     ActivateContext, DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle,
     NativeRequestEndpoint, NativeRequestFuture, PrepareContext, RuntimeFailure,
 };
-use lenso_native_adapter::{NativeModuleFactory, NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
 use lenso_postgres_kit::OwnedPostgres;
 pub use operator::{PhoneOperator, PhoneOperatorError};
 use schema::schema_plan;
@@ -35,8 +35,6 @@ use sqlx::Row;
 use std::{cell::RefCell, collections::BTreeMap, fmt, rc::Rc, time::Duration as StdDuration};
 use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
 use zeroize::Zeroizing;
-pub const PACKAGE_ID: &str = "lenso.auth.phone";
-pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const TIMEOUT: StdDuration = StdDuration::from_secs(10);
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -89,36 +87,26 @@ impl PhoneConfig {
         Ok(())
     }
 }
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PhoneFactory;
-impl NativeModuleFactory for PhoneFactory {
-    fn package_id(&self) -> &'static str {
-        PACKAGE_ID
-    }
-    fn package_version(&self) -> &'static str {
-        PACKAGE_VERSION
-    }
-    fn instantiate(
-        &self,
-        context: NativeModuleFactoryContext<'_>,
-    ) -> Result<NativeModuleInstance, RuntimeFailure> {
-        let config: PhoneConfig =
-            serde_json::from_str(context.configuration()).map_err(|e| invalid(&e.to_string()))?;
-        config.validate()?;
-        let prepared = Rc::new(RefCell::new(None));
-        let active = Rc::new(RefCell::new(None));
-        let endpoint = Rc::new(PhoneEndpoint::new(Provider {
-            active: active.clone(),
-        })) as Rc<dyn NativeRequestEndpoint>;
-        Ok(NativeModuleInstance::with_lifecycle(
-            vec![endpoint],
-            Lifecycle {
-                config,
-                prepared,
-                active,
-            },
-        ))
-    }
+#[lenso::module]
+fn instantiate_auth_module(
+    context: NativeModuleFactoryContext<'_>,
+) -> Result<NativeModuleInstance, RuntimeFailure> {
+    let config: PhoneConfig =
+        serde_json::from_str(context.configuration()).map_err(|e| invalid(&e.to_string()))?;
+    config.validate()?;
+    let prepared = Rc::new(RefCell::new(None));
+    let active = Rc::new(RefCell::new(None));
+    let endpoint = Rc::new(PhoneEndpoint::new(Provider {
+        active: active.clone(),
+    })) as Rc<dyn NativeRequestEndpoint>;
+    Ok(NativeModuleInstance::with_lifecycle(
+        vec![endpoint],
+        Lifecycle {
+            config,
+            prepared,
+            active,
+        },
+    ))
 }
 #[derive(Clone)]
 struct Prepared {

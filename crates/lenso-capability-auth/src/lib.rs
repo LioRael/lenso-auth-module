@@ -1,5 +1,8 @@
 //! Generated portable contract for the Auth Capability.
 
+#[allow(dead_code)]
+mod contract;
+
 mod generated {
     include!("generated.rs");
 }

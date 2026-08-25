@@ -1,1 +1,15 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"provider":{"type":"string"},"state":{"type":"string","x-lenso-sensitive":true}},"required":["provider","state"],"additionalProperties":false}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["provider", "state"],
+  "properties": {
+    "provider": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string",
+      "x-lenso-sensitive": true
+    }
+  },
+  "additionalProperties": false
+}

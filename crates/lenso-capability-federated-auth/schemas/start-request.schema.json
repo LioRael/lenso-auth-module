@@ -1,1 +1,11 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"return_to":{"type":"string"}},"required":["return_to"],"additionalProperties":false}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["return_to"],
+  "properties": {
+    "return_to": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

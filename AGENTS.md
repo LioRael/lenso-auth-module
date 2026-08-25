@@ -17,9 +17,12 @@ extraction; Auth owns authentication and assertion issuance; target Modules own
 authorization. Do not add HTTP, database, Redis, Console, v0.3 platform, or
 product release concerns to the portable Auth crates.
 
-The Capability descriptor is authoritative. Native Capability crates own only
-their Rust projection; the supported Bun SDK owns the TypeScript projection.
-Regenerate both through `lenso-contract-codegen`; never hand-edit them.
+The annotated Rust contract in each native Capability crate is the authoring
+source. Its Descriptor, Schemas, and Rust projection are committed locked
+artifacts and must never be hand-edited. Set
+`LENSO_UPDATE_CONTRACT_SNAPSHOT=1` only for an intentional contract change,
+then regenerate the Rust projection through `lenso-contract-codegen`. The
+supported Bun SDK owns and locks its independent TypeScript projection.
 
 Use a concise imperative Conventional Commit subject under 72 characters.
 Validate with the repository boundary check, locked format/check/test gates,

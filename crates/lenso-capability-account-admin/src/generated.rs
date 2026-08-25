@@ -3,12 +3,21 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
+use lenso_module_authoring::CapabilityClient;
 pub const CAPABILITY_ID: &str = "lenso.auth.account-admin@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const ACCOUNT_ADMIN_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const ACCOUNT_ADMIN_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_provided_account_admin { () => { "{\"capability_id\":\"lenso.auth.account-admin@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"list_sessions\",\"list_subjects\",\"set_subject_status\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_account_admin_client { () => { "{\"capability_id\":\"lenso.auth.account-admin@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
 
 pub const LIST_SESSIONS_OPERATION: &str = "list_sessions";
 pub const LIST_SUBJECTS_OPERATION: &str = "list_subjects";
@@ -410,10 +419,119 @@ pub fn decode_set_subject_status_response(wire: &str) -> Result<SetSubjectStatus
 pub fn encode_set_subject_status_error(value: &SetSubjectStatusError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_set_subject_status_error(wire: &str) -> Result<SetSubjectStatusError, serde_json::Error> { decode_portable_json(wire) }
 
+#[doc(hidden)]
+pub trait __LensoIntoAccountAdminListSessionsResult {
+    fn __lenso_into_result(self) -> Result<Result<ListSessionsResponse, ListSessionsError>, RuntimeFailure>;
+}
+impl __LensoIntoAccountAdminListSessionsResult for Result<ListSessionsResponse, ListSessionsError> {
+    fn __lenso_into_result(self) -> Result<Result<ListSessionsResponse, ListSessionsError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoAccountAdminListSessionsResult for Result<ListSessionsResponse, lenso_module_authoring::ModuleError<ListSessionsError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<ListSessionsResponse, ListSessionsError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoAccountAdminListSessionsResult for Result<ListSessionsResponse, AccountAdminListSessionsInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<ListSessionsResponse, ListSessionsError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(AccountAdminListSessionsInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(AccountAdminListSessionsInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoAccountAdminListSubjectsResult {
+    fn __lenso_into_result(self) -> Result<Result<ListSubjectsResponse, ListSubjectsError>, RuntimeFailure>;
+}
+impl __LensoIntoAccountAdminListSubjectsResult for Result<ListSubjectsResponse, ListSubjectsError> {
+    fn __lenso_into_result(self) -> Result<Result<ListSubjectsResponse, ListSubjectsError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoAccountAdminListSubjectsResult for Result<ListSubjectsResponse, lenso_module_authoring::ModuleError<ListSubjectsError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<ListSubjectsResponse, ListSubjectsError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoAccountAdminListSubjectsResult for Result<ListSubjectsResponse, AccountAdminListSubjectsInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<ListSubjectsResponse, ListSubjectsError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(AccountAdminListSubjectsInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(AccountAdminListSubjectsInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoAccountAdminSetSubjectStatusResult {
+    fn __lenso_into_result(self) -> Result<Result<SetSubjectStatusResponse, SetSubjectStatusError>, RuntimeFailure>;
+}
+impl __LensoIntoAccountAdminSetSubjectStatusResult for Result<SetSubjectStatusResponse, SetSubjectStatusError> {
+    fn __lenso_into_result(self) -> Result<Result<SetSubjectStatusResponse, SetSubjectStatusError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoAccountAdminSetSubjectStatusResult for Result<SetSubjectStatusResponse, lenso_module_authoring::ModuleError<SetSubjectStatusError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<SetSubjectStatusResponse, SetSubjectStatusError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoAccountAdminSetSubjectStatusResult for Result<SetSubjectStatusResponse, AccountAdminSetSubjectStatusInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<SetSubjectStatusResponse, SetSubjectStatusError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(AccountAdminSetSubjectStatusInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(AccountAdminSetSubjectStatusInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait AccountAdminProvider: fmt::Debug + 'static {
     fn list_sessions(&self, context: InvocationContext, request: ListSessionsRequest) -> NativeRequestFuture<AccountAdminListSessions>;
     fn list_subjects(&self, context: InvocationContext, request: ListSubjectsRequest) -> NativeRequestFuture<AccountAdminListSubjects>;
     fn set_subject_status(&self, context: InvocationContext, request: SetSubjectStatusRequest) -> NativeRequestFuture<AccountAdminSetSubjectStatus>;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_account_admin {
+    ($module:ty, $support:path) => {
+        use $support as __LensoNativeSupportAccountAdmin;
+        impl $crate::AccountAdminProvider for $module {
+        fn list_sessions(&self, context: __LensoNativeSupportAccountAdmin::InvocationContext, request: $crate::ListSessionsRequest) -> __LensoNativeSupportAccountAdmin::NativeRequestFuture<$crate::AccountAdminListSessions> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::list_sessions(&module, context, request).await;
+                $crate::__LensoIntoAccountAdminListSessionsResult::__lenso_into_result(result)
+            })
+        }
+        fn list_subjects(&self, context: __LensoNativeSupportAccountAdmin::InvocationContext, request: $crate::ListSubjectsRequest) -> __LensoNativeSupportAccountAdmin::NativeRequestFuture<$crate::AccountAdminListSubjects> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::list_subjects(&module, context, request).await;
+                $crate::__LensoIntoAccountAdminListSubjectsResult::__lenso_into_result(result)
+            })
+        }
+        fn set_subject_status(&self, context: __LensoNativeSupportAccountAdmin::InvocationContext, request: $crate::SetSubjectStatusRequest) -> __LensoNativeSupportAccountAdmin::NativeRequestFuture<$crate::AccountAdminSetSubjectStatus> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::set_subject_status(&module, context, request).await;
+                $crate::__LensoIntoAccountAdminSetSubjectStatusResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -484,6 +602,36 @@ impl<P: AccountAdminProvider> NativeRequestEndpoint for AccountAdminEndpoint<P> 
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_endpoints_account_admin {
+    ($provider:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let endpoint = ::std::rc::Rc::new($crate::AccountAdminEndpoint::new($provider));
+        (
+            vec![endpoint.clone() as ::std::rc::Rc<dyn __LensoNativeSupport::NativeRequestEndpoint>],
+            vec![],
+            vec![],
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_account_admin {
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let (request_endpoints, stream_endpoints, event_endpoints) =
+            $crate::__lenso_native_endpoints_account_admin!($provider, $support);
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+            request_endpoints,
+            stream_endpoints,
+            event_endpoints,
+            $lifecycle,
+        )
+    }};
+}
+
 #[derive(Debug)]
 pub struct AccountAdminClient {
     list_sessions: NativeRequestHandle<AccountAdminListSessions>,
@@ -492,11 +640,7 @@ pub struct AccountAdminClient {
 }
 impl AccountAdminClient {
     pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
-        Ok(Self {
-            list_sessions: dependencies.one::<AccountAdminListSessions>()?,
-            list_subjects: dependencies.one::<AccountAdminListSubjects>()?,
-            set_subject_status: dependencies.one::<AccountAdminSetSubjectStatus>()?,
-        })
+        <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
     pub async fn list_sessions(&self, request: ListSessionsRequest) -> Result<ListSessionsResponse, AccountAdminListSessionsInvocationError> {
@@ -533,6 +677,28 @@ impl AccountAdminClient {
         self.set_subject_status.invoke_with_context(SET_SUBJECT_STATUS_OPERATION, context, request).await
             .map_err(AccountAdminSetSubjectStatusInvocationError::Runtime)?
             .map_err(AccountAdminSetSubjectStatusInvocationError::Domain)
+    }
+}
+
+impl CapabilityClient for AccountAdminClient {
+    type Dependencies = ModuleDependencies;
+    type Error = RuntimeFailure;
+
+    const CAPABILITY_ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
+        Ok(Self {
+            list_sessions: dependencies.one::<AccountAdminListSessions>()?,
+            list_subjects: dependencies.one::<AccountAdminListSubjects>()?,
+            set_subject_status: dependencies.one::<AccountAdminSetSubjectStatus>()?,
+        })
+    }
+
+    fn already_connected() -> RuntimeFailure {
+        RuntimeFailure::ModuleFailure {
+            detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
+        }
     }
 }
 

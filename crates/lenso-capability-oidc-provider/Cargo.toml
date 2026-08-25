@@ -6,12 +6,20 @@ license.workspace = true
 publish = false
 repository.workspace = true
 [dependencies]
+schemars = "1.2"
+lenso-module-authoring = { version = "0.1.0", git = "https://github.com/LioRael/lenso-protocols", rev = "16c4aff52c539e16f3024f6414de56e6c181b030" }
+lenso-contract-authoring = "0.1.0"
 futures.workspace = true
 lenso-contract-runtime = "0.1.0"
-lenso-kernel = "0.1.4"
+lenso-kernel = "0.1.9"
 serde.workspace = true
 serde_json.workspace = true
 [build-dependencies]
-lenso-contract-codegen = "0.5.2"
+lenso-contract-authoring = "0.1.0"
+lenso-contract-codegen = "0.6.1"
+schemars = "1.2"
+serde.workspace = true
+serde_json.workspace = true
+
 [lints]
 workspace = true

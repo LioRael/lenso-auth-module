@@ -4,7 +4,7 @@ use lenso_app_plan::{
     AppComposition, CapabilityBinding, CapabilityEndpointPlan, CapabilityRequirementPlan,
     ModuleInstancePlan, ResolvedAppPlan,
 };
-use lenso_auth_router_module::{AuthRouterConfig, AuthRouterFactory, PACKAGE_ID};
+use lenso_auth_router_module::{AuthRouterConfig, PACKAGE_ID};
 use lenso_capability_auth::{
     AUTHENTICATE_OPERATION, Auth, AuthEndpoint, AuthProvider, AuthRequest, AuthResponse,
     AuthResponseKind, AuthenticateError, AuthenticateRequestCredential, CAPABILITY_ID,
@@ -221,8 +221,8 @@ fn direct_plan() -> ResolvedAppPlan {
 
 fn full_registry() -> NativeModuleRegistry {
     NativeModuleRegistry::new()
+        .with_linked_factories()
         .with_factory(EmptyFactory(CALLER))
-        .with_factory(AuthRouterFactory)
         .with_factory(RejectingFactory {
             package_id: SESSION,
             error: AuthenticateError::Invalid,

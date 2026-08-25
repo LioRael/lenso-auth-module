@@ -16,7 +16,7 @@ use lenso_kernel::{
     DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle, NativeRequestEndpoint,
     NativeRequestFuture, PrepareContext, RuntimeFailure,
 };
-use lenso_native_adapter::{NativeModuleFactory, NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
 use lenso_postgres_kit::OwnedPostgres;
 pub use operator::{OAuthFlowOperator, OAuthFlowOperatorError};
 use schema::schema_plan;
@@ -26,8 +26,6 @@ use sqlx::Row;
 use std::{cell::RefCell, fmt, rc::Rc, time::Duration as StdDuration};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use zeroize::Zeroizing;
-pub const PACKAGE_ID: &str = "lenso.auth.oauth-flow";
-pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const TIMEOUT: StdDuration = StdDuration::from_secs(10);
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -36,47 +34,35 @@ pub struct OAuthFlowConfig {
     database_url_secret: String,
     encryption_key_secret: String,
 }
-#[derive(Clone, Copy, Debug, Default)]
-pub struct OAuthFlowFactory;
-impl NativeModuleFactory for OAuthFlowFactory {
-    fn package_id(&self) -> &'static str {
-        PACKAGE_ID
-    }
-    fn package_version(&self) -> &'static str {
-        PACKAGE_VERSION
-    }
-    fn instantiate(
-        &self,
-        context: NativeModuleFactoryContext<'_>,
-    ) -> Result<NativeModuleInstance, RuntimeFailure> {
-        let config: OAuthFlowConfig =
-            serde_json::from_str(context.configuration()).map_err(|error| {
-                RuntimeFailure::InvalidResolvedPlan {
-                    detail: error.to_string(),
-                }
-            })?;
-        schema_plan(config.schema.clone()).map_err(|error| {
+#[lenso::module]
+fn instantiate_auth_module(
+    context: NativeModuleFactoryContext<'_>,
+) -> Result<NativeModuleInstance, RuntimeFailure> {
+    let config: OAuthFlowConfig =
+        serde_json::from_str(context.configuration()).map_err(|error| {
             RuntimeFailure::InvalidResolvedPlan {
                 detail: error.to_string(),
             }
         })?;
-        if config.database_url_secret == config.encryption_key_secret
-            || config.database_url_secret.is_empty()
-            || config.encryption_key_secret.is_empty()
-        {
-            return Err(RuntimeFailure::InvalidResolvedPlan {
-                detail: "invalid OAuth Flow secret references".to_owned(),
-            });
-        }
-        let state = Rc::new(RefCell::new(None));
-        let endpoint = Rc::new(OauthFlowEndpoint::new(Provider {
-            state: state.clone(),
-        })) as Rc<dyn NativeRequestEndpoint>;
-        Ok(NativeModuleInstance::with_lifecycle(
-            vec![endpoint],
-            Lifecycle { config, state },
-        ))
+    schema_plan(config.schema.clone()).map_err(|error| RuntimeFailure::InvalidResolvedPlan {
+        detail: error.to_string(),
+    })?;
+    if config.database_url_secret == config.encryption_key_secret
+        || config.database_url_secret.is_empty()
+        || config.encryption_key_secret.is_empty()
+    {
+        return Err(RuntimeFailure::InvalidResolvedPlan {
+            detail: "invalid OAuth Flow secret references".to_owned(),
+        });
     }
+    let state = Rc::new(RefCell::new(None));
+    let endpoint = Rc::new(OauthFlowEndpoint::new(Provider {
+        state: state.clone(),
+    })) as Rc<dyn NativeRequestEndpoint>;
+    Ok(NativeModuleInstance::with_lifecycle(
+        vec![endpoint],
+        Lifecycle { config, state },
+    ))
 }
 #[derive(Clone)]
 struct Prepared {

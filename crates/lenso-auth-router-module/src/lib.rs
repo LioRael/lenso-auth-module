@@ -7,7 +7,7 @@ use lenso_kernel::{
     ActivateContext, DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle,
     NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RuntimeFailure,
 };
-use lenso_native_adapter::{NativeModuleFactory, NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
@@ -15,8 +15,6 @@ use std::{
     fmt,
     rc::Rc,
 };
-pub const PACKAGE_ID: &str = "lenso.auth.router";
-pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 type RouteMap = Rc<BTreeMap<String, NativeRequestHandle<Auth>>>;
 type RouteState = Rc<RefCell<Option<RouteMap>>>;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -40,35 +38,25 @@ impl AuthRouterConfig {
         Ok(Self { routes })
     }
 }
-#[derive(Clone, Copy, Debug, Default)]
-pub struct AuthRouterFactory;
-impl NativeModuleFactory for AuthRouterFactory {
-    fn package_id(&self) -> &'static str {
-        PACKAGE_ID
-    }
-    fn package_version(&self) -> &'static str {
-        PACKAGE_VERSION
-    }
-    fn instantiate(
-        &self,
-        context: NativeModuleFactoryContext<'_>,
-    ) -> Result<NativeModuleInstance, RuntimeFailure> {
-        let config: AuthRouterConfig =
-            serde_json::from_str(context.configuration()).map_err(|error| {
-                RuntimeFailure::InvalidResolvedPlan {
-                    detail: error.to_string(),
-                }
-            })?;
-        AuthRouterConfig::new(config.routes.clone())?;
-        let routes = Rc::new(RefCell::new(None));
-        let endpoint = Rc::new(AuthEndpoint::new(Router {
-            routes: routes.clone(),
-        })) as Rc<dyn NativeRequestEndpoint>;
-        Ok(NativeModuleInstance::with_lifecycle(
-            vec![endpoint],
-            Lifecycle { config, routes },
-        ))
-    }
+#[lenso::module]
+fn instantiate_auth_module(
+    context: NativeModuleFactoryContext<'_>,
+) -> Result<NativeModuleInstance, RuntimeFailure> {
+    let config: AuthRouterConfig =
+        serde_json::from_str(context.configuration()).map_err(|error| {
+            RuntimeFailure::InvalidResolvedPlan {
+                detail: error.to_string(),
+            }
+        })?;
+    AuthRouterConfig::new(config.routes.clone())?;
+    let routes = Rc::new(RefCell::new(None));
+    let endpoint = Rc::new(AuthEndpoint::new(Router {
+        routes: routes.clone(),
+    })) as Rc<dyn NativeRequestEndpoint>;
+    Ok(NativeModuleInstance::with_lifecycle(
+        vec![endpoint],
+        Lifecycle { config, routes },
+    ))
 }
 #[derive(Clone)]
 struct Router {

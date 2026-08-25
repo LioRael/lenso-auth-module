@@ -16,7 +16,7 @@ use lenso_kernel::{
     DeactivateContext, InvocationContext, ModuleFuture, ModuleLifecycle, NativeRequestEndpoint,
     NativeRequestFuture, PrepareContext, RuntimeFailure,
 };
-use lenso_native_adapter::{NativeModuleFactory, NativeModuleFactoryContext, NativeModuleInstance};
+use lenso_native_adapter::{NativeModuleFactoryContext, NativeModuleInstance};
 use lenso_postgres_kit::OwnedPostgres;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -28,9 +28,7 @@ pub use operator::{ApiTokenAuthOperator, AuthOperatorError, IssueApiToken, Issue
 use crate::{schema::schema_plan, storage::load_credential};
 
 /// Package identity for the linked Rust API Token Auth Module.
-pub const PACKAGE_ID: &str = "lenso.auth.api-token";
 /// Exact Cargo package version linked into the Host.
-pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const MAX_REFERENCE_LENGTH: usize = 256;
 const MAX_ASSERTION_TTL_SECONDS: u64 = 3_600;
 const PREPARE_DEPENDENCY_TIMEOUT: StdDuration = StdDuration::from_secs(10);
@@ -157,42 +155,30 @@ pub fn assertion_public_key(signing_secret: impl AsRef<[u8]>) -> String {
 }
 
 /// Factory for one PostgreSQL-backed API Token Auth Module Instance.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ApiTokenAuthFactory;
-
-impl NativeModuleFactory for ApiTokenAuthFactory {
-    fn package_id(&self) -> &'static str {
-        PACKAGE_ID
-    }
-
-    fn package_version(&self) -> &'static str {
-        PACKAGE_VERSION
-    }
-
-    fn instantiate(
-        &self,
-        context: NativeModuleFactoryContext<'_>,
-    ) -> Result<NativeModuleInstance, RuntimeFailure> {
-        let config = serde_json::from_str::<ApiTokenAuthConfig>(context.configuration()).map_err(
-            |error| RuntimeFailure::InvalidResolvedPlan {
+#[lenso::module]
+fn instantiate_auth_module(
+    context: NativeModuleFactoryContext<'_>,
+) -> Result<NativeModuleInstance, RuntimeFailure> {
+    let config =
+        serde_json::from_str::<ApiTokenAuthConfig>(context.configuration()).map_err(|error| {
+            RuntimeFailure::InvalidResolvedPlan {
                 detail: format!("API Token Auth configuration is invalid: {error}"),
-            },
-        )?;
-        config
-            .validate()
-            .map_err(|error| RuntimeFailure::InvalidResolvedPlan {
-                detail: format!("API Token Auth configuration is invalid: {error}"),
-            })?;
-        let state = Rc::new(RefCell::new(None));
-        let provider = ApiTokenAuthProvider {
-            state: state.clone(),
-        };
-        let endpoint = Rc::new(AuthEndpoint::new(provider)) as Rc<dyn NativeRequestEndpoint>;
-        Ok(NativeModuleInstance::with_lifecycle(
-            vec![endpoint],
-            ApiTokenAuthLifecycle { config, state },
-        ))
-    }
+            }
+        })?;
+    config
+        .validate()
+        .map_err(|error| RuntimeFailure::InvalidResolvedPlan {
+            detail: format!("API Token Auth configuration is invalid: {error}"),
+        })?;
+    let state = Rc::new(RefCell::new(None));
+    let provider = ApiTokenAuthProvider {
+        state: state.clone(),
+    };
+    let endpoint = Rc::new(AuthEndpoint::new(provider)) as Rc<dyn NativeRequestEndpoint>;
+    Ok(NativeModuleInstance::with_lifecycle(
+        vec![endpoint],
+        ApiTokenAuthLifecycle { config, state },
+    ))
 }
 
 #[derive(Clone)]

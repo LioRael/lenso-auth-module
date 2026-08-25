@@ -3,12 +3,21 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
+use lenso_module_authoring::CapabilityClient;
 pub const CAPABILITY_ID: &str = "lenso.auth@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = false;
 pub const AUTH_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const AUTH_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_provided_auth { () => { "{\"capability_id\":\"lenso.auth@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"authenticate\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":false}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_auth_client { () => { "{\"capability_id\":\"lenso.auth@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
 
 pub const AUTHENTICATE_OPERATION: &str = "authenticate";
 
@@ -204,8 +213,51 @@ pub fn decode_authenticate_response(wire: &str) -> Result<AuthenticateResponse, 
 pub fn encode_authenticate_error(value: &AuthenticateError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_authenticate_error(wire: &str) -> Result<AuthenticateError, serde_json::Error> { decode_portable_json(wire) }
 
+#[doc(hidden)]
+pub trait __LensoIntoAuthAuthenticateResult {
+    fn __lenso_into_result(self) -> Result<Result<AuthenticateResponse, AuthenticateError>, RuntimeFailure>;
+}
+impl __LensoIntoAuthAuthenticateResult for Result<AuthenticateResponse, AuthenticateError> {
+    fn __lenso_into_result(self) -> Result<Result<AuthenticateResponse, AuthenticateError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoAuthAuthenticateResult for Result<AuthenticateResponse, lenso_module_authoring::ModuleError<AuthenticateError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<AuthenticateResponse, AuthenticateError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoAuthAuthenticateResult for Result<AuthenticateResponse, AuthInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<AuthenticateResponse, AuthenticateError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(AuthInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(AuthInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait AuthProvider: fmt::Debug + 'static {
     fn authenticate(&self, context: InvocationContext, request: AuthenticateRequest) -> NativeRequestFuture<Auth>;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_auth {
+    ($module:ty, $support:path) => {
+        use $support as __LensoNativeSupportAuth;
+        impl $crate::AuthProvider for $module {
+        fn authenticate(&self, context: __LensoNativeSupportAuth::InvocationContext, request: $crate::AuthenticateRequest) -> __LensoNativeSupportAuth::NativeRequestFuture<$crate::Auth> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::authenticate(&module, context, request).await;
+                $crate::__LensoIntoAuthAuthenticateResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -248,6 +300,36 @@ impl<P: AuthProvider> NativeRequestEndpoint for AuthEndpoint<P> {
     }
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_endpoints_auth {
+    ($provider:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let endpoint = ::std::rc::Rc::new($crate::AuthEndpoint::new($provider));
+        (
+            vec![endpoint.clone() as ::std::rc::Rc<dyn __LensoNativeSupport::NativeRequestEndpoint>],
+            vec![],
+            vec![],
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_auth {
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let (request_endpoints, stream_endpoints, event_endpoints) =
+            $crate::__lenso_native_endpoints_auth!($provider, $support);
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+            request_endpoints,
+            stream_endpoints,
+            event_endpoints,
+            $lifecycle,
+        )
+    }};
+}
+
 #[derive(Debug)]
 pub struct AuthClient {
     authenticate: NativeRequestHandle<Auth>,
@@ -258,9 +340,7 @@ impl AuthClient {
     }
 
     pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
-        Ok(Self {
-            authenticate: dependencies.one::<Auth>()?,
-        })
+        <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
     pub async fn authenticate(&self, request: AuthenticateRequest) -> Result<AuthenticateResponse, AuthInvocationError> {
@@ -273,6 +353,26 @@ impl AuthClient {
         self.authenticate.invoke_with_context(AUTHENTICATE_OPERATION, context, request).await
             .map_err(AuthInvocationError::Runtime)?
             .map_err(AuthInvocationError::Domain)
+    }
+}
+
+impl CapabilityClient for AuthClient {
+    type Dependencies = ModuleDependencies;
+    type Error = RuntimeFailure;
+
+    const CAPABILITY_ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
+        Ok(Self {
+            authenticate: dependencies.one::<Auth>()?,
+        })
+    }
+
+    fn already_connected() -> RuntimeFailure {
+        RuntimeFailure::ModuleFailure {
+            detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
+        }
     }
 }
 
