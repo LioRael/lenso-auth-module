@@ -9,11 +9,11 @@ repository.workspace = true
 package-id = "lenso.auth.device"
 
 [dependencies]
-lenso = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "89199fe33280ecdd6cf44b61fd5f15bc9563d32f" }
+lenso = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "48cf37b6475a0dbbe4ad8492888ed7c6c17abae4" }
 lenso-capability-device-auth = { path = "../lenso-capability-device-auth" }
-lenso-capability-secrets = { git = "https://github.com/LioRael/lenso-secrets-module", rev = "54688f57616b18db2e474172b737f4ebdb47944c" }
+lenso-capability-secrets = { git = "https://github.com/LioRael/lenso-secrets-module", rev = "e195e01108b0b8483aee3904d8a9adec792aa859" }
 lenso-kernel = "0.1.9"
-lenso-native-adapter = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "89199fe33280ecdd6cf44b61fd5f15bc9563d32f" }
+lenso-native-adapter = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "48cf37b6475a0dbbe4ad8492888ed7c6c17abae4" }
 lenso-postgres-kit = { git = "https://github.com/LioRael/lenso-postgres-kit", rev = "525c1012c789e6f54c3c2fdaf8507a626c93e65f" }
 serde.workspace = true
 serde_json.workspace = true
