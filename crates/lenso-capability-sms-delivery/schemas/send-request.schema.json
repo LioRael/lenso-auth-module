@@ -12,5 +12,6 @@
       "x-lenso-sensitive": true
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "title": "SendRequest"
 }

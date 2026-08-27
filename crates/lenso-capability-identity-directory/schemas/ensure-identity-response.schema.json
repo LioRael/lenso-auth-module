@@ -10,5 +10,6 @@
       "type": "boolean"
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "title": "EnsureIdentityResponse"
 }

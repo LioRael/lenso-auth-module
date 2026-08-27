@@ -4,10 +4,16 @@
   "required": ["kind", "assertion"],
   "properties": {
     "kind": {
-      "enum": ["absent", "authenticated"]
+      "$ref": "#/$defs/AuthenticateResponseKind"
     },
     "assertion": {
-      "type": ["object", "null"],
+      "$ref": "#/$defs/Nullable_AuthenticateResponseAssertion"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "AuthenticateResponseAssertion": {
+      "type": "object",
       "required": [
         "issuer",
         "subject",
@@ -58,7 +64,20 @@
         }
       },
       "additionalProperties": false
+    },
+    "AuthenticateResponseKind": {
+      "enum": ["absent", "authenticated"]
+    },
+    "Nullable_AuthenticateResponseAssertion": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AuthenticateResponseAssertion"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
-  "additionalProperties": false
+  "title": "AuthenticateResponse"
 }

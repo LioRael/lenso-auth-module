@@ -1,4 +1,4 @@
-# Lenso Auth Module
+# Lenso Auth Plugin
 
 Portable Auth Capability contracts and assertion semantics for Lenso vNext.
 The default `main` branch is vNext-only. The final mixed v0.3 workspace is
@@ -6,7 +6,7 @@ retained on the `v0.3` branch and by its existing package tags and releases.
 
 ## Workspace
 
-- `crates/lenso-auth-api-token-module` is the first concrete Provider. It owns
+- `crates/lenso-auth-api-token-plugin` is the first concrete Provider. It owns
   opaque API-token sessions, token/session revocation, assertion issuance, and
   a private PostgreSQL schema behind `lenso.auth@1`.
 - `crates/lenso-capability-auth` owns the generated `lenso.auth@1` Capability
@@ -17,31 +17,31 @@ retained on the `v0.3` branch and by its existing package tags and releases.
 
 The repository does not make HTTP headers, cookies, WebSocket handshakes, or
 game frames part of the Auth Interface. Ingress Adapters select at most one
-credential and call the Auth Capability. Target Modules authorize locally from
+credential and call the Auth Capability. Target Plugins authorize locally from
 a verified, audience-limited assertion.
 
-The API Token Module is deliberately narrow: it accepts only Adapter-selected
+The API Token Plugin is deliberately narrow: it accepts only Adapter-selected
 `bearer` evidence, stores only a keyed digest of each opaque token, checks
 durable token/session revocation on every authentication, and issues a
-short-lived Ed25519-signed assertion. Target Modules receive only the public
+short-lived Ed25519-signed assertion. Target Plugins receive only the public
 verification key and cannot mint assertions.
 
 PostgreSQL setup, upgrade, token issuance, and revocation are explicit
-operator workflows through `ApiTokenAuthOperator`. Module preparation resolves
+operator workflows through `ApiTokenAuthOperator`. Plugin preparation resolves
 the database URL, signing key, and token pepper through one explicitly bound
 Secrets Capability and only verifies the existing schema. It never creates or
 migrates state during App boot.
 
 HTTP routes, cookies, Organization/RBAC policy, OAuth providers, password
-flows, Console UI, and cross-Module database access are not part of this
-Module. Future providers must remain behind the existing Capability Interface
+flows, Console UI, and cross-Plugin database access are not part of this
+Plugin. Future providers must remain behind the existing Capability Interface
 and must not restore removed v0.3 platform types.
 
 ## API Token workflow
 
 ```rust,no_run
 use std::collections::BTreeMap;
-use lenso_auth_api_token_module::{ApiTokenAuthOperator, IssueApiToken};
+use lenso_auth_api_token_plugin::{ApiTokenAuthOperator, IssueApiToken};
 use time::{Duration, OffsetDateTime};
 
 # async fn example(database_url: &str, token_pepper: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
@@ -64,10 +64,10 @@ operator.revoke_session(issued.session_id()).await?;
 # }
 ```
 
-The module currently uses pinned Git dependencies for the newly merged Secrets
+The workspace currently uses pinned Git dependencies for the newly merged Secrets
 Capability and PostgreSQL kit, so its crate remains `publish = false`. This is
 an explicit release boundary, not a hidden fallback. Publish those dependencies
-first, then replace the pins with registry versions before the first Module
+first, then replace the pins with registry versions before the first Plugin
 release.
 
 ## Development
@@ -94,12 +94,12 @@ source. Its build script rejects stale locked Descriptor, Schema, and Rust
 projection artifacts. For an intentional contract change, update the Rust
 source, run the package once with `LENSO_UPDATE_CONTRACT_SNAPSHOT=1`, review
 the locked snapshot diff, and regenerate `src/generated.rs` with
-`lenso-contract-codegen 0.6.1`. Bun consumers import the matching TypeScript
+`lenso-contract-codegen 0.6.3`. Bun consumers import the matching TypeScript
 projection from `@lenso/bun`, which locks the source revision independently.
 
-Native Auth Modules use `#[lenso::module]`; package identity, linked Factory,
+Native Auth Plugins use `#[lenso::plugin]`; package identity, linked Factory,
 and registration are generated from Cargo metadata. Stateful lifecycle and
-explicit Capability endpoints remain Module-owned implementation details.
+explicit Capability endpoints remain Plugin-owned implementation details.
 
 ## Branches
 
@@ -107,4 +107,4 @@ explicit Capability endpoints remain Module-owned implementation details.
 - `v0.3`: maintenance reference for the previously released v0.3 Auth modules.
 
 Do not copy v0.3 crates or Console packages back into `main`. Reuse a behavior
-only after naming its vNext Interface and owning Module or Adapter.
+only after naming its vNext Interface and owning Plugin or Adapter.

@@ -10,11 +10,17 @@
       "type": "string"
     },
     "client_ip": {
-      "type": ["string", "null"]
+      "$ref": "#/$defs/Nullable_string"
     },
     "user_agent": {
+      "$ref": "#/$defs/Nullable_string"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Nullable_string": {
       "type": ["string", "null"]
     }
   },
-  "additionalProperties": false
+  "title": "ObserveRequest"
 }

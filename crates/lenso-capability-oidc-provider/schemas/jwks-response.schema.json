@@ -8,5 +8,6 @@
       "additionalProperties": true
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "title": "JwksResponse"
 }

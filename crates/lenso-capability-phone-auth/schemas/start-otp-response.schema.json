@@ -15,9 +15,15 @@
       "format": "date-time"
     },
     "debug_code": {
-      "type": ["string", "null"],
+      "$ref": "#/$defs/Nullable_string",
       "x-lenso-sensitive": true
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "Nullable_string": {
+      "type": ["string", "null"]
+    }
+  },
+  "title": "StartOtpResponse"
 }

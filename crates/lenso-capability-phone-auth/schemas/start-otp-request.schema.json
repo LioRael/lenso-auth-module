@@ -8,11 +8,20 @@
       "x-lenso-sensitive": true
     },
     "purpose": {
-      "enum": ["login", "register"]
+      "$ref": "#/$defs/StartOtpRequestPurpose"
     },
     "client_ip": {
-      "type": ["string", "null"]
+      "$ref": "#/$defs/Nullable_string"
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "Nullable_string": {
+      "type": ["string", "null"]
+    },
+    "StartOtpRequestPurpose": {
+      "enum": ["login", "register"]
+    }
+  },
+  "title": "StartOtpRequest"
 }

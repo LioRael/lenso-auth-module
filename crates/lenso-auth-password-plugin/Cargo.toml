@@ -1,0 +1,36 @@
+[package]
+name = "lenso-auth-password-plugin"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+description = "Password registration and login Plugin for Lenso vNext."
+
+[package.metadata.lenso]
+plugin-id = "lenso.auth.password"
+root-slot = "auth-methods"
+
+[dependencies]
+lenso.workspace = true
+argon2.workspace = true
+getrandom.workspace = true
+lenso-capability-credential-issuer = { path = "../lenso-capability-credential-issuer", version = "0.1.0" }
+lenso-capability-identity-directory = { path = "../lenso-capability-identity-directory", version = "0.1.0" }
+lenso-capability-password-auth = { path = "../lenso-capability-password-auth", version = "0.1.0" }
+lenso-capability-secrets.workspace = true
+lenso-kernel.workspace = true
+lenso-native-adapter.workspace = true
+lenso-postgres-kit = { git = "https://github.com/LioRael/lenso-postgres-kit", rev = "525c1012c789e6f54c3c2fdaf8507a626c93e65f" }
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+time.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tokio = { version = "1.52", features = ["macros", "rt"] }
+
+[lints]
+workspace = true

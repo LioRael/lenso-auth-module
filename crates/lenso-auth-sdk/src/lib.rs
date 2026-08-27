@@ -1,4 +1,4 @@
-//! Portable Auth semantics shared by ingress Adapters and target Modules.
+//! Portable Auth semantics shared by ingress Adapters and target Plugins.
 
 use std::{collections::BTreeMap, fmt};
 
@@ -277,7 +277,7 @@ impl From<AssertionValidationError> for ActorProjectionError {
 /// Generic assertion validation failure.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AssertionValidationError {
-    /// Issuer does not match the configured Auth Module.
+    /// Issuer does not match the configured Auth Plugin.
     IssuerMismatch { expected: String, actual: String },
     /// The cryptographic proof is invalid.
     InvalidProof,
@@ -297,14 +297,14 @@ pub enum AssertionValidationError {
     DelegationWidensValidity,
 }
 
-/// Assertion issuer configured for one Auth Module.
+/// Assertion issuer configured for one Auth Plugin.
 #[derive(Clone)]
 pub struct ActorAssertionIssuer {
     issuer: String,
     signing_key: SigningKey,
 }
 
-/// Verification-only assertion authority supplied to target Modules.
+/// Verification-only assertion authority supplied to target Plugins.
 #[derive(Clone)]
 pub struct ActorAssertionVerifier {
     issuer: String,
@@ -350,7 +350,7 @@ impl ActorAssertionIssuer {
         }
     }
 
-    /// Derives verification-only authority for a target Module.
+    /// Derives verification-only authority for a target Plugin.
     pub fn verifier(&self) -> ActorAssertionVerifier {
         ActorAssertionVerifier {
             issuer: self.issuer.clone(),
@@ -451,7 +451,7 @@ impl ActorAssertionVerifier {
         })
     }
 
-    /// Returns the URL-safe base64 public key safe to distribute to target Modules.
+    /// Returns the URL-safe base64 public key safe to distribute to target Plugins.
     pub fn public_key_base64(&self) -> String {
         URL_SAFE_NO_PAD.encode(self.verification_key.as_bytes())
     }

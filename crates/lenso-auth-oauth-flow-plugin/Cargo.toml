@@ -1,0 +1,33 @@
+[package]
+name="lenso-auth-oauth-flow-plugin"
+version="0.1.0"
+edition.workspace=true
+license.workspace=true
+publish=false
+repository.workspace=true
+[package.metadata.lenso]
+plugin-id = "lenso.auth.oauth-flow"
+root-slot = "oauth-flows"
+
+[dependencies]
+lenso.workspace = true
+aes-gcm.workspace=true
+base64.workspace=true
+getrandom.workspace=true
+hmac.workspace=true
+lenso-capability-oauth-flow={path="../lenso-capability-oauth-flow"}
+lenso-capability-secrets.workspace = true
+lenso-kernel.workspace = true
+lenso-native-adapter.workspace = true
+lenso-postgres-kit={git="https://github.com/LioRael/lenso-postgres-kit",rev="525c1012c789e6f54c3c2fdaf8507a626c93e65f"}
+serde.workspace=true
+serde_json.workspace=true
+sha2.workspace=true
+sqlx.workspace=true
+time.workspace=true
+thiserror.workspace=true
+zeroize.workspace=true
+[dev-dependencies]
+tokio={version="1.52",features=["macros","rt"]}
+[lints]
+workspace=true

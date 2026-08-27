@@ -29,10 +29,10 @@
       "type": "string"
     },
     "state": {
-      "type": ["string", "null"]
+      "$ref": "#/$defs/Nullable_string"
     },
     "nonce": {
-      "type": ["string", "null"]
+      "$ref": "#/$defs/Nullable_string"
     },
     "code_challenge": {
       "type": "string"
@@ -41,5 +41,11 @@
       "type": "string"
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "Nullable_string": {
+      "type": ["string", "null"]
+    }
+  },
+  "title": "AuthorizeRequest"
 }

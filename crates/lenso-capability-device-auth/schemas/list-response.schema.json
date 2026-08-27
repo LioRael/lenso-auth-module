@@ -6,39 +6,48 @@
     "devices": {
       "type": "array",
       "items": {
-        "type": "object",
-        "required": [
-          "device_id",
-          "trusted",
-          "primary",
-          "last_seen_ip",
-          "last_seen_user_agent",
-          "updated_at"
-        ],
-        "properties": {
-          "device_id": {
-            "type": "string"
-          },
-          "trusted": {
-            "type": "boolean"
-          },
-          "primary": {
-            "type": "boolean"
-          },
-          "last_seen_ip": {
-            "type": ["string", "null"]
-          },
-          "last_seen_user_agent": {
-            "type": ["string", "null"]
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "additionalProperties": false
+        "$ref": "#/$defs/ListResponseDevicesItem"
       }
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "ListResponseDevicesItem": {
+      "type": "object",
+      "required": [
+        "device_id",
+        "trusted",
+        "primary",
+        "last_seen_ip",
+        "last_seen_user_agent",
+        "updated_at"
+      ],
+      "properties": {
+        "device_id": {
+          "type": "string"
+        },
+        "trusted": {
+          "type": "boolean"
+        },
+        "primary": {
+          "type": "boolean"
+        },
+        "last_seen_ip": {
+          "$ref": "#/$defs/Nullable_string"
+        },
+        "last_seen_user_agent": {
+          "$ref": "#/$defs/Nullable_string"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Nullable_string": {
+      "type": ["string", "null"]
+    }
+  },
+  "title": "ListResponse"
 }

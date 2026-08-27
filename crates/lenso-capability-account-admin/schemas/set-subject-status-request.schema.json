@@ -7,15 +7,24 @@
       "type": "string"
     },
     "status": {
-      "enum": ["active", "disabled"]
+      "$ref": "#/$defs/SetSubjectStatusRequestStatus"
     },
     "reason": {
-      "type": ["string", "null"]
+      "$ref": "#/$defs/Nullable_string"
     },
     "disabled_until": {
-      "type": ["string", "null"],
-      "format": "date-time"
+      "format": "date-time",
+      "$ref": "#/$defs/Nullable_string"
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "Nullable_string": {
+      "type": ["string", "null"]
+    },
+    "SetSubjectStatusRequestStatus": {
+      "enum": ["active", "disabled"]
+    }
+  },
+  "title": "SetSubjectStatusRequest"
 }

@@ -13,5 +13,6 @@
       "type": "boolean"
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "title": "ObserveResponse"
 }
