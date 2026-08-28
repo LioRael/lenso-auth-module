@@ -20,7 +20,7 @@ derive versions by traversing the imported pre-extraction history.
 
 Configure a crates.io Trusted Publisher for every already-published crate with:
 
-- repository: `LioRael/lenso-auth-module`
+- repository: `LioRael/lenso-auth-plugin`
 - workflow: `release-plz.yml`
 - environment: unset
 
