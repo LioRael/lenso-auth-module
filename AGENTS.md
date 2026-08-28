@@ -13,7 +13,7 @@ Preserve unrelated dirty work and run Cargo through
 available.
 
 Keep the Auth Interface protocol-neutral. Ingress Adapters own credential
-extraction; Auth owns authentication and assertion issuance; target Modules own
+extraction; Auth owns authentication and assertion issuance; target Plugins own
 authorization. Do not add HTTP, database, Redis, Console, v0.3 platform, or
 product release concerns to the portable Auth crates.
 

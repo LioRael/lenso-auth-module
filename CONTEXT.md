@@ -24,11 +24,11 @@ Composition, or the assertion.
 
 - Ingress Adapters own HTTP, cookie, WebSocket, game-protocol, and other wire
   credential selection policies.
-- The bound Auth Module owns credential verification and signed assertion
+- The bound Auth Plugin owns credential verification and signed assertion
   issuance.
 - Auth-owned state includes sessions, credentials, and revocation knowledge
-  when a concrete Module implements them.
-- Target Modules own authorization and project a verified generic assertion
+  when a concrete Plugin implements them.
+- Target Plugins own authorization and project a verified generic assertion
   into their own typed Actor.
 - Kernel preserves sealed assertion provenance without interpreting Auth
   policy or credential material.
@@ -47,42 +47,42 @@ Composition, or the assertion.
 
 ## Concrete Providers
 
-`lenso-auth-api-token-module` owns random opaque API tokens, durable sessions,
+`lenso-auth-api-token-plugin` owns random opaque API tokens, durable sessions,
 token/session revocation, and its private PostgreSQL schema. It resolves only
 logical Secrets references during preparation. Setup, upgrade, issuance, and
 revocation are explicit operator workflows; preparation never migrates.
 
-`lenso-auth-account-module` owns the canonical identity directory and opaque
+`lenso-auth-account-plugin` owns the canonical identity directory and opaque
 user sessions. It provides Directory and Credential Issuer capabilities as
 well as session evidence verification through `lenso.auth@1`.
 
-`lenso-auth-password-module` owns only password hashes and login-throttling
+`lenso-auth-password-plugin` owns only password hashes and login-throttling
 state. It obtains subjects and sessions through explicit Directory and
 Credential Issuer bindings. Removing it therefore removes password login but
 does not remove identities or invalidate the account/session data model.
 
-`lenso-auth-anonymous-module` creates a stable device-scoped anonymous identity
-and session without owning canonical subjects. `lenso-auth-device-module` owns
+`lenso-auth-anonymous-plugin` creates a stable device-scoped anonymous identity
+and session without owning canonical subjects. `lenso-auth-device-plugin` owns
 device observation and trust facts behind its own administration Capability.
 
-`lenso-auth-oauth-flow-module` owns single-use OAuth state and encrypted PKCE
-verifiers. `lenso-auth-federated-module` is a provider-keyed implementation for
+`lenso-auth-oauth-flow-plugin` owns single-use OAuth state and encrypted PKCE
+verifiers. `lenso-auth-federated-plugin` is a provider-keyed implementation for
 GitHub and Google instances; it obtains outbound protocol transport through an
 explicit HTTP Client binding and obtains identities and sessions through the
 shared contracts.
 
-`lenso-auth-oidc-module` is a protocol-neutral authorization-code provider. It
+`lenso-auth-oidc-plugin` is a protocol-neutral authorization-code provider. It
 owns single-use HMAC-digested codes, requires PKCE S256, rechecks subject
 status, and signs ID tokens from a Secrets-provided RSA key. Adapters may expose
 its metadata, JWKS, authorization, and exchange operations over a wire format.
 
-`lenso-auth-phone-module` owns normalized phone mappings, OTP challenges,
+`lenso-auth-phone-plugin` owns normalized phone mappings, OTP challenges,
 Argon2id phone-password hashes, and bounded failure records. SMS transport is a
 separate bound `lenso.message.sms@1` Capability. Debug OTP disclosure is
 configuration-valid only in the development environment.
 
 When API-token and session authentication are both installed, App Composition
 selects the intended `lenso.auth@1` provider for each caller. The optional
-`lenso-auth-router-module` maps credential schemes to explicitly named, bound
+`lenso-auth-router-plugin` maps credential schemes to explicitly named, bound
 provider instances. It never performs first-success fallback, and the Kernel
 does not synthesize an Auth chain.

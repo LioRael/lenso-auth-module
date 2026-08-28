@@ -34,5 +34,6 @@
       "format": "date-time"
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "title": "IssueRequest"
 }

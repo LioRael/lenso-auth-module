@@ -6,33 +6,45 @@
     "subjects": {
       "type": "array",
       "items": {
-        "type": "object",
-        "required": ["subject", "status", "disabled_reason", "disabled_until", "created_at"],
-        "properties": {
-          "subject": {
-            "type": "string"
-          },
-          "status": {
-            "enum": ["active", "disabled"]
-          },
-          "disabled_reason": {
-            "type": ["string", "null"]
-          },
-          "disabled_until": {
-            "type": ["string", "null"],
-            "format": "date-time"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "additionalProperties": false
+        "$ref": "#/$defs/ListSubjectsResponseSubjectsItem"
       }
     },
     "next_cursor": {
+      "$ref": "#/$defs/Nullable_string"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "ListSubjectsResponseSubjectsItem": {
+      "type": "object",
+      "required": ["subject", "status", "disabled_reason", "disabled_until", "created_at"],
+      "properties": {
+        "subject": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ListSubjectsResponseSubjectsItemStatus"
+        },
+        "disabled_reason": {
+          "$ref": "#/$defs/Nullable_string"
+        },
+        "disabled_until": {
+          "format": "date-time",
+          "$ref": "#/$defs/Nullable_string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ListSubjectsResponseSubjectsItemStatus": {
+      "enum": ["active", "disabled"]
+    },
+    "Nullable_string": {
       "type": ["string", "null"]
     }
   },
-  "additionalProperties": false
+  "title": "ListSubjectsResponse"
 }

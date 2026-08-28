@@ -4,7 +4,13 @@
   "required": ["credential"],
   "properties": {
     "credential": {
-      "type": ["object", "null"],
+      "$ref": "#/$defs/Nullable_AuthenticateRequestCredential"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "AuthenticateRequestCredential": {
+      "type": "object",
       "required": ["scheme", "value"],
       "properties": {
         "scheme": {
@@ -16,7 +22,17 @@
         }
       },
       "additionalProperties": false
+    },
+    "Nullable_AuthenticateRequestCredential": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AuthenticateRequestCredential"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
-  "additionalProperties": false
+  "title": "AuthenticateRequest"
 }

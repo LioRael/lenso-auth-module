@@ -4,7 +4,7 @@
   "required": ["subject", "limit", "cursor"],
   "properties": {
     "subject": {
-      "type": ["string", "null"]
+      "$ref": "#/$defs/Nullable_string"
     },
     "limit": {
       "type": "integer",
@@ -12,8 +12,14 @@
       "maximum": 200
     },
     "cursor": {
+      "$ref": "#/$defs/Nullable_string"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Nullable_string": {
       "type": ["string", "null"]
     }
   },
-  "additionalProperties": false
+  "title": "ListSessionsRequest"
 }

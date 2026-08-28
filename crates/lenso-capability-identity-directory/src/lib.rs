@@ -1,4 +1,4 @@
-//! Portable identity-directory role used by concrete Auth Modules.
+//! Portable identity-directory role used by concrete Auth Plugins.
 
 #[allow(dead_code)]
 mod contract;

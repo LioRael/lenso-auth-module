@@ -6,47 +6,56 @@
     "sessions": {
       "type": "array",
       "items": {
-        "type": "object",
-        "required": [
-          "session_id",
-          "subject",
-          "actor_kind",
-          "assurance",
-          "expires_at",
-          "revoked",
-          "created_at"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "actor_kind": {
-            "type": "string"
-          },
-          "assurance": {
-            "type": "string"
-          },
-          "expires_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "revoked": {
-            "type": "boolean"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "additionalProperties": false
+        "$ref": "#/$defs/ListSessionsResponseSessionsItem"
       }
     },
     "next_cursor": {
+      "$ref": "#/$defs/Nullable_string"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "ListSessionsResponseSessionsItem": {
+      "type": "object",
+      "required": [
+        "session_id",
+        "subject",
+        "actor_kind",
+        "assurance",
+        "expires_at",
+        "revoked",
+        "created_at"
+      ],
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "actor_kind": {
+          "type": "string"
+        },
+        "assurance": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revoked": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Nullable_string": {
       "type": ["string", "null"]
     }
   },
-  "additionalProperties": false
+  "title": "ListSessionsResponse"
 }

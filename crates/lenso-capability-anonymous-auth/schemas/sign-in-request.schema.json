@@ -4,8 +4,14 @@
   "required": ["device_id"],
   "properties": {
     "device_id": {
+      "$ref": "#/$defs/Nullable_string"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Nullable_string": {
       "type": ["string", "null"]
     }
   },
-  "additionalProperties": false
+  "title": "SignInRequest"
 }
