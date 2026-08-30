@@ -7,11 +7,13 @@ members = [
     "crates/lenso-auth-device-plugin",
     "crates/lenso-auth-federated-plugin",
     "crates/lenso-auth-oauth-flow-plugin",
+    "crates/lenso-auth-oidc-client-plugin",
     "crates/lenso-auth-oidc-plugin",
     "crates/lenso-auth-password-plugin",
     "crates/lenso-auth-phone-plugin",
     "crates/lenso-auth-router-plugin",
     "crates/lenso-auth-sdk",
+    "crates/lenso-auth-web-session-plugin",
     "crates/lenso-capability-auth",
     "crates/lenso-capability-account-admin",
     "crates/lenso-capability-anonymous-auth",
@@ -43,7 +45,8 @@ hmac = "0.12"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 lenso = { version = "0.5.0", git = "https://github.com/LioRael/lenso-runtime-rust", rev = "b763a63adc20f1ccc9955e784c0d04c21489126b" }
 lenso-app-plan = { version = "0.3.0", git = "https://github.com/LioRael/lenso", rev = "cd35675a191d815b690c8889756dfe859a0e4d7b" }
-lenso-capability-http-client = { version = "0.2.2", git = "https://github.com/LioRael/lenso-web", rev = "aa391d21640faf951c0b31504686646f788b5a85" }
+lenso-capability-http-client = { version = "0.2.3", git = "https://github.com/LioRael/lenso-web", rev = "d4943b1ffd30c90d2621ef4b9884adbb1e206bbc" }
+lenso-capability-http-endpoint = { version = "0.2.6", git = "https://github.com/LioRael/lenso-web", rev = "d4943b1ffd30c90d2621ef4b9884adbb1e206bbc" }
 lenso-capability-secrets = { version = "0.1.1", git = "https://github.com/LioRael/lenso-secrets-plugin", rev = "c31aa142ff59b4536e2bf3e9785ccbb5bb5c0e6a" }
 lenso-contract-authoring = { version = "0.1.1", git = "https://github.com/LioRael/lenso-protocols", rev = "9769bc5dc828fd9111da6d28a4ecd5f1bb198ab4" }
 lenso-contract-codegen = { version = "0.6.3", git = "https://github.com/LioRael/lenso-protocols", rev = "9769bc5dc828fd9111da6d28a4ecd5f1bb198ab4" }

@@ -417,7 +417,12 @@ impl Lifecycle for FederatedAuthPlugin {
     }
 }
 fn valid_return(v: &str) -> bool {
-    v.starts_with('/') && !v.starts_with("//") && v.len() <= 2048
+    v.starts_with('/')
+        && !v.starts_with("//")
+        && v.len() <= 2048
+        && !v
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte == b'\\')
 }
 fn failure(detail: &str) -> RuntimeFailure {
     RuntimeFailure::PluginFailure {

@@ -122,6 +122,19 @@ pub(crate) async fn revoke_session(
     Ok(Some(!already_revoked))
 }
 
+pub(crate) async fn revoke_credential(
+    postgres: &OwnedPostgres,
+    digest: &[u8],
+) -> Result<Option<bool>, AccountError> {
+    sqlx::query_scalar(
+        "WITH updated AS (UPDATE auth_sessions SET revoked_at = transaction_timestamp() WHERE token_digest = $1 AND revoked_at IS NULL RETURNING 1) SELECT CASE WHEN EXISTS (SELECT 1 FROM updated) THEN TRUE WHEN EXISTS (SELECT 1 FROM auth_sessions WHERE token_digest = $1) THEN FALSE ELSE NULL END",
+    )
+    .bind(digest)
+    .fetch_one(postgres.pool())
+    .await
+    .map_err(db("revoke credential"))
+}
+
 pub(crate) async fn load_session(
     postgres: &OwnedPostgres,
     digest: &[u8],

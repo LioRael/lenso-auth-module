@@ -5,7 +5,7 @@ use lenso_kernel::{InvocationContext, NativeRequestEndpoint, NativeRequestFuture
 
 use lenso_plugin_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
 pub const CAPABILITY_ID: &str = "lenso.auth.credential-issuer@1";
-pub const DESCRIPTOR_VERSION: &str = "1.0.0";
+pub const DESCRIPTOR_VERSION: &str = "1.1.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const CREDENTIAL_ISSUER_CAPABILITY_ID: &str = CAPABILITY_ID;
@@ -13,18 +13,19 @@ pub const CREDENTIAL_ISSUER_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_provided_credential_issuer { () => { "{\"capability_id\":\"lenso.auth.credential-issuer@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"issue\",\"revoke\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+macro_rules! __lenso_provided_credential_issuer { () => { "{\"capability_id\":\"lenso.auth.credential-issuer@1\",\"descriptor_version\":\"1.1.0\",\"operations\":[\"issue\",\"revoke\",\"revoke_credential\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_required_credential_issuer_client { () => { "{\"capability_id\":\"lenso.auth.credential-issuer@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+macro_rules! __lenso_required_credential_issuer_client { () => { "{\"capability_id\":\"lenso.auth.credential-issuer@1\",\"descriptor_version\":\"1.1.0\",\"cardinality\":\"one\"}" }; }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_required_many_credential_issuer_client { () => { "{\"capability_id\":\"lenso.auth.credential-issuer@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
+macro_rules! __lenso_required_many_credential_issuer_client { () => { "{\"capability_id\":\"lenso.auth.credential-issuer@1\",\"descriptor_version\":\"1.1.0\",\"cardinality\":\"many\"}" }; }
 
 pub const ISSUE_OPERATION: &str = "issue";
 pub const REVOKE_OPERATION: &str = "revoke";
+pub const REVOKE_CREDENTIAL_OPERATION: &str = "revoke_credential";
 
 pub use lenso_contract_runtime::{Timestamp, UnknownDomainError};
 use lenso_contract_runtime::{decode_portable_json, encode_portable_json};
@@ -105,6 +106,41 @@ pub enum RevokeError {
     Unknown(UnknownDomainError),
 }
 
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RevokeCredentialRequest {
+    #[serde(rename = "credential")]
+    #[serde(deserialize_with = "lenso_contract_runtime::serde::deserialize_required")]
+    pub credential: String,
+    #[serde(rename = "scheme")]
+    #[serde(deserialize_with = "lenso_contract_runtime::serde::deserialize_required")]
+    pub scheme: String,
+}
+
+impl fmt::Debug for RevokeCredentialRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RevokeCredentialRequest")
+            .field("credential", &"<redacted>")
+            .field("scheme", &self.scheme)
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RevokeCredentialResponse {
+    #[serde(rename = "changed")]
+    #[serde(deserialize_with = "lenso_contract_runtime::serde::deserialize_required")]
+    pub changed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum RevokeCredentialError {
+    InvalidCredential,
+    NotFound,
+    Unsupported,
+    Unknown(UnknownDomainError),
+}
+
 #[derive(Debug)]
 pub struct CredentialIssuerIssue;
 impl RequestCapability for CredentialIssuerIssue {
@@ -148,6 +184,29 @@ impl RequestCapability for CredentialIssuerRevoke {
             return lenso_kernel::invoke_typed_or_erased_native_request::<Self>(endpoint, operation, request, context);
         };
         Rc::clone(&typed_endpoint.provider).revoke(context, request)
+    }
+}
+
+#[derive(Debug)]
+pub struct CredentialIssuerRevokeCredential;
+impl RequestCapability for CredentialIssuerRevokeCredential {
+    type Request = RevokeCredentialRequest;
+    type Response = RevokeCredentialResponse;
+    type DomainError = RevokeCredentialError;
+    const ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn invoke_native(endpoint: &dyn NativeRequestEndpoint, operation: &str, request: Self::Request, context: InvocationContext) -> NativeRequestFuture<Self> {
+        if operation != REVOKE_CREDENTIAL_OPERATION {
+            return lenso_kernel::invoke_typed_or_erased_native_request::<Self>(endpoint, operation, request, context);
+        }
+        let Some(typed_endpoint) = endpoint
+            .typed_endpoint()
+            .and_then(|endpoint| endpoint.downcast_ref::<CredentialIssuerRequestEndpoint>())
+        else {
+            return lenso_kernel::invoke_typed_or_erased_native_request::<Self>(endpoint, operation, request, context);
+        };
+        Rc::clone(&typed_endpoint.provider).revoke_credential(context, request)
     }
 }
 
@@ -253,6 +312,57 @@ impl<'de> serde::Deserialize<'de> for RevokeError {
     }
 }
 
+impl serde::Serialize for RevokeCredentialError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+        match self {
+            Self::InvalidCredential => serializer.serialize_str("invalid_credential"),
+            Self::NotFound => serializer.serialize_str("not_found"),
+            Self::Unsupported => serializer.serialize_str("unsupported"),
+            Self::Unknown(value) => {
+                let mut map = serializer.serialize_map(Some(1 + usize::from(value.payload.is_some()) + value.extra.len()))?;
+                map.serialize_entry("code", &value.code)?;
+                if let Some(payload) = &value.payload {
+                    map.serialize_entry("payload", payload)?;
+                }
+                for (key, extra) in &value.extra {
+                    map.serialize_entry(key, extra)?;
+                }
+                map.end()
+            },
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RevokeCredentialError {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = <serde_json::Value as serde::Deserialize>::deserialize(deserializer)?;
+        match value {
+            serde_json::Value::String(code) => match code.as_str() {
+                "invalid_credential" => Ok(Self::InvalidCredential),
+                "not_found" => Ok(Self::NotFound),
+                "unsupported" => Ok(Self::Unsupported),
+                _ => Ok(Self::Unknown(UnknownDomainError { code, payload: None, extra: std::collections::BTreeMap::new() })),
+            },
+            serde_json::Value::Object(mut object) => {
+                let Some(code) = object.remove("code").and_then(|value| value.as_str().map(ToOwned::to_owned)) else {
+                    return Err(serde::de::Error::custom("Domain Error object is missing a string code"));
+                };
+                let payload = object.remove("payload");
+                let extra = object.into_iter().collect::<std::collections::BTreeMap<_, _>>();
+                Ok(Self::Unknown(UnknownDomainError { code, payload, extra }))
+            }
+            other => Err(serde::de::Error::custom(format!("Domain Error must be a string or object, got {other}"))),
+        }
+    }
+}
+
 pub fn encode_issue_request(value: &IssueRequest) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_issue_request(wire: &str) -> Result<IssueRequest, serde_json::Error> { decode_portable_json(wire) }
 pub fn encode_issue_response(value: &IssueResponse) -> Result<String, serde_json::Error> { encode_portable_json(value) }
@@ -266,6 +376,13 @@ pub fn encode_revoke_response(value: &RevokeResponse) -> Result<String, serde_js
 pub fn decode_revoke_response(wire: &str) -> Result<RevokeResponse, serde_json::Error> { decode_portable_json(wire) }
 pub fn encode_revoke_error(value: &RevokeError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_revoke_error(wire: &str) -> Result<RevokeError, serde_json::Error> { decode_portable_json(wire) }
+
+pub fn encode_revoke_credential_request(value: &RevokeCredentialRequest) -> Result<String, serde_json::Error> { encode_portable_json(value) }
+pub fn decode_revoke_credential_request(wire: &str) -> Result<RevokeCredentialRequest, serde_json::Error> { decode_portable_json(wire) }
+pub fn encode_revoke_credential_response(value: &RevokeCredentialResponse) -> Result<String, serde_json::Error> { encode_portable_json(value) }
+pub fn decode_revoke_credential_response(wire: &str) -> Result<RevokeCredentialResponse, serde_json::Error> { decode_portable_json(wire) }
+pub fn encode_revoke_credential_error(value: &RevokeCredentialError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
+pub fn decode_revoke_credential_error(wire: &str) -> Result<RevokeCredentialError, serde_json::Error> { decode_portable_json(wire) }
 
 #[doc(hidden)]
 pub trait __LensoIntoCredentialIssuerIssueResult {
@@ -325,9 +442,39 @@ impl __LensoIntoCredentialIssuerRevokeResult for Result<RevokeResponse, Credenti
     }
 }
 
+#[doc(hidden)]
+pub trait __LensoIntoCredentialIssuerRevokeCredentialResult {
+    fn __lenso_into_result(self) -> Result<Result<RevokeCredentialResponse, RevokeCredentialError>, RuntimeFailure>;
+}
+impl __LensoIntoCredentialIssuerRevokeCredentialResult for Result<RevokeCredentialResponse, RevokeCredentialError> {
+    fn __lenso_into_result(self) -> Result<Result<RevokeCredentialResponse, RevokeCredentialError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoCredentialIssuerRevokeCredentialResult for Result<Result<RevokeCredentialResponse, RevokeCredentialError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<RevokeCredentialResponse, RevokeCredentialError>, RuntimeFailure> { self }
+}
+impl __LensoIntoCredentialIssuerRevokeCredentialResult for Result<RevokeCredentialResponse, lenso_plugin_authoring::PluginError<RevokeCredentialError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<RevokeCredentialResponse, RevokeCredentialError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_plugin_authoring::PluginError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_plugin_authoring::PluginError::Runtime(error)) => Err(error),
+        }
+    }
+}
+impl __LensoIntoCredentialIssuerRevokeCredentialResult for Result<RevokeCredentialResponse, CredentialIssuerRevokeCredentialInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<RevokeCredentialResponse, RevokeCredentialError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(CredentialIssuerRevokeCredentialInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(CredentialIssuerRevokeCredentialInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait CredentialIssuerProvider: fmt::Debug + 'static {
     fn issue(&self, context: InvocationContext, request: IssueRequest) -> NativeRequestFuture<CredentialIssuerIssue>;
     fn revoke(&self, context: InvocationContext, request: RevokeRequest) -> NativeRequestFuture<CredentialIssuerRevoke>;
+    fn revoke_credential(&self, context: InvocationContext, request: RevokeCredentialRequest) -> NativeRequestFuture<CredentialIssuerRevokeCredential>;
 }
 
 #[doc(hidden)]
@@ -348,6 +495,13 @@ macro_rules! __lenso_native_lower_credential_issuer {
             ::std::boxed::Box::pin(async move {
                 let result = <$plugin>::revoke(&plugin, context, request).await;
                 $crate::__LensoIntoCredentialIssuerRevokeResult::__lenso_into_result(result)
+            })
+        }
+        fn revoke_credential(&self, context: __LensoNativeSupportCredentialIssuer::InvocationContext, request: $crate::RevokeCredentialRequest) -> __LensoNativeSupportCredentialIssuer::NativeRequestFuture<$crate::CredentialIssuerRevokeCredential> {
+            let plugin = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$plugin>::revoke_credential(&plugin, context, request).await;
+                $crate::__LensoIntoCredentialIssuerRevokeCredentialResult::__lenso_into_result(result)
             })
         }
         }
@@ -373,6 +527,7 @@ impl<P: CredentialIssuerProvider> NativeRequestEndpoint for CredentialIssuerEndp
     fn operations(&self) -> &'static [&'static str] { &[
         ISSUE_OPERATION,
         REVOKE_OPERATION,
+        REVOKE_CREDENTIAL_OPERATION,
     ] }
     fn typed_endpoint(&self) -> Option<&dyn std::any::Any> { Some(&self.request_endpoint) }
     fn invoke(&self, operation: &str, request: Box<dyn std::any::Any>, context: InvocationContext) -> LocalBoxFuture<'static, Result<Result<Box<dyn std::any::Any>, Box<dyn std::any::Any>>, RuntimeFailure>> {
@@ -395,6 +550,19 @@ impl<P: CredentialIssuerProvider> NativeRequestEndpoint for CredentialIssuerEndp
                     return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation { capability: CAPABILITY_ID })));
                 };
                 let invocation = Rc::clone(&self.provider).revoke(context, *request);
+                Box::pin(async move {
+                    invocation.await.map(|result| {
+                        result
+                            .map(|value| Box::new(value) as Box<dyn std::any::Any>)
+                            .map_err(|error| Box::new(error) as Box<dyn std::any::Any>)
+                    })
+                })
+            },
+            REVOKE_CREDENTIAL_OPERATION => {
+                let Ok(request) = request.downcast::<RevokeCredentialRequest>() else {
+                    return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation { capability: CAPABILITY_ID })));
+                };
+                let invocation = Rc::clone(&self.provider).revoke_credential(context, *request);
                 Box::pin(async move {
                     invocation.await.map(|result| {
                         result
@@ -442,6 +610,7 @@ macro_rules! __lenso_native_provide_credential_issuer {
 pub struct CredentialIssuerClient {
     issue: NativeRequestHandle<CredentialIssuerIssue>,
     revoke: NativeRequestHandle<CredentialIssuerRevoke>,
+    revoke_credential: NativeRequestHandle<CredentialIssuerRevokeCredential>,
 }
 impl CredentialIssuerClient {
     pub fn from_dependencies(dependencies: &PluginDependencies) -> Result<Self, RuntimeFailure> {
@@ -471,6 +640,18 @@ impl CredentialIssuerClient {
             .map_err(CredentialIssuerRevokeInvocationError::Runtime)?
             .map_err(CredentialIssuerRevokeInvocationError::Domain)
     }
+
+    pub async fn revoke_credential(&self, request: RevokeCredentialRequest) -> Result<RevokeCredentialResponse, CredentialIssuerRevokeCredentialInvocationError> {
+        self.revoke_credential.invoke(REVOKE_CREDENTIAL_OPERATION, request).await
+            .map_err(CredentialIssuerRevokeCredentialInvocationError::Runtime)?
+            .map_err(CredentialIssuerRevokeCredentialInvocationError::Domain)
+    }
+
+    pub async fn revoke_credential_with_context(&self, context: InvocationContext, request: RevokeCredentialRequest) -> Result<RevokeCredentialResponse, CredentialIssuerRevokeCredentialInvocationError> {
+        self.revoke_credential.invoke_with_context(REVOKE_CREDENTIAL_OPERATION, context, request).await
+            .map_err(CredentialIssuerRevokeCredentialInvocationError::Runtime)?
+            .map_err(CredentialIssuerRevokeCredentialInvocationError::Domain)
+    }
 }
 
 impl CapabilityClient for CredentialIssuerClient {
@@ -484,6 +665,7 @@ impl CapabilityClient for CredentialIssuerClient {
         Ok(Self {
             issue: dependencies.one::<CredentialIssuerIssue>()?,
             revoke: dependencies.one::<CredentialIssuerRevoke>()?,
+            revoke_credential: dependencies.one::<CredentialIssuerRevokeCredential>()?,
         })
     }
 
@@ -508,6 +690,7 @@ impl CapabilityClientMany for CredentialIssuerClient {
                     Self {
                     issue: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<CredentialIssuerIssue>()?,
                     revoke: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<CredentialIssuerRevoke>()?,
+                    revoke_credential: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<CredentialIssuerRevokeCredential>()?,
                     },
                 ))
             })
@@ -523,5 +706,10 @@ pub enum CredentialIssuerIssueInvocationError {
 #[derive(Clone, Debug, PartialEq)]
 pub enum CredentialIssuerRevokeInvocationError {
     Domain(RevokeError),
+    Runtime(RuntimeFailure),
+}
+#[derive(Clone, Debug, PartialEq)]
+pub enum CredentialIssuerRevokeCredentialInvocationError {
+    Domain(RevokeCredentialError),
     Runtime(RuntimeFailure),
 }

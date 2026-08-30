@@ -65,13 +65,30 @@ does not remove identities or invalidate the account/session data model.
 and session without owning canonical subjects. `lenso-auth-device-plugin` owns
 device observation and trust facts behind its own administration Capability.
 
-`lenso-auth-oauth-flow-plugin` owns single-use OAuth state and encrypted PKCE
-verifiers. `lenso-auth-federated-plugin` is a provider-keyed implementation for
-GitHub and Google instances; it obtains outbound protocol transport through an
-explicit HTTP Client binding and obtains identities and sessions through the
-shared contracts.
+`lenso-auth-oauth-flow-plugin` owns single-use OAuth state, OIDC nonce custody,
+and encrypted PKCE verifiers. The nonce is returned only with the same
+successfully consumed state record. `lenso-auth-federated-plugin` is a
+provider-keyed implementation for GitHub and Google instances; it obtains
+outbound protocol transport through an explicit HTTP Client binding and
+obtains identities and sessions through the shared contracts.
 
-`lenso-auth-oidc-plugin` is a protocol-neutral authorization-code provider. It
+`lenso-auth-oidc-client-plugin` is the external OIDC relying party. It provides
+the existing Federated Capability, validates RS256 ID tokens against configured
+issuer, audience, JWKS key, time, and nonce constraints, and delegates identity
+and session ownership to the same Directory and Credential Issuer contracts.
+It does not own callback HTTP routes, cookies, or CSRF response policy.
+
+`lenso-auth-web-session-plugin` is a separate HTTP Endpoint Adapter over one
+bound Federated provider. It owns the fixed browser start/callback/logout
+routes and response Cookie policy, but no identity, OAuth flow, or session
+storage. Its logout handler receives only the credential evidence already
+selected by Web Ingress and calls Credential Issuer 1.1 `revoke_credential`.
+Web Ingress remains responsible for selecting the session Cookie, rejecting
+credential ambiguity, enforcing double-submit CSRF on unsafe methods, and
+stripping Cookie/CSRF headers before Endpoint dispatch.
+
+`lenso-auth-oidc-plugin` remains the protocol-neutral authorization-code
+issuer/provider. It
 owns single-use HMAC-digested codes, requires PKCE S256, rechecks subject
 status, and signs ID tokens from a Secrets-provided RSA key. Adapters may expose
 its metadata, JWKS, authorization, and exchange operations over a wire format.

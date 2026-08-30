@@ -14,11 +14,20 @@
     "code_challenge": {
       "type": "string"
     },
+    "nonce": {
+      "$ref": "#/$defs/Nullable_string",
+      "x-lenso-sensitive": true
+    },
     "expires_at": {
       "type": "string",
       "format": "date-time"
     }
   },
   "additionalProperties": false,
+  "$defs": {
+    "Nullable_string": {
+      "type": ["string", "null"]
+    }
+  },
   "title": "CreateResponse"
 }

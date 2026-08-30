@@ -50,3 +50,6 @@ jobs:
         run: |
           cargo package --locked -p lenso-capability-auth
           cargo package --locked -p lenso-auth-sdk
+          cargo package --locked -p lenso-capability-credential-issuer
+          cargo package --locked -p lenso-capability-identity-directory
+          cargo package --locked -p lenso-capability-password-auth

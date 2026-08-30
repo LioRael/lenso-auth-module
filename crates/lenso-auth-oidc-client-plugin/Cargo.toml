@@ -1,0 +1,40 @@
+[package]
+name = "lenso-auth-oidc-client-plugin"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+
+[package.metadata.lenso]
+plugin-id = "lenso.auth.oidc-client"
+root-slot = "auth"
+
+[dependencies]
+hmac.workspace = true
+jsonwebtoken.workspace = true
+lenso.workspace = true
+lenso-capability-credential-issuer = { path = "../lenso-capability-credential-issuer" }
+lenso-capability-federated-auth = { path = "../lenso-capability-federated-auth" }
+lenso-capability-http-client.workspace = true
+lenso-capability-identity-directory = { path = "../lenso-capability-identity-directory" }
+lenso-capability-oauth-flow = { path = "../lenso-capability-oauth-flow" }
+lenso-capability-secrets.workspace = true
+lenso-kernel.workspace = true
+lenso-native-adapter.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+time.workspace = true
+url.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+lenso-app-plan.workspace = true
+lenso-runner.workspace = true
+rand = "0.8"
+rsa = "0.9"
+tokio = { version = "1.52", features = ["macros", "rt"] }
+
+[lints]
+workspace = true

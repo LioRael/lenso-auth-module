@@ -7,6 +7,10 @@
       "type": "string",
       "x-lenso-sensitive": true
     },
+    "nonce": {
+      "$ref": "#/$defs/Nullable_string",
+      "x-lenso-sensitive": true
+    },
     "return_to": {
       "type": "string"
     },
@@ -16,5 +20,10 @@
     }
   },
   "additionalProperties": false,
+  "$defs": {
+    "Nullable_string": {
+      "type": ["string", "null"]
+    }
+  },
   "title": "ConsumeResponse"
 }

@@ -824,6 +824,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "http"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "918d3568bebf352712bc2ef3d46a8bcf1a75b373be6539de198e9105cbbf9ce0"
+dependencies = [
+ "bytes",
+ "itoa",
+]
+
+[[package]]
 name = "hybrid-array"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1175,6 +1185,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "lenso-auth-oidc-client-plugin"
+version = "0.1.0"
+dependencies = [
+ "hmac 0.12.1",
+ "jsonwebtoken",
+ "lenso",
+ "lenso-app-plan",
+ "lenso-capability-credential-issuer",
+ "lenso-capability-federated-auth",
+ "lenso-capability-http-client",
+ "lenso-capability-identity-directory",
+ "lenso-capability-oauth-flow",
+ "lenso-capability-secrets",
+ "lenso-kernel",
+ "lenso-native-adapter",
+ "lenso-runner",
+ "rand 0.8.7",
+ "rsa",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "time",
+ "tokio",
+ "url",
+ "zeroize",
+]
+
+[[package]]
 name = "lenso-auth-oidc-plugin"
 version = "0.1.0"
 dependencies = [
@@ -1281,6 +1319,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "lenso-auth-web-session-plugin"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "getrandom 0.4.3",
+ "lenso",
+ "lenso-app-plan",
+ "lenso-capability-credential-issuer",
+ "lenso-capability-federated-auth",
+ "lenso-capability-http-endpoint",
+ "lenso-kernel",
+ "lenso-native-adapter",
+ "lenso-runner",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "lenso-capability-account-admin"
 version = "0.1.0"
 dependencies = [
@@ -1327,7 +1386,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-capability-credential-issuer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "futures",
  "lenso-contract-authoring",
@@ -1372,8 +1431,8 @@ dependencies = [
 
 [[package]]
 name = "lenso-capability-http-client"
-version = "0.2.2"
-source = "git+https://github.com/LioRael/lenso-web?rev=aa391d21640faf951c0b31504686646f788b5a85#aa391d21640faf951c0b31504686646f788b5a85"
+version = "0.2.3"
+source = "git+https://github.com/LioRael/lenso-web?rev=d4943b1ffd30c90d2621ef4b9884adbb1e206bbc#d4943b1ffd30c90d2621ef4b9884adbb1e206bbc"
 dependencies = [
  "futures",
  "lenso-contract-codegen",
@@ -1382,6 +1441,34 @@ dependencies = [
  "lenso-plugin-authoring",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "lenso-capability-http-endpoint"
+version = "0.2.6"
+source = "git+https://github.com/LioRael/lenso-web?rev=d4943b1ffd30c90d2621ef4b9884adbb1e206bbc#d4943b1ffd30c90d2621ef4b9884adbb1e206bbc"
+dependencies = [
+ "futures",
+ "http",
+ "lenso-capability-http-endpoint-macros",
+ "lenso-contract-codegen",
+ "lenso-contract-runtime",
+ "lenso-kernel",
+ "lenso-plugin-authoring",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+]
+
+[[package]]
+name = "lenso-capability-http-endpoint-macros"
+version = "0.1.3"
+source = "git+https://github.com/LioRael/lenso-web?rev=d4943b1ffd30c90d2621ef4b9884adbb1e206bbc#d4943b1ffd30c90d2621ef4b9884adbb1e206bbc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -2105,6 +2192,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
+name = "ryu"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
 name = "schemars"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2217,6 +2310,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "serde_urlencoded"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3491c14715ca2294c4d6a88f15e84739788c1d030eed8c110436aafdaa2f3fd"
+dependencies = [
+ "form_urlencoded",
+ "itoa",
+ "ryu",
+ "serde",
 ]
 
 [[package]]
