@@ -1473,7 +1473,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-capability-identity-directory"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "futures",
  "lenso-contract-authoring",
@@ -1518,7 +1518,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-capability-password-auth"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "futures",
  "lenso-contract-authoring",
