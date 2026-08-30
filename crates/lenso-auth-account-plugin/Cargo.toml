@@ -21,7 +21,7 @@ lenso-auth-sdk = { path = "../lenso-auth-sdk", version = "0.2.0" }
 lenso-capability-account-admin = { path = "../lenso-capability-account-admin" }
 lenso-capability-auth = { path = "../lenso-capability-auth", version = "0.1.1" }
 lenso-capability-credential-issuer = { path = "../lenso-capability-credential-issuer", version = "0.2.0" }
-lenso-capability-identity-directory = { path = "../lenso-capability-identity-directory", version = "0.1.0" }
+lenso-capability-identity-directory = { path = "../lenso-capability-identity-directory", version = "0.2.0" }
 lenso-capability-secrets.workspace = true
 lenso-kernel.workspace = true
 lenso-native-adapter.workspace = true
