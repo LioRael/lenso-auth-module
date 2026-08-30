@@ -34,10 +34,18 @@ use schema::schema_plan;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use sqlx::Row;
-use std::{cell::RefCell, collections::BTreeMap, fmt, rc::Rc, time::Duration as StdDuration};
+use std::{
+    cell::RefCell, collections::BTreeMap, fmt, future::Future, rc::Rc, sync::Arc,
+    time::Duration as StdDuration,
+};
+use thiserror::Error;
 use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
+use tokio::sync::Semaphore;
 use zeroize::Zeroizing;
 const TIMEOUT: StdDuration = StdDuration::from_secs(10);
+const MAX_PASSWORD_WORK_JOBS: usize = 4;
+const DUMMY_PASSWORD_INPUT: &str = "lenso-auth-phone-password-dummy-input";
+const STALE_FAILURE_PRUNE_BATCH: i64 = 256;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Environment {
@@ -96,6 +104,7 @@ fn validate_config(config: &PhoneConfig) -> Result<(), RuntimeFailure> {
 struct Prepared {
     postgres: OwnedPostgres,
     otp_secret: Zeroizing<Vec<u8>>,
+    password_work: PasswordWork,
 }
 impl fmt::Debug for Prepared {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -107,6 +116,105 @@ impl fmt::Debug for Prepared {
 struct Active {
     prepared: Prepared,
     config: PhoneConfig,
+}
+
+#[derive(Clone)]
+struct PasswordWork {
+    permits: Arc<Semaphore>,
+    dummy_hash: Arc<str>,
+}
+
+impl PasswordWork {
+    async fn prepare() -> Result<Self, PasswordWorkError> {
+        Self::prepare_with_limit(MAX_PASSWORD_WORK_JOBS).await
+    }
+
+    async fn prepare_with_limit(limit: usize) -> Result<Self, PasswordWorkError> {
+        let permits = Arc::new(Semaphore::new(limit));
+        let dummy_hash = run_password_job(Arc::clone(&permits), || {
+            hash_password_sync(DUMMY_PASSWORD_INPUT)
+        })
+        .await?;
+        Ok(Self {
+            permits,
+            dummy_hash: Arc::from(dummy_hash),
+        })
+    }
+
+    async fn hash(&self, password: String) -> Result<String, PasswordWorkError> {
+        self.run(move || hash_password_sync(&password)).await
+    }
+
+    async fn verify(
+        &self,
+        password: String,
+        stored_hash: Option<String>,
+    ) -> Result<bool, PasswordWorkError> {
+        let dummy_hash = Arc::clone(&self.dummy_hash);
+        verify_candidate_with(password, stored_hash, dummy_hash, |password, encoded| {
+            self.run(move || Ok(verify_password_sync(&password, &encoded)))
+        })
+        .await
+    }
+
+    async fn run<T, F>(&self, job: F) -> Result<T, PasswordWorkError>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T, PhonePasswordError> + Send + 'static,
+    {
+        run_password_job(Arc::clone(&self.permits), job).await
+    }
+}
+
+#[derive(Debug, Error)]
+enum PasswordWorkError {
+    #[error("password work capacity is exhausted")]
+    Saturated,
+    #[error("password worker terminated")]
+    Join,
+    #[error(transparent)]
+    Password(#[from] PhonePasswordError),
+}
+
+#[derive(Debug, Error)]
+enum PhonePasswordError {
+    #[error("password hashing failed")]
+    Hash,
+    #[error("random source unavailable")]
+    Random,
+}
+
+async fn run_password_job<T, F>(permits: Arc<Semaphore>, job: F) -> Result<T, PasswordWorkError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, PhonePasswordError> + Send + 'static,
+{
+    let permit = permits
+        .try_acquire_owned()
+        .map_err(|_| PasswordWorkError::Saturated)?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        job()
+    })
+    .await
+    .map_err(|_| PasswordWorkError::Join)?
+    .map_err(PasswordWorkError::from)
+}
+
+async fn verify_candidate_with<E, F, Fut>(
+    password: String,
+    stored_hash: Option<String>,
+    dummy_hash: Arc<str>,
+    verify: F,
+) -> Result<bool, E>
+where
+    F: FnOnce(String, String) -> Fut,
+    Fut: Future<Output = Result<bool, E>>,
+{
+    let credential_exists = stored_hash.is_some();
+    let encoded = stored_hash.unwrap_or_else(|| dummy_hash.to_string());
+    let verified = verify(password, encoded).await?;
+    Ok(credential_exists && verified)
 }
 impl fmt::Debug for Active {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -145,6 +253,32 @@ impl PhoneAuthPlugin {
             .ok_or_else(|| failure("Phone Auth is not active"))
     }
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OtpReservationOutcome {
+    Inserted,
+    RateLimited,
+    ResendTooSoon,
+}
+
+struct OtpReservation<'a> {
+    challenge_id: &'a str,
+    phone: &'a str,
+    purpose: &'a str,
+    code_digest: &'a [u8],
+    client_ip: Option<&'a str>,
+    expires_at: OffsetDateTime,
+    resend_after: OffsetDateTime,
+    now: OffsetDateTime,
+    start_window: Duration,
+    max_starts: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FailureAdmission {
+    Recorded,
+    RateLimited,
+}
 #[provides(phone::Phone)]
 impl PhoneProvider for PhoneAuthPlugin {
     fn start_otp(
@@ -164,22 +298,10 @@ impl PhoneProvider for PhoneAuthPlugin {
                 StartOtpRequestPurpose::Register => "register",
             };
             let now = OffsetDateTime::now_utc();
-            if let Some(ip) = r.client_ip.as_ref() {
-                if ip.len() > 128 {
-                    return Ok(Err(StartOtpError::RateLimited));
-                }
-                let since = now
-                    - Duration::seconds(
-                        i64::try_from(a.config.start_window_seconds).expect("validated"),
-                    );
-                let count:i64=sqlx::query_scalar("SELECT count(*) FROM phone_otp_challenges WHERE client_ip=$1 AND created_at>=$2").bind(ip).bind(since).fetch_one(a.prepared.postgres.pool()).await.map_err(db)?;
-                if count >= a.config.max_starts_per_ip {
-                    return Ok(Err(StartOtpError::RateLimited));
-                }
-            }
-            let resend:Option<OffsetDateTime>=sqlx::query_scalar("SELECT resend_after FROM phone_otp_challenges WHERE phone=$1 ORDER BY created_at DESC LIMIT 1").bind(&phone).fetch_optional(a.prepared.postgres.pool()).await.map_err(db)?;
-            if resend.is_some_and(|v| v > now) {
-                return Ok(Err(StartOtpError::ResendTooSoon));
+            if let Some(ip) = r.client_ip.as_ref()
+                && ip.len() > 128
+            {
+                return Ok(Err(StartOtpError::RateLimited));
             }
             let code = random_digits(a.config.otp_code_length)?;
             let challenge_id = random_id("otp_")?;
@@ -190,7 +312,29 @@ impl PhoneProvider for PhoneAuthPlugin {
                 + Duration::seconds(
                     i64::try_from(a.config.resend_cooldown_seconds).expect("validated"),
                 );
-            sqlx::query("INSERT INTO phone_otp_challenges(challenge_id,phone,purpose,code_digest,client_ip,expires_at,resend_after)VALUES($1,$2,$3,$4,$5,$6,$7)").bind(&challenge_id).bind(&phone).bind(purpose).bind(digest).bind(&r.client_ip).bind(expires).bind(resend_after).execute(a.prepared.postgres.pool()).await.map_err(db)?;
+            let reservation = OtpReservation {
+                challenge_id: &challenge_id,
+                phone: &phone,
+                purpose,
+                code_digest: &digest,
+                client_ip: r.client_ip.as_deref(),
+                expires_at: expires,
+                resend_after,
+                now,
+                start_window: Duration::seconds(
+                    i64::try_from(a.config.start_window_seconds).expect("validated"),
+                ),
+                max_starts: a.config.max_starts_per_ip,
+            };
+            match reserve_otp_challenge(&a.prepared.postgres, &reservation).await? {
+                OtpReservationOutcome::Inserted => {}
+                OtpReservationOutcome::RateLimited => {
+                    return Ok(Err(StartOtpError::RateLimited));
+                }
+                OtpReservationOutcome::ResendTooSoon => {
+                    return Ok(Err(StartOtpError::ResendTooSoon));
+                }
+            }
             let delivery = sms
                 .send_with_context(
                     context,
@@ -362,7 +506,12 @@ impl PhoneProvider for PhoneAuthPlugin {
             let Some(phone) = phone else {
                 return Ok(Err(SetPasswordError::NotFound));
             };
-            let hash = hash_password(&r.password)?;
+            let hash = a
+                .prepared
+                .password_work
+                .hash(r.password)
+                .await
+                .map_err(|error| password_work_failure(&error))?;
             sqlx::query("INSERT INTO phone_passwords(subject_id,phone,password_hash)VALUES($1,$2,$3)ON CONFLICT(subject_id)DO UPDATE SET password_hash=EXCLUDED.password_hash,updated_at=transaction_timestamp()").bind(&r.subject).bind(phone).bind(hash).execute(a.prepared.postgres.pool()).await.map_err(db)?;
             Ok(Ok(SetPasswordResponse { updated: true }))
         })
@@ -383,15 +532,14 @@ impl PhoneProvider for PhoneAuthPlugin {
                 - Duration::seconds(
                     i64::try_from(a.config.password_failure_window_seconds).expect("validated"),
                 );
-            let failures: i64 = sqlx::query_scalar(
-                "SELECT count(*) FROM phone_login_failures WHERE phone=$1 AND failed_at>=$2",
+            if phone_failure_limit_reached(
+                &a.prepared.postgres,
+                &phone,
+                since,
+                a.config.max_password_failures,
             )
-            .bind(&phone)
-            .bind(since)
-            .fetch_one(a.prepared.postgres.pool())
-            .await
-            .map_err(db)?;
-            if failures >= a.config.max_password_failures {
+            .await?
+            {
                 return Ok(Err(PasswordLoginError::RateLimited));
             }
             let row =
@@ -400,27 +548,40 @@ impl PhoneProvider for PhoneAuthPlugin {
                     .fetch_optional(a.prepared.postgres.pool())
                     .await
                     .map_err(db)?;
-            let valid = row.as_ref().is_some_and(|row| {
-                row.try_get::<String, _>("password_hash")
-                    .is_ok_and(|hash| verify_password(&r.password, &hash))
-            });
-            if !valid {
-                sqlx::query("INSERT INTO phone_login_failures(phone)VALUES($1)")
-                    .bind(&phone)
-                    .execute(a.prepared.postgres.pool())
-                    .await
-                    .map_err(db)?;
-                return Ok(Err(PasswordLoginError::InvalidCredentials));
-            }
-            sqlx::query("DELETE FROM phone_login_failures WHERE phone=$1")
-                .bind(&phone)
-                .execute(a.prepared.postgres.pool())
+            let (subject, stored_hash) = match row {
+                Some(row) => (
+                    Some(row.try_get::<String, _>("subject_id").map_err(db)?),
+                    Some(row.try_get::<String, _>("password_hash").map_err(db)?),
+                ),
+                None => (None, None),
+            };
+            let valid = match a
+                .prepared
+                .password_work
+                .verify(r.password, stored_hash)
                 .await
-                .map_err(db)?;
-            let subject: String = row
-                .expect("verified row")
-                .try_get("subject_id")
-                .map_err(db)?;
+            {
+                Ok(valid) => valid,
+                Err(PasswordWorkError::Saturated) => {
+                    return Ok(Err(PasswordLoginError::RateLimited));
+                }
+                Err(error) => return Err(password_work_failure(&error)),
+            };
+            if !valid {
+                return match record_phone_failure_if_allowed(
+                    &a.prepared.postgres,
+                    &phone,
+                    since,
+                    a.config.max_password_failures,
+                )
+                .await?
+                {
+                    FailureAdmission::Recorded => Ok(Err(PasswordLoginError::InvalidCredentials)),
+                    FailureAdmission::RateLimited => Ok(Err(PasswordLoginError::RateLimited)),
+                };
+            }
+            clear_phone_failures(&a.prepared.postgres, &phone).await?;
+            let subject = subject.expect("verified credential has a subject");
             let credential = match issue(
                 &a,
                 &issuer,
@@ -503,9 +664,13 @@ impl Lifecycle for PhoneAuthPlugin {
         )
         .await
         .map_err(|e| failure(&e.to_string()))?;
+        let password_work = PasswordWork::prepare()
+            .await
+            .map_err(|error| password_work_failure(&error))?;
         let prepared = Prepared {
             postgres,
             otp_secret: Zeroizing::new(otp.as_bytes().to_vec()),
+            password_work,
         };
         state.replace(Some(prepared.clone()));
         let active = self.active.clone();
@@ -545,6 +710,179 @@ async fn resolve(
             SecretsInvocationError::Domain(_) => failure("Phone Auth secret was rejected"),
             SecretsInvocationError::Runtime(e) => e,
         })
+}
+
+async fn reserve_otp_challenge(
+    postgres: &OwnedPostgres,
+    reservation: &OtpReservation<'_>,
+) -> Result<OtpReservationOutcome, RuntimeFailure> {
+    let mut transaction = postgres.pool().begin().await.map_err(db)?;
+    let phone_key = format!("lenso-auth-phone-otp-phone:{}", reservation.phone);
+    advisory_lock(&mut transaction, &phone_key).await?;
+    let source_key = reservation.client_ip.unwrap_or("<missing>");
+    let source_key = format!("lenso-auth-phone-otp-source:{source_key}");
+    advisory_lock(&mut transaction, &source_key).await?;
+    let starts: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM phone_otp_challenges WHERE client_ip IS NOT DISTINCT FROM $1 AND created_at >= $2",
+    )
+    .bind(reservation.client_ip)
+    .bind(reservation.now - reservation.start_window)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(db)?;
+    if starts >= reservation.max_starts {
+        transaction.commit().await.map_err(db)?;
+        return Ok(OtpReservationOutcome::RateLimited);
+    }
+    let resend: Option<OffsetDateTime> = sqlx::query_scalar(
+        "SELECT resend_after FROM phone_otp_challenges WHERE phone=$1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(reservation.phone)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(db)?;
+    if resend.is_some_and(|value| value > reservation.now) {
+        transaction.commit().await.map_err(db)?;
+        return Ok(OtpReservationOutcome::ResendTooSoon);
+    }
+    sqlx::query("INSERT INTO phone_otp_challenges(challenge_id,phone,purpose,code_digest,client_ip,expires_at,resend_after)VALUES($1,$2,$3,$4,$5,$6,$7)")
+        .bind(reservation.challenge_id)
+        .bind(reservation.phone)
+        .bind(reservation.purpose)
+        .bind(reservation.code_digest)
+        .bind(reservation.client_ip)
+        .bind(reservation.expires_at)
+        .bind(reservation.resend_after)
+        .execute(&mut *transaction)
+        .await
+        .map_err(db)?;
+    transaction.commit().await.map_err(db)?;
+    Ok(OtpReservationOutcome::Inserted)
+}
+
+async fn phone_failure_limit_reached(
+    postgres: &OwnedPostgres,
+    phone: &str,
+    since: OffsetDateTime,
+    max_failures: i64,
+) -> Result<bool, RuntimeFailure> {
+    prune_stale_phone_failures(postgres, since).await?;
+    let mut transaction = postgres.pool().begin().await.map_err(db)?;
+    lock_phone_failures(&mut transaction, phone).await?;
+    prune_phone_failures(&mut transaction, phone, since).await?;
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM phone_login_failures WHERE phone=$1 AND failed_at >= $2",
+    )
+    .bind(phone)
+    .bind(since)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(db)?;
+    transaction.commit().await.map_err(db)?;
+    Ok(count >= max_failures)
+}
+
+async fn record_phone_failure_if_allowed(
+    postgres: &OwnedPostgres,
+    phone: &str,
+    since: OffsetDateTime,
+    max_failures: i64,
+) -> Result<FailureAdmission, RuntimeFailure> {
+    let mut transaction = postgres.pool().begin().await.map_err(db)?;
+    lock_phone_failures(&mut transaction, phone).await?;
+    prune_phone_failures(&mut transaction, phone, since).await?;
+    let inserted = sqlx::query_scalar::<_, i32>(
+        "INSERT INTO phone_login_failures(phone) SELECT $1 WHERE (SELECT count(*) FROM phone_login_failures WHERE phone=$1 AND failed_at >= $2) < $3 RETURNING 1",
+    )
+    .bind(phone)
+    .bind(since)
+    .bind(max_failures)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(db)?;
+    transaction.commit().await.map_err(db)?;
+    Ok(if inserted.is_some() {
+        FailureAdmission::Recorded
+    } else {
+        FailureAdmission::RateLimited
+    })
+}
+
+async fn clear_phone_failures(postgres: &OwnedPostgres, phone: &str) -> Result<(), RuntimeFailure> {
+    let mut transaction = postgres.pool().begin().await.map_err(db)?;
+    lock_phone_failures(&mut transaction, phone).await?;
+    sqlx::query("DELETE FROM phone_login_failures WHERE phone=$1")
+        .bind(phone)
+        .execute(&mut *transaction)
+        .await
+        .map_err(db)?;
+    transaction.commit().await.map_err(db)?;
+    Ok(())
+}
+
+#[cfg(test)]
+async fn current_phone_failure_count(
+    postgres: &OwnedPostgres,
+    phone: &str,
+    since: OffsetDateTime,
+) -> Result<i64, RuntimeFailure> {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM phone_login_failures WHERE phone=$1 AND failed_at >= $2",
+    )
+    .bind(phone)
+    .bind(since)
+    .fetch_one(postgres.pool())
+    .await
+    .map_err(db)
+}
+
+async fn lock_phone_failures(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    phone: &str,
+) -> Result<(), RuntimeFailure> {
+    let key = format!("lenso-auth-phone-password:{phone}");
+    advisory_lock(transaction, &key).await
+}
+
+async fn prune_phone_failures(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    phone: &str,
+    since: OffsetDateTime,
+) -> Result<(), RuntimeFailure> {
+    sqlx::query("DELETE FROM phone_login_failures WHERE phone=$1 AND failed_at < $2")
+        .bind(phone)
+        .bind(since)
+        .execute(&mut **transaction)
+        .await
+        .map_err(db)?;
+    Ok(())
+}
+
+async fn prune_stale_phone_failures(
+    postgres: &OwnedPostgres,
+    before: OffsetDateTime,
+) -> Result<u64, RuntimeFailure> {
+    let result = sqlx::query(
+        "WITH stale AS (SELECT ctid FROM phone_login_failures WHERE failed_at < $1 ORDER BY failed_at, ctid FOR UPDATE SKIP LOCKED LIMIT $2) DELETE FROM phone_login_failures AS failures USING stale WHERE failures.ctid = stale.ctid",
+    )
+    .bind(before)
+    .bind(STALE_FAILURE_PRUNE_BATCH)
+    .execute(postgres.pool())
+    .await
+    .map_err(db)?;
+    Ok(result.rows_affected())
+}
+
+async fn advisory_lock(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    key: &str,
+) -> Result<(), RuntimeFailure> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(key)
+        .execute(&mut **transaction)
+        .await
+        .map_err(db)?;
+    Ok(())
 }
 fn normalize_phone(v: &str) -> Option<String> {
     let mut out = String::new();
@@ -604,17 +942,20 @@ fn valid_name(v: &str) -> bool {
 fn valid_password(v: &str) -> bool {
     (8..=1024).contains(&v.len())
 }
-fn hash_password(v: &str) -> Result<String, RuntimeFailure> {
+fn hash_password_sync(v: &str) -> Result<String, PhonePasswordError> {
     let mut b = [0u8; 16];
-    getrandom::fill(&mut b).map_err(|_| failure("random source unavailable"))?;
-    let salt = SaltString::encode_b64(&b).map_err(|_| failure("password salt failed"))?;
+    getrandom::fill(&mut b).map_err(|_| PhonePasswordError::Random)?;
+    let salt = SaltString::encode_b64(&b).map_err(|_| PhonePasswordError::Hash)?;
     Argon2::default()
         .hash_password(v.as_bytes(), &salt)
         .map(|h| h.to_string())
-        .map_err(|_| failure("password hashing failed"))
+        .map_err(|_| PhonePasswordError::Hash)
 }
-fn verify_password(v: &str, h: &str) -> bool {
+fn verify_password_sync(v: &str, h: &str) -> bool {
     PasswordHash::new(h).is_ok_and(|p| Argon2::default().verify_password(v.as_bytes(), &p).is_ok())
+}
+fn password_work_failure(error: &PasswordWorkError) -> RuntimeFailure {
+    failure(&error.to_string())
 }
 fn format_time(v: OffsetDateTime) -> Result<String, RuntimeFailure> {
     v.format(&Rfc3339).map_err(|e| failure(&e.to_string()))
@@ -637,6 +978,33 @@ fn db(e: sqlx::Error) -> RuntimeFailure {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn test_postgres(label: &str) -> (String, String, OwnedPostgres) {
+        let database_url =
+            std::env::var("LENSO_POSTGRES_TEST_URL").expect("LENSO_POSTGRES_TEST_URL is required");
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let schema = format!("phone_{label}_test_{}_{suffix}", std::process::id());
+        PhoneOperator::setup(&database_url, &schema).await.unwrap();
+        let postgres = OwnedPostgres::prepare(&database_url, schema_plan(schema.clone()).unwrap())
+            .await
+            .unwrap();
+        (database_url, schema, postgres)
+    }
+
+    async fn cleanup_test_postgres(database_url: &str, schema: &str, postgres: OwnedPostgres) {
+        use sqlx::{AssertSqlSafe, Executor};
+
+        postgres.pool().close().await;
+        let cleanup_pool = sqlx::PgPool::connect(database_url).await.unwrap();
+        cleanup_pool
+            .execute(AssertSqlSafe(format!("DROP SCHEMA \"{schema}\" CASCADE")))
+            .await
+            .unwrap();
+        cleanup_pool.close().await;
+    }
 
     #[test]
     fn phone_normalization_is_canonical_and_rejects_invalid_input() {
@@ -663,9 +1031,247 @@ mod tests {
 
     #[test]
     fn password_hash_round_trip_does_not_store_plaintext() {
-        let hash = hash_password("correct horse battery staple").unwrap();
+        let hash = hash_password_sync("correct horse battery staple").unwrap();
         assert!(!hash.contains("correct horse battery staple"));
-        assert!(verify_password("correct horse battery staple", &hash));
-        assert!(!verify_password("wrong", &hash));
+        assert!(verify_password_sync("correct horse battery staple", &hash));
+        assert!(!verify_password_sync("wrong", &hash));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn missing_ip_otp_starts_share_one_atomic_fallback_limit() {
+        let (database_url, schema, postgres) = test_postgres("otp_limit").await;
+        let now = OffsetDateTime::now_utc();
+        let digest = [0_u8; 32];
+        let reservation = |challenge_id, phone| OtpReservation {
+            challenge_id,
+            phone,
+            purpose: "login",
+            code_digest: &digest,
+            client_ip: None,
+            expires_at: now + Duration::minutes(5),
+            resend_after: now,
+            now,
+            start_window: Duration::minutes(1),
+            max_starts: 2,
+        };
+        let first = reservation("otp_concurrent_1", "+12025550101");
+        let second = reservation("otp_concurrent_2", "+12025550102");
+        let third = reservation("otp_concurrent_3", "+12025550103");
+        let fourth = reservation("otp_concurrent_4", "+12025550104");
+        let fifth = reservation("otp_concurrent_5", "+12025550105");
+
+        let outcomes = tokio::join!(
+            reserve_otp_challenge(&postgres, &first),
+            reserve_otp_challenge(&postgres, &second),
+            reserve_otp_challenge(&postgres, &third),
+            reserve_otp_challenge(&postgres, &fourth),
+            reserve_otp_challenge(&postgres, &fifth),
+        );
+        let inserted = [outcomes.0, outcomes.1, outcomes.2, outcomes.3, outcomes.4]
+            .into_iter()
+            .map(Result::unwrap)
+            .filter(|outcome| *outcome == OtpReservationOutcome::Inserted)
+            .count();
+        assert_eq!(inserted, 2);
+
+        cleanup_test_postgres(&database_url, &schema, postgres).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn concurrent_phone_password_failures_admit_exact_limit() {
+        let (database_url, schema, postgres) = test_postgres("password_limit").await;
+        let since = OffsetDateTime::now_utc() - Duration::minutes(1);
+        let phone = "+12025550123";
+
+        let outcomes = tokio::join!(
+            record_phone_failure_if_allowed(&postgres, phone, since, 2),
+            record_phone_failure_if_allowed(&postgres, phone, since, 2),
+            record_phone_failure_if_allowed(&postgres, phone, since, 2),
+            record_phone_failure_if_allowed(&postgres, phone, since, 2),
+            record_phone_failure_if_allowed(&postgres, phone, since, 2),
+        );
+        let recorded = [outcomes.0, outcomes.1, outcomes.2, outcomes.3, outcomes.4]
+            .into_iter()
+            .map(Result::unwrap)
+            .filter(|outcome| *outcome == FailureAdmission::Recorded)
+            .count();
+        assert_eq!(recorded, 2);
+        assert_eq!(
+            current_phone_failure_count(&postgres, phone, since)
+                .await
+                .unwrap(),
+            2
+        );
+
+        cleanup_test_postgres(&database_url, &schema, postgres).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn stale_phone_failure_pruning_is_bounded_and_eventually_drains() {
+        let (database_url, schema, postgres) = test_postgres("password_prune").await;
+        let cutoff = OffsetDateTime::now_utc() - Duration::minutes(1);
+        let stale_count = STALE_FAILURE_PRUNE_BATCH + 5;
+        sqlx::query("INSERT INTO phone_login_failures(phone,failed_at) SELECT '+1202555' || lpad(value::text, 4, '0'), $1 FROM generate_series(1,$2) AS value")
+            .bind(cutoff - Duration::minutes(1))
+            .bind(stale_count)
+            .execute(postgres.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO phone_login_failures(phone,failed_at) VALUES('+12025559998',$1),('+12025559999',$1)")
+            .bind(cutoff + Duration::seconds(1))
+            .execute(postgres.pool())
+            .await
+            .unwrap();
+
+        phone_failure_limit_reached(&postgres, "+12025550000", cutoff, 10)
+            .await
+            .unwrap();
+        let remaining_stale: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM phone_login_failures WHERE failed_at < $1")
+                .bind(cutoff)
+                .fetch_one(postgres.pool())
+                .await
+                .unwrap();
+        let active: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM phone_login_failures WHERE failed_at >= $1")
+                .bind(cutoff)
+                .fetch_one(postgres.pool())
+                .await
+                .unwrap();
+        assert_eq!(remaining_stale, stale_count - STALE_FAILURE_PRUNE_BATCH);
+        assert_eq!(active, 2);
+
+        phone_failure_limit_reached(&postgres, "+12025550000", cutoff, 10)
+            .await
+            .unwrap();
+        let remaining_stale: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM phone_login_failures WHERE failed_at < $1")
+                .bind(cutoff)
+                .fetch_one(postgres.pool())
+                .await
+                .unwrap();
+        let active: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM phone_login_failures WHERE failed_at >= $1")
+                .bind(cutoff)
+                .fetch_one(postgres.pool())
+                .await
+                .unwrap();
+        assert_eq!(remaining_stale, 0);
+        assert_eq!(active, 2);
+
+        cleanup_test_postgres(&database_url, &schema, postgres).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn global_phone_prune_and_keyed_record_complete_without_deadlock() {
+        let (database_url, schema, postgres) = test_postgres("password_prune_race").await;
+        let cutoff = OffsetDateTime::now_utc() - Duration::minutes(1);
+        let phone = "+12025550000";
+        sqlx::query("INSERT INTO phone_login_failures(phone,failed_at) VALUES($1,$2)")
+            .bind(phone)
+            .bind(cutoff - Duration::minutes(2))
+            .execute(postgres.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO phone_login_failures(phone,failed_at) SELECT '+1202666' || lpad(value::text, 4, '0'), $1 FROM generate_series(1,$2) AS value")
+            .bind(cutoff - Duration::minutes(1))
+            .bind(STALE_FAILURE_PRUNE_BATCH)
+            .execute(postgres.pool())
+            .await
+            .unwrap();
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let prune_barrier = Arc::clone(&barrier);
+        let record_barrier = Arc::clone(&barrier);
+
+        let (pruned, admission) = tokio::time::timeout(StdDuration::from_secs(5), async {
+            tokio::join!(
+                async {
+                    prune_barrier.wait().await;
+                    prune_stale_phone_failures(&postgres, cutoff).await
+                },
+                async {
+                    record_barrier.wait().await;
+                    record_phone_failure_if_allowed(&postgres, phone, cutoff, 2).await
+                },
+            )
+        })
+        .await
+        .expect("global prune and keyed record must not deadlock");
+        assert_eq!(pruned.unwrap(), STALE_FAILURE_PRUNE_BATCH as u64);
+        assert_eq!(admission.unwrap(), FailureAdmission::Recorded);
+        assert_eq!(
+            current_phone_failure_count(&postgres, phone, cutoff)
+                .await
+                .unwrap(),
+            1
+        );
+
+        cleanup_test_postgres(&database_url, &schema, postgres).await;
+    }
+
+    #[tokio::test]
+    async fn credential_hit_and_miss_each_run_one_verifier() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let dummy_hash: Arc<str> = Arc::from("dummy-encoded-hash");
+        let hit_calls = Arc::clone(&calls);
+        let hit = verify_candidate_with(
+            "password".to_owned(),
+            Some("stored-encoded-hash".to_owned()),
+            Arc::clone(&dummy_hash),
+            move |_, _| async move {
+                hit_calls.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, ()>(true)
+            },
+        )
+        .await
+        .unwrap();
+        let miss_calls = Arc::clone(&calls);
+        let miss = verify_candidate_with(
+            "password".to_owned(),
+            None,
+            dummy_hash,
+            move |_, _| async move {
+                miss_calls.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, ()>(true)
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(hit);
+        assert!(!miss);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn password_work_rejects_overload_without_queueing() {
+        let worker = PasswordWork::prepare_with_limit(1).await.unwrap();
+        let first_worker = worker.clone();
+        let release = Arc::new(std::sync::Barrier::new(2));
+        let release_worker = Arc::clone(&release);
+        let (started_sender, started_receiver) = tokio::sync::oneshot::channel();
+        let first = tokio::spawn(async move {
+            first_worker
+                .run(move || {
+                    let _ = started_sender.send(());
+                    release_worker.wait();
+                    Ok(())
+                })
+                .await
+        });
+        started_receiver.await.unwrap();
+
+        assert!(matches!(
+            worker.run(|| Ok(())).await,
+            Err(PasswordWorkError::Saturated)
+        ));
+        release.wait();
+        first.await.unwrap().unwrap();
     }
 }

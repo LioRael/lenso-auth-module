@@ -4,7 +4,10 @@ mod operator;
 mod schema;
 mod storage;
 
-use std::{cell::RefCell, collections::BTreeMap, fmt, rc::Rc, time::Duration as StdDuration};
+use std::{
+    cell::RefCell, collections::BTreeMap, fmt, future::Future, rc::Rc, sync::Arc,
+    time::Duration as StdDuration,
+};
 
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 use lenso::{ActivateContext, DeactivateContext, Lifecycle, Port, provides};
@@ -28,6 +31,7 @@ use lenso_postgres_kit::OwnedPostgres;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
+use tokio::sync::Semaphore;
 use zeroize::Zeroizing;
 
 use crate::schema::schema_plan;
@@ -35,6 +39,8 @@ use crate::schema::schema_plan;
 pub use operator::{PasswordAuthOperator, PasswordOperatorError};
 
 const DEPENDENCY_TIMEOUT: StdDuration = StdDuration::from_secs(10);
+const MAX_PASSWORD_WORK_JOBS: usize = 4;
+const DUMMY_PASSWORD_INPUT: &str = "lenso-auth-password-dummy-input";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, lenso::PluginConfig)]
 #[serde(deny_unknown_fields)]
@@ -114,6 +120,7 @@ fn validate_config(config: &PasswordAuthConfig) -> Result<(), RuntimeFailure> {
 struct ActivePassword {
     postgres: OwnedPostgres,
     config: PasswordAuthConfig,
+    password_work: PasswordWork,
 }
 impl fmt::Debug for ActivePassword {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -121,6 +128,106 @@ impl fmt::Debug for ActivePassword {
             .field("schema", &self.postgres.schema())
             .finish_non_exhaustive()
     }
+}
+
+#[derive(Clone)]
+struct PasswordWork {
+    permits: Arc<Semaphore>,
+    dummy_hash: Arc<str>,
+}
+
+impl fmt::Debug for PasswordWork {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PasswordWork")
+            .field("available", &self.permits.available_permits())
+            .finish_non_exhaustive()
+    }
+}
+
+impl PasswordWork {
+    async fn prepare() -> Result<Self, PasswordWorkError> {
+        Self::prepare_with_limit(MAX_PASSWORD_WORK_JOBS).await
+    }
+
+    async fn prepare_with_limit(limit: usize) -> Result<Self, PasswordWorkError> {
+        let permits = Arc::new(Semaphore::new(limit));
+        let dummy_hash = run_password_job(Arc::clone(&permits), || {
+            hash_password_sync(DUMMY_PASSWORD_INPUT)
+        })
+        .await?;
+        Ok(Self {
+            permits,
+            dummy_hash: Arc::from(dummy_hash),
+        })
+    }
+
+    async fn hash(&self, password: String) -> Result<String, PasswordWorkError> {
+        self.run(move || hash_password_sync(&password)).await
+    }
+
+    async fn verify(
+        &self,
+        password: String,
+        stored_hash: Option<String>,
+    ) -> Result<bool, PasswordWorkError> {
+        let dummy_hash = Arc::clone(&self.dummy_hash);
+        verify_candidate_with(password, stored_hash, dummy_hash, |password, encoded| {
+            self.run(move || Ok(verify_password_sync(&password, &encoded)))
+        })
+        .await
+    }
+
+    async fn run<T, F>(&self, job: F) -> Result<T, PasswordWorkError>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T, PasswordPluginError> + Send + 'static,
+    {
+        run_password_job(Arc::clone(&self.permits), job).await
+    }
+}
+
+#[derive(Debug, Error)]
+enum PasswordWorkError {
+    #[error("password work capacity is exhausted")]
+    Saturated,
+    #[error("password worker terminated")]
+    Join,
+    #[error(transparent)]
+    Password(#[from] PasswordPluginError),
+}
+
+async fn run_password_job<T, F>(permits: Arc<Semaphore>, job: F) -> Result<T, PasswordWorkError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, PasswordPluginError> + Send + 'static,
+{
+    let permit = permits
+        .try_acquire_owned()
+        .map_err(|_| PasswordWorkError::Saturated)?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        job()
+    })
+    .await
+    .map_err(|_| PasswordWorkError::Join)?
+    .map_err(PasswordWorkError::from)
+}
+
+async fn verify_candidate_with<E, F, Fut>(
+    password: String,
+    stored_hash: Option<String>,
+    dummy_hash: Arc<str>,
+    verify: F,
+) -> Result<bool, E>
+where
+    F: FnOnce(String, String) -> Fut,
+    Fut: Future<Output = Result<bool, E>>,
+{
+    let credential_exists = stored_hash.is_some();
+    let encoded = stored_hash.unwrap_or_else(|| dummy_hash.to_string());
+    let verified = verify(password, encoded).await?;
+    Ok(credential_exists && verified)
 }
 
 #[lenso::plugin(lifecycle, validate = validate_config)]
@@ -174,7 +281,11 @@ impl PasswordProvider for PasswordAuthPlugin {
             if !valid_password(&request.password) {
                 return Ok(Err(RegisterError::WeakPassword));
             }
-            let hash = hash_password(&request.password).map_err(runtime)?;
+            let hash = active
+                .password_work
+                .hash(request.password)
+                .await
+                .map_err(runtime)?;
             let identity = directory
                 .ensure_identity_with_context(
                     context.clone(),
@@ -230,29 +341,49 @@ impl PasswordProvider for PasswordAuthPlugin {
                 - Duration::seconds(
                     i64::try_from(active.config.failure_window_seconds).expect("validated"),
                 );
-            if storage::failure_count(&active.postgres, &identifier, since)
-                .await
-                .map_err(runtime)?
-                >= i64::from(active.config.max_failures)
+            if storage::failure_limit_reached(
+                &active.postgres,
+                &identifier,
+                since,
+                active.config.max_failures,
+            )
+            .await
+            .map_err(runtime)?
             {
                 return Ok(Err(LoginError::RateLimited));
             }
             let credential = storage::load_credential(&active.postgres, &identifier)
                 .await
                 .map_err(runtime)?;
-            let valid = credential
-                .as_ref()
-                .is_some_and(|(_, hash)| verify_password(&request.password, hash));
+            let (subject, stored_hash) =
+                credential.map_or((None, None), |(subject, hash)| (Some(subject), Some(hash)));
+            let valid = match active
+                .password_work
+                .verify(request.password, stored_hash)
+                .await
+            {
+                Ok(valid) => valid,
+                Err(PasswordWorkError::Saturated) => return Ok(Err(LoginError::RateLimited)),
+                Err(error) => return Err(runtime(error)),
+            };
             if !valid {
-                storage::record_failure(&active.postgres, &identifier)
-                    .await
-                    .map_err(runtime)?;
-                return Ok(Err(LoginError::InvalidCredentials));
+                return match storage::record_failure_if_allowed(
+                    &active.postgres,
+                    &identifier,
+                    since,
+                    active.config.max_failures,
+                )
+                .await
+                .map_err(runtime)?
+                {
+                    storage::FailureAdmission::Recorded => Ok(Err(LoginError::InvalidCredentials)),
+                    storage::FailureAdmission::RateLimited => Ok(Err(LoginError::RateLimited)),
+                };
             }
             storage::clear_failures(&active.postgres, &identifier)
                 .await
                 .map_err(runtime)?;
-            let subject = credential.expect("checked").0;
+            let subject = subject.expect("verified credential has a subject");
             match issue(&active, &issuer, context, &subject).await {
                 Ok(value) => Ok(Ok(LoginResponse {
                     subject,
@@ -347,9 +478,14 @@ impl Lifecycle for PasswordAuthPlugin {
         .map_err(|error| RuntimeFailure::PluginFailure {
             detail: error.to_string(),
         })?;
+        let password_work = PasswordWork::prepare().await.map_err(runtime)?;
         state.replace(Some(postgres.clone()));
         let active = self.active.clone();
-        active.replace(Some(Rc::new(ActivePassword { postgres, config })));
+        active.replace(Some(Rc::new(ActivePassword {
+            postgres,
+            config,
+            password_work,
+        })));
         Ok(())
     }
 
@@ -392,7 +528,7 @@ fn normalize_identifier(value: &str) -> Option<String> {
 fn valid_password(value: &str) -> bool {
     (8..=1024).contains(&value.len())
 }
-fn hash_password(value: &str) -> Result<String, PasswordPluginError> {
+fn hash_password_sync(value: &str) -> Result<String, PasswordPluginError> {
     let mut bytes = [0_u8; 16];
     getrandom::fill(&mut bytes).map_err(|_| PasswordPluginError::Random)?;
     let salt = SaltString::encode_b64(&bytes).map_err(|_| PasswordPluginError::Hash)?;
@@ -401,7 +537,7 @@ fn hash_password(value: &str) -> Result<String, PasswordPluginError> {
         .map(|hash| hash.to_string())
         .map_err(|_| PasswordPluginError::Hash)
 }
-fn verify_password(value: &str, encoded: &str) -> bool {
+fn verify_password_sync(value: &str, encoded: &str) -> bool {
     PasswordHash::new(encoded).is_ok_and(|hash| {
         Argon2::default()
             .verify_password(value.as_bytes(), &hash)
@@ -423,10 +559,10 @@ mod tests {
     #[test]
     fn password_hash_never_contains_plaintext_and_verifies() {
         let password = "correct horse battery staple";
-        let hash = hash_password(password).unwrap();
+        let hash = hash_password_sync(password).unwrap();
         assert!(!hash.contains(password));
-        assert!(verify_password(password, &hash));
-        assert!(!verify_password("wrong password", &hash));
+        assert!(verify_password_sync(password, &hash));
+        assert!(!verify_password_sync("wrong password", &hash));
     }
 
     #[test]
@@ -436,5 +572,267 @@ mod tests {
             Some("user@example.com".to_owned())
         );
         assert_eq!(normalize_identifier("\n"), None);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn concurrent_invalid_logins_admit_exact_failure_limit() {
+        use sqlx::{AssertSqlSafe, Executor};
+
+        let database_url =
+            std::env::var("LENSO_POSTGRES_TEST_URL").expect("LENSO_POSTGRES_TEST_URL is required");
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let schema = format!("password_limit_test_{}_{suffix}", std::process::id());
+        PasswordAuthOperator::setup(&database_url, &schema)
+            .await
+            .unwrap();
+        let postgres = OwnedPostgres::prepare(&database_url, schema_plan(schema.clone()).unwrap())
+            .await
+            .unwrap();
+        let since = OffsetDateTime::now_utc() - Duration::minutes(1);
+        let identifier = "concurrent@example.test";
+
+        let outcomes = tokio::join!(
+            storage::record_failure_if_allowed(&postgres, identifier, since, 2),
+            storage::record_failure_if_allowed(&postgres, identifier, since, 2),
+            storage::record_failure_if_allowed(&postgres, identifier, since, 2),
+            storage::record_failure_if_allowed(&postgres, identifier, since, 2),
+            storage::record_failure_if_allowed(&postgres, identifier, since, 2),
+        );
+        let recorded = [outcomes.0, outcomes.1, outcomes.2, outcomes.3, outcomes.4]
+            .into_iter()
+            .map(Result::unwrap)
+            .filter(|outcome| *outcome == storage::FailureAdmission::Recorded)
+            .count();
+        assert_eq!(recorded, 2);
+        assert_eq!(
+            storage::current_failure_count(&postgres, identifier, since)
+                .await
+                .unwrap(),
+            2
+        );
+
+        postgres.pool().close().await;
+        let cleanup_pool = sqlx::PgPool::connect(&database_url).await.unwrap();
+        cleanup_pool
+            .execute(AssertSqlSafe(format!("DROP SCHEMA \"{schema}\" CASCADE")))
+            .await
+            .unwrap();
+        cleanup_pool.close().await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn stale_failure_pruning_is_bounded_and_eventually_drains() {
+        use sqlx::{AssertSqlSafe, Executor};
+
+        let database_url =
+            std::env::var("LENSO_POSTGRES_TEST_URL").expect("LENSO_POSTGRES_TEST_URL is required");
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let schema = format!("password_prune_test_{}_{suffix}", std::process::id());
+        PasswordAuthOperator::setup(&database_url, &schema)
+            .await
+            .unwrap();
+        let postgres = OwnedPostgres::prepare(&database_url, schema_plan(schema.clone()).unwrap())
+            .await
+            .unwrap();
+        let cutoff = OffsetDateTime::now_utc() - Duration::minutes(1);
+        let stale_count = storage::STALE_FAILURE_PRUNE_BATCH + 5;
+        sqlx::query("INSERT INTO password_login_failures(identifier,failed_at) SELECT 'stale-' || value, $1 FROM generate_series(1,$2) AS value")
+            .bind(cutoff - Duration::minutes(1))
+            .bind(stale_count)
+            .execute(postgres.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO password_login_failures(identifier,failed_at) VALUES('active-a',$1),('active-b',$1)")
+            .bind(cutoff + Duration::seconds(1))
+            .execute(postgres.pool())
+            .await
+            .unwrap();
+
+        storage::failure_limit_reached(&postgres, "probe", cutoff, 10)
+            .await
+            .unwrap();
+        let remaining_stale: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM password_login_failures WHERE failed_at < $1")
+                .bind(cutoff)
+                .fetch_one(postgres.pool())
+                .await
+                .unwrap();
+        let active: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM password_login_failures WHERE failed_at >= $1",
+        )
+        .bind(cutoff)
+        .fetch_one(postgres.pool())
+        .await
+        .unwrap();
+        assert_eq!(
+            remaining_stale,
+            stale_count - storage::STALE_FAILURE_PRUNE_BATCH
+        );
+        assert_eq!(active, 2);
+
+        storage::failure_limit_reached(&postgres, "probe", cutoff, 10)
+            .await
+            .unwrap();
+        let remaining_stale: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM password_login_failures WHERE failed_at < $1")
+                .bind(cutoff)
+                .fetch_one(postgres.pool())
+                .await
+                .unwrap();
+        let active: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM password_login_failures WHERE failed_at >= $1",
+        )
+        .bind(cutoff)
+        .fetch_one(postgres.pool())
+        .await
+        .unwrap();
+        assert_eq!(remaining_stale, 0);
+        assert_eq!(active, 2);
+
+        postgres.pool().close().await;
+        let cleanup_pool = sqlx::PgPool::connect(&database_url).await.unwrap();
+        cleanup_pool
+            .execute(AssertSqlSafe(format!("DROP SCHEMA \"{schema}\" CASCADE")))
+            .await
+            .unwrap();
+        cleanup_pool.close().await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn global_prune_and_keyed_record_complete_without_deadlock() {
+        use sqlx::{AssertSqlSafe, Executor};
+
+        let database_url =
+            std::env::var("LENSO_POSTGRES_TEST_URL").expect("LENSO_POSTGRES_TEST_URL is required");
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let schema = format!("password_prune_race_test_{}_{suffix}", std::process::id());
+        PasswordAuthOperator::setup(&database_url, &schema)
+            .await
+            .unwrap();
+        let postgres = OwnedPostgres::prepare(&database_url, schema_plan(schema.clone()).unwrap())
+            .await
+            .unwrap();
+        let cutoff = OffsetDateTime::now_utc() - Duration::minutes(1);
+        let identifier = "stale-target@example.test";
+        sqlx::query("INSERT INTO password_login_failures(identifier,failed_at) VALUES($1,$2)")
+            .bind(identifier)
+            .bind(cutoff - Duration::minutes(2))
+            .execute(postgres.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO password_login_failures(identifier,failed_at) SELECT 'stale-race-' || value, $1 FROM generate_series(1,$2) AS value")
+            .bind(cutoff - Duration::minutes(1))
+            .bind(storage::STALE_FAILURE_PRUNE_BATCH)
+            .execute(postgres.pool())
+            .await
+            .unwrap();
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let prune_barrier = Arc::clone(&barrier);
+        let record_barrier = Arc::clone(&barrier);
+
+        let (pruned, admission) = tokio::time::timeout(StdDuration::from_secs(5), async {
+            tokio::join!(
+                async {
+                    prune_barrier.wait().await;
+                    storage::prune_stale_login_failures(&postgres, cutoff).await
+                },
+                async {
+                    record_barrier.wait().await;
+                    storage::record_failure_if_allowed(&postgres, identifier, cutoff, 2).await
+                },
+            )
+        })
+        .await
+        .expect("global prune and keyed record must not deadlock");
+        assert_eq!(pruned.unwrap(), storage::STALE_FAILURE_PRUNE_BATCH as u64);
+        assert_eq!(admission.unwrap(), storage::FailureAdmission::Recorded);
+        assert_eq!(
+            storage::current_failure_count(&postgres, identifier, cutoff)
+                .await
+                .unwrap(),
+            1
+        );
+
+        postgres.pool().close().await;
+        let cleanup_pool = sqlx::PgPool::connect(&database_url).await.unwrap();
+        cleanup_pool
+            .execute(AssertSqlSafe(format!("DROP SCHEMA \"{schema}\" CASCADE")))
+            .await
+            .unwrap();
+        cleanup_pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn credential_hit_and_miss_each_run_one_verifier() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let dummy_hash: Arc<str> = Arc::from("dummy-encoded-hash");
+        let hit_calls = Arc::clone(&calls);
+        let hit = verify_candidate_with(
+            "password".to_owned(),
+            Some("stored-encoded-hash".to_owned()),
+            Arc::clone(&dummy_hash),
+            move |_, _| async move {
+                hit_calls.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, ()>(true)
+            },
+        )
+        .await
+        .unwrap();
+        let miss_calls = Arc::clone(&calls);
+        let miss = verify_candidate_with(
+            "password".to_owned(),
+            None,
+            dummy_hash,
+            move |_, _| async move {
+                miss_calls.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, ()>(true)
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(hit);
+        assert!(!miss);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn password_work_rejects_overload_without_queueing() {
+        let worker = PasswordWork::prepare_with_limit(1).await.unwrap();
+        let first_worker = worker.clone();
+        let release = Arc::new(std::sync::Barrier::new(2));
+        let release_worker = Arc::clone(&release);
+        let (started_sender, started_receiver) = tokio::sync::oneshot::channel();
+        let first = tokio::spawn(async move {
+            first_worker
+                .run(move || {
+                    let _ = started_sender.send(());
+                    release_worker.wait();
+                    Ok(())
+                })
+                .await
+        });
+        started_receiver.await.unwrap();
+
+        assert!(matches!(
+            worker.run(|| Ok(())).await,
+            Err(PasswordWorkError::Saturated)
+        ));
+        release.wait();
+        first.await.unwrap().unwrap();
     }
 }

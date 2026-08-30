@@ -47,7 +47,7 @@ pub struct OidcConfig {
     signing_key_secret: String,
     code_pepper_secret: String,
     issuer: String,
-    jwks: serde_json::Value,
+    jwks: PublicJwks,
     key_id: Option<String>,
     client_id: String,
     redirect_uris: Vec<String>,
@@ -56,6 +56,112 @@ pub struct OidcConfig {
     code_ttl_seconds: u64,
     token_ttl_seconds: u64,
 }
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PublicJwks {
+    keys: Vec<PublicRsaJwk>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct PublicRsaJwk {
+    kty: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kid: Option<String>,
+    #[serde(rename = "use")]
+    key_use: String,
+    alg: String,
+    n: String,
+    e: String,
+}
+
+impl PublicJwks {
+    fn validate(&self, key_id: Option<&str>) -> Result<(), RuntimeFailure> {
+        if self.keys.is_empty() || self.keys.len() > 16 || key_id.is_some_and(|id| !valid_name(id))
+        {
+            return Err(invalid("invalid OIDC public JWKS"));
+        }
+        let mut key_ids = BTreeSet::new();
+        for key in &self.keys {
+            key.validate()?;
+            if let Some(key_id) = key.kid.as_deref()
+                && !key_ids.insert(key_id)
+            {
+                return Err(invalid("OIDC public JWKS contains duplicate key ids"));
+            }
+        }
+        self.selected_key(key_id)?;
+        Ok(())
+    }
+
+    fn selected_key(&self, key_id: Option<&str>) -> Result<&PublicRsaJwk, RuntimeFailure> {
+        let matches = self
+            .keys
+            .iter()
+            .filter(|key| key_id.is_none_or(|expected| key.kid.as_deref() == Some(expected)))
+            .collect::<Vec<_>>();
+        let [key] = matches.as_slice() else {
+            return Err(invalid(
+                "OIDC public JWKS must select exactly one key for the configured key id",
+            ));
+        };
+        Ok(key)
+    }
+
+    fn response_map(&self) -> Result<BTreeMap<String, serde_json::Value>, RuntimeFailure> {
+        let keys = serde_json::to_value(&self.keys)
+            .map_err(|_| failure("OIDC public JWKS serialization failed"))?;
+        Ok(BTreeMap::from([("keys".to_owned(), keys)]))
+    }
+}
+
+impl PublicRsaJwk {
+    fn validate(&self) -> Result<(), RuntimeFailure> {
+        if self.kty != "RSA"
+            || self.alg != "RS256"
+            || self.key_use != "sig"
+            || self.kid.as_deref().is_some_and(|id| !valid_name(id))
+        {
+            return Err(invalid("OIDC public JWKS contains an unsupported key"));
+        }
+        let modulus = decode_public_component(&self.n, 256, 1024)?;
+        let exponent = decode_public_component(&self.e, 1, 8)?;
+        if modulus.last().is_none_or(|byte| byte & 1 == 0)
+            || exponent.first() == Some(&0)
+            || exponent
+                .iter()
+                .fold(0_u64, |value, byte| (value << 8) | u64::from(*byte))
+                < 3
+            || exponent.last().is_none_or(|byte| byte & 1 == 0)
+        {
+            return Err(invalid("OIDC public JWKS contains an invalid RSA key"));
+        }
+        DecodingKey::from_rsa_components(&self.n, &self.e)
+            .map_err(|_| invalid("OIDC public JWKS contains an invalid RSA key"))?;
+        Ok(())
+    }
+}
+
+fn decode_public_component(
+    value: &str,
+    minimum_bytes: usize,
+    maximum_bytes: usize,
+) -> Result<Vec<u8>, RuntimeFailure> {
+    if value.is_empty() || value.len() > 2048 {
+        return Err(invalid("OIDC public JWKS contains an invalid RSA key"));
+    }
+    let decoded = URL_SAFE_NO_PAD
+        .decode(value)
+        .map_err(|_| invalid("OIDC public JWKS contains an invalid RSA key"))?;
+    if !(minimum_bytes..=maximum_bytes).contains(&decoded.len())
+        || URL_SAFE_NO_PAD.encode(&decoded) != value
+    {
+        return Err(invalid("OIDC public JWKS contains an invalid RSA key"));
+    }
+    Ok(decoded)
+}
+
 impl OidcConfig {
     fn validate(&self) -> Result<(), RuntimeFailure> {
         schema_plan(self.schema.clone()).map_err(|e| invalid(&e.to_string()))?;
@@ -70,12 +176,8 @@ impl OidcConfig {
                 "OIDC secret references must be non-empty and distinct",
             ));
         }
-        if self
-            .jwks
-            .get("keys")
-            .and_then(serde_json::Value::as_array)
-            .is_none()
-            || self.client_id.is_empty()
+        self.jwks.validate(self.key_id.as_deref())?;
+        if self.client_id.is_empty()
             || self.redirect_uris.is_empty()
             || self.redirect_uris.iter().any(|v| v.contains('#'))
             || self.authorize_callers.is_empty()
@@ -178,15 +280,7 @@ impl OidcProviderProvider for OidcPlugin {
         Box::pin(async move {
             let a = active?;
             Ok(Ok(JwksResponse {
-                jwks: a
-                    .config
-                    .jwks
-                    .clone()
-                    .as_object()
-                    .cloned()
-                    .ok_or_else(|| failure("invalid configured JWKS"))?
-                    .into_iter()
-                    .collect(),
+                jwks: a.config.jwks.response_map()?,
             }))
         })
     }
@@ -443,43 +537,11 @@ fn valid_name(v: &str) -> bool {
 }
 fn verify_signing_key(
     signing: &EncodingKey,
-    jwks: &serde_json::Value,
+    jwks: &PublicJwks,
     key_id: Option<&str>,
 ) -> Result<(), RuntimeFailure> {
-    let keys = jwks
-        .get("keys")
-        .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| failure("OIDC JWKS has no keys array"))?;
-    let matches = keys
-        .iter()
-        .filter(|key| key.get("kty").and_then(serde_json::Value::as_str) == Some("RSA"))
-        .filter(|key| {
-            key_id.is_none_or(|expected| {
-                key.get("kid").and_then(serde_json::Value::as_str) == Some(expected)
-            })
-        })
-        .collect::<Vec<_>>();
-    let [jwk] = matches.as_slice() else {
-        return Err(failure(
-            "OIDC JWKS must select exactly one RSA key for the configured key id",
-        ));
-    };
-    if jwk
-        .get("alg")
-        .and_then(serde_json::Value::as_str)
-        .is_some_and(|algorithm| algorithm != "RS256")
-    {
-        return Err(failure("OIDC JWKS key algorithm must be RS256"));
-    }
-    let modulus = jwk
-        .get("n")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| failure("OIDC JWKS RSA key lacks modulus"))?;
-    let exponent = jwk
-        .get("e")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| failure("OIDC JWKS RSA key lacks exponent"))?;
-    let decoding = DecodingKey::from_rsa_components(modulus, exponent)
+    let jwk = jwks.selected_key(key_id)?;
+    let decoding = DecodingKey::from_rsa_components(&jwk.n, &jwk.e)
         .map_err(|_| failure("OIDC JWKS contains an invalid RSA public key"))?;
     let mut header = Header::new(Algorithm::RS256);
     header.kid = key_id.map(ToOwned::to_owned);
@@ -537,5 +599,64 @@ mod tests {
         assert_eq!(first, code_digest(&[1_u8; 32], code).unwrap());
         assert_ne!(first, code_digest(&[2_u8; 32], code).unwrap());
         assert_ne!(first, code.as_bytes());
+    }
+
+    fn public_key(key_id: &str) -> PublicRsaJwk {
+        let mut modulus = vec![1_u8; 256];
+        *modulus.last_mut().unwrap() = 3;
+        PublicRsaJwk {
+            kty: "RSA".to_owned(),
+            kid: Some(key_id.to_owned()),
+            key_use: "sig".to_owned(),
+            alg: "RS256".to_owned(),
+            n: URL_SAFE_NO_PAD.encode(modulus),
+            e: URL_SAFE_NO_PAD.encode([1_u8, 0, 1]),
+        }
+    }
+
+    #[test]
+    fn private_jwk_members_are_rejected_during_deserialization() {
+        let key = public_key("current");
+        let mut value = serde_json::to_value(PublicJwks { keys: vec![key] }).unwrap();
+        value["keys"][0]["d"] = serde_json::Value::String("not-public".to_owned());
+
+        assert!(serde_json::from_value::<PublicJwks>(value).is_err());
+    }
+
+    #[test]
+    fn public_jwks_rejects_unsupported_or_ambiguous_keys() {
+        let mut unsupported = public_key("current");
+        unsupported.alg = "RS512".to_owned();
+        assert!(
+            PublicJwks {
+                keys: vec![unsupported]
+            }
+            .validate(Some("current"))
+            .is_err()
+        );
+
+        let duplicate = PublicJwks {
+            keys: vec![public_key("current"), public_key("current")],
+        };
+        assert!(duplicate.validate(Some("current")).is_err());
+    }
+
+    #[test]
+    fn jwks_response_is_reconstructed_from_public_fields() {
+        let jwks = PublicJwks {
+            keys: vec![public_key("current")],
+        };
+        jwks.validate(Some("current")).unwrap();
+
+        let response = jwks.response_map().unwrap();
+        let top_level = response.keys().map(String::as_str).collect::<Vec<_>>();
+        let key = response["keys"].as_array().unwrap()[0].as_object().unwrap();
+        let fields = key.keys().map(String::as_str).collect::<BTreeSet<_>>();
+
+        assert_eq!(top_level, vec!["keys"]);
+        assert_eq!(
+            fields,
+            BTreeSet::from(["alg", "e", "kid", "kty", "n", "use"])
+        );
     }
 }
