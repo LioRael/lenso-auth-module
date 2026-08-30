@@ -5,7 +5,7 @@ use lenso_kernel::{InvocationContext, NativeRequestEndpoint, NativeRequestFuture
 
 use lenso_plugin_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
 pub const CAPABILITY_ID: &str = "lenso.auth.oauth-flow@1";
-pub const DESCRIPTOR_VERSION: &str = "1.0.0";
+pub const DESCRIPTOR_VERSION: &str = "1.1.0";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const OAUTH_FLOW_CAPABILITY_ID: &str = CAPABILITY_ID;
@@ -13,20 +13,20 @@ pub const OAUTH_FLOW_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_provided_oauth_flow { () => { "{\"capability_id\":\"lenso.auth.oauth-flow@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"consume\",\"create\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+macro_rules! __lenso_provided_oauth_flow { () => { "{\"capability_id\":\"lenso.auth.oauth-flow@1\",\"descriptor_version\":\"1.1.0\",\"operations\":[\"consume\",\"create\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_required_oauth_flow_client { () => { "{\"capability_id\":\"lenso.auth.oauth-flow@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+macro_rules! __lenso_required_oauth_flow_client { () => { "{\"capability_id\":\"lenso.auth.oauth-flow@1\",\"descriptor_version\":\"1.1.0\",\"cardinality\":\"one\"}" }; }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_required_many_oauth_flow_client { () => { "{\"capability_id\":\"lenso.auth.oauth-flow@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
+macro_rules! __lenso_required_many_oauth_flow_client { () => { "{\"capability_id\":\"lenso.auth.oauth-flow@1\",\"descriptor_version\":\"1.1.0\",\"cardinality\":\"many\"}" }; }
 
 pub const CONSUME_OPERATION: &str = "consume";
 pub const CREATE_OPERATION: &str = "create";
 
-pub use lenso_contract_runtime::{Timestamp, UnknownDomainError};
+pub use lenso_contract_runtime::{OptionalValue, Timestamp, UnknownDomainError};
 use lenso_contract_runtime::{decode_portable_json, encode_portable_json};
 
 #[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -57,6 +57,11 @@ pub struct ConsumeResponse {
     #[serde(rename = "expires_at")]
     #[serde(deserialize_with = "lenso_contract_runtime::serde::deserialize_required")]
     pub expires_at: Timestamp,
+    #[serde(rename = "nonce")]
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "lenso_contract_runtime::serde::deserialize_optional_value")]
+    pub nonce: OptionalValue<String>,
     #[serde(rename = "return_to")]
     #[serde(deserialize_with = "lenso_contract_runtime::serde::deserialize_required")]
     pub return_to: String,
@@ -68,6 +73,7 @@ impl fmt::Debug for ConsumeResponse {
             .debug_struct("ConsumeResponse")
             .field("code_verifier", &"<redacted>")
             .field("expires_at", &self.expires_at)
+            .field("nonce", &"<redacted>")
             .field("return_to", &self.return_to)
             .finish()
     }
@@ -106,6 +112,11 @@ pub struct CreateResponse {
     #[serde(rename = "expires_at")]
     #[serde(deserialize_with = "lenso_contract_runtime::serde::deserialize_required")]
     pub expires_at: Timestamp,
+    #[serde(rename = "nonce")]
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "lenso_contract_runtime::serde::deserialize_optional_value")]
+    pub nonce: OptionalValue<String>,
     #[serde(rename = "state")]
     #[serde(deserialize_with = "lenso_contract_runtime::serde::deserialize_required")]
     pub state: String,
@@ -118,6 +129,7 @@ impl fmt::Debug for CreateResponse {
             .field("code_challenge", &self.code_challenge)
             .field("code_verifier", &"<redacted>")
             .field("expires_at", &self.expires_at)
+            .field("nonce", &"<redacted>")
             .field("state", &"<redacted>")
             .finish()
     }

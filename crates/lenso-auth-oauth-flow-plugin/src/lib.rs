@@ -108,20 +108,22 @@ impl OauthFlowProvider for OAuthFlowPlugin {
             }
             let state = random(32)?;
             let verifier = random(32)?;
+            let oidc_nonce = random(32)?;
             let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
             let digest = digest(&prepared.key, &state)?;
-            let mut nonce = [0u8; 12];
-            getrandom::fill(&mut nonce).map_err(|_| failure("random source unavailable"))?;
+            let mut cipher_nonce = [0u8; 12];
+            getrandom::fill(&mut cipher_nonce).map_err(|_| failure("random source unavailable"))?;
             let cipher = Aes256Gcm::new_from_slice(&prepared.key)
                 .map_err(|_| failure("invalid OAuth encryption key"))?;
             let encrypted = cipher
-                .encrypt(Nonce::from_slice(&nonce), verifier.as_bytes())
+                .encrypt(Nonce::from_slice(&cipher_nonce), verifier.as_bytes())
                 .map_err(|_| failure("OAuth verifier encryption failed"))?;
-            sqlx::query("INSERT INTO oauth_flows(state_digest,provider,verifier_nonce,encrypted_verifier,return_to,expires_at) VALUES($1,$2,$3,$4,$5,$6)").bind(digest).bind(&request.provider).bind(nonce.as_slice()).bind(encrypted).bind(&request.return_to).bind(expiry).execute(prepared.postgres.pool()).await.map_err(db)?;
+            sqlx::query("INSERT INTO oauth_flows(state_digest,provider,verifier_nonce,encrypted_verifier,return_to,expires_at,oidc_nonce) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(digest).bind(&request.provider).bind(cipher_nonce.as_slice()).bind(encrypted).bind(&request.return_to).bind(expiry).bind(&oidc_nonce).execute(prepared.postgres.pool()).await.map_err(db)?;
             Ok(Ok(CreateResponse {
                 state,
                 code_verifier: verifier,
                 code_challenge: challenge,
+                nonce: Some(Some(oidc_nonce)),
                 expires_at: request.expires_at,
             }))
         })
@@ -139,7 +141,7 @@ impl OauthFlowProvider for OAuthFlowPlugin {
             }
             let digest = digest(&prepared.key, &request.state)?;
             let mut transaction = prepared.postgres.pool().begin().await.map_err(db)?;
-            let row=sqlx::query("SELECT provider,verifier_nonce,encrypted_verifier,return_to,expires_at,consumed_at IS NOT NULL AS consumed FROM oauth_flows WHERE state_digest=$1 FOR UPDATE").bind(&digest).fetch_optional(&mut*transaction).await.map_err(db)?;
+            let row=sqlx::query("SELECT provider,verifier_nonce,encrypted_verifier,oidc_nonce,return_to,expires_at,consumed_at IS NOT NULL AS consumed FROM oauth_flows WHERE state_digest=$1 FOR UPDATE").bind(&digest).fetch_optional(&mut*transaction).await.map_err(db)?;
             let Some(row) = row else {
                 return Ok(Err(ConsumeError::InvalidState));
             };
@@ -176,6 +178,10 @@ impl OauthFlowProvider for OAuthFlowPlugin {
                 .map_err(|_| failure("invalid stored OAuth verifier"))?;
             Ok(Ok(ConsumeResponse {
                 code_verifier: verifier,
+                nonce: row
+                    .try_get::<Option<String>, _>("oidc_nonce")
+                    .map_err(db)?
+                    .map(Some),
                 return_to: row.try_get("return_to").map_err(db)?,
                 expires_at: expiry
                     .format(&Rfc3339)
@@ -271,7 +277,12 @@ fn valid_name(v: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 fn valid_return(v: &str) -> bool {
-    v.starts_with('/') && !v.starts_with("//") && v.len() <= 2048
+    v.starts_with('/')
+        && !v.starts_with("//")
+        && v.len() <= 2048
+        && !v
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte == b'\\')
 }
 fn failure(detail: &str) -> RuntimeFailure {
     RuntimeFailure::PluginFailure {
@@ -280,4 +291,17 @@ fn failure(detail: &str) -> RuntimeFailure {
 }
 fn db(error: impl fmt::Display) -> RuntimeFailure {
     failure(&format!("OAuth Flow storage operation failed: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_return;
+
+    #[test]
+    fn return_targets_reject_authority_and_backslash_ambiguity() {
+        assert!(valid_return("/settings/security?connected=work-sso"));
+        assert!(!valid_return("//attacker.example"));
+        assert!(!valid_return("/\\attacker.example"));
+        assert!(!valid_return("/after\r\nlocation:https://attacker.example"));
+    }
 }

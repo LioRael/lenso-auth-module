@@ -21,8 +21,9 @@ use lenso_capability_auth as auth;
 use lenso_capability_auth::{Auth, AuthRequest, AuthenticateError};
 use lenso_capability_credential_issuer as credential_issuer;
 use lenso_capability_credential_issuer::{
-    CredentialIssuerIssue, CredentialIssuerRevoke, IssueError, IssueRequest, IssueResponse,
-    RevokeError, RevokeRequest, RevokeResponse,
+    CredentialIssuerIssue, CredentialIssuerRevoke, CredentialIssuerRevokeCredential, IssueError,
+    IssueRequest, IssueResponse, RevokeCredentialError, RevokeCredentialRequest,
+    RevokeCredentialResponse, RevokeError, RevokeRequest, RevokeResponse,
 };
 use lenso_capability_identity_directory as directory;
 use lenso_capability_identity_directory::{
@@ -363,6 +364,32 @@ impl AccountAuthPlugin {
             {
                 Some(changed) => Ok(Ok(RevokeResponse { changed })),
                 None => Ok(Err(RevokeError::NotFound)),
+            }
+        })
+    }
+
+    fn revoke_credential(
+        &self,
+        _context: InvocationContext,
+        request: RevokeCredentialRequest,
+    ) -> NativeRequestFuture<CredentialIssuerRevokeCredential> {
+        let prepared = self.prepared();
+        Box::pin(async move {
+            let prepared = prepared?;
+            if request.scheme != "session" {
+                return Ok(Err(RevokeCredentialError::Unsupported));
+            }
+            if !valid_session_token(&request.credential) {
+                return Ok(Err(RevokeCredentialError::InvalidCredential));
+            }
+            let digest =
+                storage::token_digest(&prepared.pepper, &request.credential).map_err(runtime)?;
+            match storage::revoke_credential(&prepared.postgres, &digest)
+                .await
+                .map_err(runtime)?
+            {
+                Some(changed) => Ok(Ok(RevokeCredentialResponse { changed })),
+                None => Ok(Err(RevokeCredentialError::NotFound)),
             }
         })
     }
@@ -870,5 +897,79 @@ mod tests {
     #[test]
     fn credential_issuer_accepts_versioned_capability_audience() {
         assert!(valid_audience("lenso.http.endpoint@1:handle"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn credential_digest_revocation_is_atomic_and_idempotent() {
+        use std::collections::BTreeMap;
+
+        use sqlx::{AssertSqlSafe, Executor};
+
+        let database_url =
+            std::env::var("LENSO_POSTGRES_TEST_URL").expect("LENSO_POSTGRES_TEST_URL is required");
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let schema = format!("auth_revoke_test_{}_{suffix}", std::process::id());
+        AccountAuthOperator::setup(&database_url, &schema)
+            .await
+            .unwrap();
+        let postgres = OwnedPostgres::prepare(&database_url, schema_plan(schema.clone()).unwrap())
+            .await
+            .unwrap();
+        let subject = "usr_revoke_test";
+        storage::ensure_identity(&postgres, "test-provider", "external-revoke-test", subject)
+            .await
+            .unwrap();
+        let pepper = b"test-only-pepper";
+        let token = "lenso_st_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let digest = storage::token_digest(pepper, token).unwrap();
+        storage::insert_session(
+            &postgres,
+            "ses_revoke_test",
+            &digest,
+            subject,
+            "user",
+            "oidc",
+            &["test.app@1".to_owned()],
+            &BTreeMap::new(),
+            OffsetDateTime::now_utc() + Duration::hours(1),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            storage::revoke_credential(&postgres, &digest)
+                .await
+                .unwrap(),
+            Some(true)
+        );
+        assert_eq!(
+            storage::revoke_credential(&postgres, &digest)
+                .await
+                .unwrap(),
+            Some(false)
+        );
+        let unknown = storage::token_digest(
+            pepper,
+            "lenso_st_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        )
+        .unwrap();
+        assert_eq!(
+            storage::revoke_credential(&postgres, &unknown)
+                .await
+                .unwrap(),
+            None
+        );
+
+        postgres.pool().close().await;
+        let cleanup_pool = sqlx::PgPool::connect(&database_url).await.unwrap();
+        cleanup_pool
+            .execute(AssertSqlSafe(format!("DROP SCHEMA \"{schema}\" CASCADE")))
+            .await
+            .unwrap();
+        cleanup_pool.close().await;
     }
 }

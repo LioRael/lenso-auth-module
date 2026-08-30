@@ -71,10 +71,33 @@ pub enum RevokeError {
     NotFound,
 }
 
+#[derive(lenso::JsonSchema, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct RevokeCredentialRequest {
+    pub scheme: String,
+    #[schemars(extend("x-lenso-sensitive" = true))]
+    pub credential: String,
+}
+
+#[derive(lenso::JsonSchema, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+#[schemars(deny_unknown_fields)]
+pub struct RevokeCredentialResponse {
+    pub changed: bool,
+}
+
+#[derive(lenso::DomainError)]
+pub enum RevokeCredentialError {
+    Unsupported,
+    InvalidCredential,
+    NotFound,
+}
+
 #[lenso::capability(
     id = "lenso.auth.credential-issuer",
     major = 1,
-    version = "1.0.0",
+    version = "1.1.0",
     portable = true,
     cross_lane_transfer = true
 )]
@@ -89,4 +112,9 @@ pub trait CredentialIssuer {
         context: lenso::Ctx<'_>,
         request: RevokeRequest,
     ) -> Result<RevokeResponse, RevokeError>;
+    async fn revoke_credential(
+        &self,
+        context: lenso::Ctx<'_>,
+        request: RevokeCredentialRequest,
+    ) -> Result<RevokeCredentialResponse, RevokeCredentialError>;
 }

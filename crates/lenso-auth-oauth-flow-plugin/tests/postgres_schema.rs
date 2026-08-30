@@ -14,6 +14,7 @@ async fn external_sql_schema_setup_and_upgrade() {
     OAuthFlowOperator::setup(&url, &schema).await.unwrap();
     OAuthFlowOperator::upgrade(&url, &schema).await.unwrap();
     assert!(table_exists(&pool, &schema, "oauth_flows").await);
+    assert!(column_exists(&pool, &schema, "oauth_flows", "oidc_nonce").await);
     cleanup(&pool, &schema).await;
 }
 
@@ -31,6 +32,18 @@ async fn table_exists(pool: &PgPool, schema: &str, table: &str) -> bool {
         .fetch_one(pool)
         .await
         .unwrap()
+}
+
+async fn column_exists(pool: &PgPool, schema: &str, table: &str, column: &str) -> bool {
+    sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = $3)",
+    )
+    .bind(schema)
+    .bind(table)
+    .bind(column)
+    .fetch_one(pool)
+    .await
+    .unwrap()
 }
 
 async fn cleanup(pool: &PgPool, schema: &str) {

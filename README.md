@@ -18,7 +18,9 @@ retained on the `v0.3` branch and by its existing package tags and releases.
 The repository does not make HTTP headers, cookies, WebSocket handshakes, or
 game frames part of the Auth Interface. Ingress Adapters select at most one
 credential and call the Auth Capability. Target Plugins authorize locally from
-a verified, audience-limited assertion.
+a verified, audience-limited assertion. The optional Auth Web Session Plugin is
+an HTTP Endpoint Adapter over those contracts; it does not add Cookie semantics
+to the portable Auth domain.
 
 The API Token Plugin is deliberately narrow: it accepts only Adapter-selected
 `bearer` evidence, stores only a keyed digest of each opaque token, checks
@@ -32,10 +34,36 @@ the database URL, signing key, and token pepper through one explicitly bound
 Secrets Capability and only verifies the existing schema. It never creates or
 migrates state during App boot.
 
-HTTP routes, cookies, Organization/RBAC policy, OAuth providers, password
-flows, Console UI, and cross-Plugin database access are not part of this
-Plugin. Future providers must remain behind the existing Capability Interface
-and must not restore removed v0.3 platform types.
+Organization/RBAC policy, Console UI, and cross-Plugin database access are not
+part of these Plugins. Apart from the explicitly named Web Session Adapter,
+Auth Plugins remain wire-neutral and behind explicit Capabilities; they must
+not restore removed v0.3 platform types.
+
+`lenso-auth-oidc-client-plugin` is an external OpenID Connect relying party. It
+adds a nonce to the single-use OAuth Flow record, performs authorization-code
+exchange with PKCE, validates an RS256 ID token against the configured issuer,
+client audience, JWKS key, expiry, issued-at time, and nonce, then obtains the
+canonical subject and opaque session from bound Directory and Credential
+Issuer providers. It is separate from `lenso-auth-oidc-plugin`, which makes a
+Lenso App an OIDC issuer.
+
+`lenso-auth-web-session-plugin` is the removable browser Adapter over a bound
+Federated provider. It owns fixed OIDC start/callback/logout HTTP routes,
+revalidates App-local return targets, emits `Secure`, `HttpOnly`,
+`SameSite=Lax` opaque session Cookies plus a readable double-submit CSRF Cookie,
+and revokes the Ingress-selected session credential on logout. Web Ingress owns
+Cookie credential selection and rejects unsafe Cookie-authenticated requests
+without matching CSRF evidence before the Endpoint runs. Account Auth remains
+the only session store.
+
+Credential Issuer 1.1 also allows an Adapter to revoke the selected opaque
+session credential without first exposing or recovering its session id.
+
+For Web composition, configure Auth Web Session and Web Ingress with identical
+session and CSRF Cookie names. Configure a dedicated Ingress CSRF header name;
+browser code copies the readable CSRF Cookie value into that header on unsafe
+requests. The shipped routes are `/auth/oidc/start`, `/auth/oidc/callback`, and
+`/auth/logout`.
 
 ## API Token workflow
 

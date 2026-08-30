@@ -5,6 +5,12 @@ use lenso_contract_authoring as lenso;
 #[derive(serde::Deserialize)]
 pub struct Nullable<T>(Option<T>);
 
+impl<T> Default for Nullable<T> {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
 impl<T: lenso::JsonSchema> lenso::JsonSchema for Nullable<T> {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         format!("Nullable_{}", T::schema_name()).into()
@@ -38,6 +44,9 @@ pub struct CreateResponse {
     #[schemars(extend("x-lenso-sensitive" = true))]
     pub code_verifier: String,
     pub code_challenge: String,
+    #[serde(default)]
+    #[schemars(extend("x-lenso-sensitive" = true))]
+    pub nonce: Nullable<String>,
     #[schemars(extend("format" = "date-time"))]
     pub expires_at: String,
 }
@@ -65,6 +74,9 @@ pub struct ConsumeRequest {
 pub struct ConsumeResponse {
     #[schemars(extend("x-lenso-sensitive" = true))]
     pub code_verifier: String,
+    #[serde(default)]
+    #[schemars(extend("x-lenso-sensitive" = true))]
+    pub nonce: Nullable<String>,
     pub return_to: String,
     #[schemars(extend("format" = "date-time"))]
     pub expires_at: String,
@@ -81,7 +93,7 @@ pub enum ConsumeError {
 #[lenso::capability(
     id = "lenso.auth.oauth-flow",
     major = 1,
-    version = "1.0.0",
+    version = "1.1.0",
     portable = true,
     cross_lane_transfer = true
 )]
