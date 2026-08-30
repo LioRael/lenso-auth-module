@@ -22,7 +22,7 @@ lenso-capability-auth = { path = "../lenso-capability-auth", version = "0.1.1" }
 lenso-capability-secrets.workspace = true
 lenso-kernel.workspace = true
 lenso-native-adapter.workspace = true
-lenso-postgres-kit = { git = "https://github.com/LioRael/lenso-postgres-kit", rev = "525c1012c789e6f54c3c2fdaf8507a626c93e65f" }
+lenso-postgres-kit.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
