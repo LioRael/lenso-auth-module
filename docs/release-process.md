@@ -11,10 +11,18 @@ The default branch contains five public vNext Rust crates:
 All other workspace members are private implementation crates and must keep
 `publish = false`.
 
-Publication is manual-only. The `Release-plz` workflow has a read-only dry-run
-mode and a separately gated live mode. It uses the explicit versions in the
-post-extraction workspace as the release baseline, so release-plz does not
-derive versions by traversing the imported pre-extraction history.
+Release planning is automatic and publication is manual-only. A push to `main`
+refreshes the repository's Release-plz PR, which owns reviewed version and
+dependency changes. Merging that PR does not publish crates. The workflow also
+has a read-only dry-run mode and a separately gated live mode. It uses the
+explicit versions in the post-extraction workspace as the release baseline, so
+release-plz does not derive versions by traversing the imported pre-extraction
+history.
+
+The release PR uses `RELEASE_PLZ_TOKEN` when configured, or the repository
+GitHub token otherwise. That credential is only for GitHub branch and pull
+request operations. Crates.io publication never receives it and has no Cargo
+registry token fallback.
 
 ## Trusted publishing and first releases
 
@@ -53,7 +61,9 @@ the exact reviewed `main` commit. The release tag format is
 
 ## Release gates
 
-Run the workflow dry-run from `main` first:
+Review the refreshed Release-plz PR first. Confirm that its versions and exact
+workspace dependency requirements form the intended publishable set, merge it,
+and wait for `main` CI to pass. Then run the workflow dry-run from `main`:
 
 ```sh
 gh workflow run release-plz.yml --ref main -f live=false
