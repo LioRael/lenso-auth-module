@@ -23,6 +23,12 @@ use zeroize::Zeroizing;
 
 const DEPENDENCY_TIMEOUT: StdDuration = StdDuration::from_secs(10);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SetTrustOutcome {
+    Updated,
+    NotFound,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, lenso::PluginConfig)]
 #[serde(deny_unknown_fields)]
 pub struct DeviceAuthConfig {
@@ -151,18 +157,52 @@ impl DeviceProvider for DeviceAuthPlugin {
             if !valid(&request.device_id) {
                 return Ok(Err(SetTrustError::InvalidDevice));
             }
-            let mut transaction = postgres.pool().begin().await.map_err(db)?;
-            if request.primary {
-                sqlx::query("UPDATE auth_devices SET primary_at=NULL WHERE subject_id=$1 AND primary_at IS NOT NULL").bind(&request.subject).execute(&mut*transaction).await.map_err(db)?;
-            }
-            let result=sqlx::query("UPDATE auth_devices SET trusted_at=CASE WHEN $3 THEN transaction_timestamp() ELSE NULL END,primary_at=CASE WHEN $4 THEN transaction_timestamp() ELSE NULL END,updated_at=transaction_timestamp() WHERE subject_id=$1 AND device_id=$2").bind(&request.subject).bind(&request.device_id).bind(request.trusted).bind(request.primary).execute(&mut*transaction).await.map_err(db)?;
-            transaction.commit().await.map_err(db)?;
-            if result.rows_affected() == 0 {
+            if set_device_trust(&postgres, &request).await? == SetTrustOutcome::NotFound {
                 return Ok(Err(SetTrustError::NotFound));
             }
             Ok(Ok(SetTrustResponse { changed: true }))
         })
     }
+}
+
+async fn set_device_trust(
+    postgres: &OwnedPostgres,
+    request: &SetTrustRequest,
+) -> Result<SetTrustOutcome, RuntimeFailure> {
+    let mut transaction = postgres.pool().begin().await.map_err(db)?;
+    let locked_devices: Vec<String> = sqlx::query_scalar(
+        "SELECT device_id FROM auth_devices WHERE subject_id=$1 ORDER BY device_id FOR UPDATE",
+    )
+    .bind(&request.subject)
+    .fetch_all(&mut *transaction)
+    .await
+    .map_err(db)?;
+    if !locked_devices
+        .iter()
+        .any(|device_id| device_id == &request.device_id)
+    {
+        transaction.commit().await.map_err(db)?;
+        return Ok(SetTrustOutcome::NotFound);
+    }
+    if request.primary {
+        sqlx::query(
+            "UPDATE auth_devices SET primary_at=NULL WHERE subject_id=$1 AND primary_at IS NOT NULL",
+        )
+        .bind(&request.subject)
+        .execute(&mut *transaction)
+        .await
+        .map_err(db)?;
+    }
+    sqlx::query("UPDATE auth_devices SET trusted_at=CASE WHEN $3 THEN transaction_timestamp() ELSE NULL END,primary_at=CASE WHEN $4 THEN transaction_timestamp() ELSE NULL END,updated_at=transaction_timestamp() WHERE subject_id=$1 AND device_id=$2")
+        .bind(&request.subject)
+        .bind(&request.device_id)
+        .bind(request.trusted)
+        .bind(request.primary)
+        .execute(&mut *transaction)
+        .await
+        .map_err(db)?;
+    transaction.commit().await.map_err(db)?;
+    Ok(SetTrustOutcome::Updated)
 }
 
 impl Lifecycle for DeviceAuthPlugin {
@@ -221,5 +261,123 @@ fn valid(value: &str) -> bool {
 fn db(error: impl fmt::Display) -> RuntimeFailure {
     RuntimeFailure::PluginFailure {
         detail: format!("Device Auth storage operation failed: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn test_postgres(label: &str) -> (String, String, OwnedPostgres) {
+        let database_url =
+            std::env::var("LENSO_POSTGRES_TEST_URL").expect("LENSO_POSTGRES_TEST_URL is required");
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let schema = format!("device_{label}_test_{}_{suffix}", std::process::id());
+        DeviceAuthOperator::setup(&database_url, &schema)
+            .await
+            .unwrap();
+        let postgres = OwnedPostgres::prepare(&database_url, schema_plan(schema.clone()).unwrap())
+            .await
+            .unwrap();
+        (database_url, schema, postgres)
+    }
+
+    async fn cleanup_test_postgres(database_url: &str, schema: &str, postgres: OwnedPostgres) {
+        use sqlx::{AssertSqlSafe, Executor};
+
+        postgres.pool().close().await;
+        let cleanup_pool = sqlx::PgPool::connect(database_url).await.unwrap();
+        cleanup_pool
+            .execute(AssertSqlSafe(format!("DROP SCHEMA \"{schema}\" CASCADE")))
+            .await
+            .unwrap();
+        cleanup_pool.close().await;
+    }
+
+    async fn insert_device(
+        postgres: &OwnedPostgres,
+        subject: &str,
+        device_id: &str,
+        primary: bool,
+    ) {
+        sqlx::query("INSERT INTO auth_devices(subject_id,device_id,primary_at) VALUES($1,$2,CASE WHEN $3 THEN transaction_timestamp() ELSE NULL END)")
+            .bind(subject)
+            .bind(device_id)
+            .bind(primary)
+            .execute(postgres.pool())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn nonexistent_primary_target_leaves_existing_primary_unchanged() {
+        let (database_url, schema, postgres) = test_postgres("missing_primary").await;
+        let subject = "subject-a";
+        insert_device(&postgres, subject, "old-primary", true).await;
+
+        let outcome = set_device_trust(
+            &postgres,
+            &SetTrustRequest {
+                subject: subject.to_owned(),
+                device_id: "missing-device".to_owned(),
+                trusted: true,
+                primary: true,
+            },
+        )
+        .await
+        .unwrap();
+        let primary: Option<String> = sqlx::query_scalar(
+            "SELECT device_id FROM auth_devices WHERE subject_id=$1 AND primary_at IS NOT NULL",
+        )
+        .bind(subject)
+        .fetch_optional(postgres.pool())
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, SetTrustOutcome::NotFound);
+        assert_eq!(primary.as_deref(), Some("old-primary"));
+        cleanup_test_postgres(&database_url, &schema, postgres).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn concurrent_primary_assignments_leave_exactly_one_primary() {
+        let (database_url, schema, postgres) = test_postgres("concurrent_primary").await;
+        let subject = "subject-a";
+        insert_device(&postgres, subject, "device-a", false).await;
+        insert_device(&postgres, subject, "device-b", false).await;
+        let first = SetTrustRequest {
+            subject: subject.to_owned(),
+            device_id: "device-a".to_owned(),
+            trusted: true,
+            primary: true,
+        };
+        let second = SetTrustRequest {
+            subject: subject.to_owned(),
+            device_id: "device-b".to_owned(),
+            trusted: true,
+            primary: true,
+        };
+
+        let (first_outcome, second_outcome) = tokio::join!(
+            set_device_trust(&postgres, &first),
+            set_device_trust(&postgres, &second),
+        );
+        let primary_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM auth_devices WHERE subject_id=$1 AND primary_at IS NOT NULL",
+        )
+        .bind(subject)
+        .fetch_one(postgres.pool())
+        .await
+        .unwrap();
+
+        assert_eq!(first_outcome.unwrap(), SetTrustOutcome::Updated);
+        assert_eq!(second_outcome.unwrap(), SetTrustOutcome::Updated);
+        assert_eq!(primary_count, 1);
+        cleanup_test_postgres(&database_url, &schema, postgres).await;
     }
 }

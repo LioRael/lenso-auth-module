@@ -58,10 +58,10 @@ impl FederatedAuthConfig {
             &self.authorization_endpoint,
             &self.token_endpoint,
             &self.user_endpoint,
-            &self.redirect_uri,
         ] {
-            Url::parse(endpoint).map_err(|_| failure("invalid federated OAuth URL"))?;
+            outbound_oauth_url(endpoint)?;
         }
+        redirect_oauth_url(&self.redirect_uri)?;
         if self.client_id.is_empty()
             || self.client_secret_ref.is_empty()
             || self.scopes.is_empty()
@@ -79,6 +79,86 @@ impl FederatedAuthConfig {
             ProviderKind::Google => "google",
         }
     }
+}
+
+fn outbound_oauth_url(value: &str) -> Result<Url, RuntimeFailure> {
+    let url = Url::parse(value).map_err(|_| failure("invalid federated OAuth URL"))?;
+    if value.len() > 2048
+        || url.cannot_be_a_base()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(failure("invalid federated OAuth URL"));
+    }
+    let secure = url.scheme() == "https"
+        || (url.scheme() == "http" && url.host_str().is_some_and(is_loopback_host));
+    if !secure {
+        return Err(failure(
+            "federated OAuth endpoints must use HTTPS or loopback HTTP",
+        ));
+    }
+    Ok(url)
+}
+
+fn redirect_oauth_url(value: &str) -> Result<Url, RuntimeFailure> {
+    let url = Url::parse(value).map_err(|_| failure("invalid federated OAuth redirect URL"))?;
+    if value.len() > 2048
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(failure("invalid federated OAuth redirect URL"));
+    }
+    let allowed = match url.scheme() {
+        "https" => !url.cannot_be_a_base() && url.host_str().is_some(),
+        "http" => !url.cannot_be_a_base() && url.host_str().is_some_and(is_loopback_host),
+        scheme => valid_private_redirect_scheme(scheme) && valid_private_redirect_path(&url),
+    };
+    if !allowed {
+        return Err(failure("invalid federated OAuth redirect URL"));
+    }
+    Ok(url)
+}
+
+fn valid_private_redirect_scheme(scheme: &str) -> bool {
+    let labels = scheme.split('.').collect::<Vec<_>>();
+    labels.len() >= 2
+        && labels[0].len() >= 2
+        && labels[0].bytes().all(|byte| byte.is_ascii_lowercase())
+        && labels.iter().all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+                && label
+                    .as_bytes()
+                    .first()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+                && label
+                    .as_bytes()
+                    .last()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+        })
+}
+
+fn valid_private_redirect_path(url: &Url) -> bool {
+    !url.cannot_be_a_base()
+        && url.host_str().is_none()
+        && url.path().starts_with('/')
+        && url.path().len() > 1
+        && !url
+            .path()
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte == b'\\')
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host == "127.0.0.1"
+        || host == "[::1]"
+        || host == "::1"
 }
 fn validate_config(config: &FederatedAuthConfig) -> Result<(), RuntimeFailure> {
     config.validate()
@@ -445,6 +525,22 @@ fn provider_call(error: ClientInvocationError) -> ProviderCall {
 mod tests {
     use super::*;
 
+    fn config() -> FederatedAuthConfig {
+        FederatedAuthConfig {
+            provider: ProviderKind::Github,
+            authorization_endpoint: "https://provider.example/authorize".to_owned(),
+            token_endpoint: "https://provider.example/token".to_owned(),
+            user_endpoint: "https://provider.example/user".to_owned(),
+            client_id: "lenso-console".to_owned(),
+            client_secret_ref: "oauth/client-secret".to_owned(),
+            redirect_uri: "https://console.example/oauth/callback".to_owned(),
+            scopes: vec!["profile".to_owned()],
+            audience: vec!["console.app@1".to_owned()],
+            flow_ttl_seconds: 300,
+            session_ttl_seconds: 3600,
+        }
+    }
+
     #[test]
     fn return_targets_are_app_local() {
         assert!(valid_return("/settings/security?connected=github"));
@@ -472,5 +568,59 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn configuration_rejects_unsafe_outbound_endpoints() {
+        assert!(config().validate().is_ok());
+
+        let mut insecure = config();
+        insecure.token_endpoint = "http://provider.example/token".to_owned();
+        assert!(insecure.validate().is_err());
+
+        let mut userinfo = config();
+        userinfo.user_endpoint = "https://user@provider.example/profile".to_owned();
+        assert!(userinfo.validate().is_err());
+
+        let mut fragment = config();
+        fragment.authorization_endpoint = "https://provider.example/authorize#fragment".to_owned();
+        assert!(fragment.validate().is_err());
+
+        let mut loopback = config();
+        loopback.token_endpoint = "http://127.0.0.1:38421/token".to_owned();
+        loopback.user_endpoint = "http://[::1]:38421/user".to_owned();
+        assert!(loopback.validate().is_ok());
+    }
+
+    #[test]
+    fn redirects_allow_native_schemes_and_only_loopback_http() {
+        let mut native = config();
+        native.redirect_uri = "com.example.app:/oauth/callback".to_owned();
+        assert!(native.validate().is_ok());
+
+        let mut loopback = config();
+        loopback.redirect_uri = "http://localhost:38421/oauth/callback".to_owned();
+        assert!(loopback.validate().is_ok());
+
+        let mut remote_http = config();
+        remote_http.redirect_uri = "http://console.example/oauth/callback".to_owned();
+        assert!(remote_http.validate().is_err());
+
+        let mut fragment = config();
+        fragment.redirect_uri = "com.example.app:/oauth/callback#fragment".to_owned();
+        assert!(fragment.validate().is_err());
+
+        for dangerous in [
+            "javascript:alert(1)",
+            "data:text/html,callback",
+            "file:///tmp/callback",
+            "ftp://console.example/callback",
+            "custom:callback",
+            "com.example.app://authority/callback",
+        ] {
+            let mut config = config();
+            config.redirect_uri = dangerous.to_owned();
+            assert!(config.validate().is_err(), "accepted {dangerous}");
+        }
     }
 }

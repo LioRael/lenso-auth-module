@@ -9,6 +9,38 @@ use time::OffsetDateTime;
 
 use crate::AccountError;
 
+macro_rules! effective_subject_status_sql {
+    () => {
+        "CASE WHEN i.status = 'disabled' AND (i.disabled_until IS NULL OR i.disabled_until > transaction_timestamp()) THEN 'disabled' ELSE 'active' END"
+    };
+}
+
+const ENSURE_IDENTITY_QUERY: &str = concat!(
+    "SELECT b.subject_id, ",
+    effective_subject_status_sql!(),
+    " AS status FROM identity_bindings b JOIN identity_subjects i ON i.subject_id = b.subject_id WHERE b.provider = $1 AND b.external_subject = $2 FOR UPDATE OF b, i"
+);
+const READ_RACED_IDENTITY_QUERY: &str = concat!(
+    "SELECT b.subject_id, ",
+    effective_subject_status_sql!(),
+    " AS status FROM identity_bindings b JOIN identity_subjects i ON i.subject_id = b.subject_id WHERE b.provider = $1 AND b.external_subject = $2"
+);
+const SUBJECT_STATUS_QUERY: &str = concat!(
+    "SELECT ",
+    effective_subject_status_sql!(),
+    " FROM identity_subjects i WHERE i.subject_id = $1"
+);
+const LOCK_SUBJECT_STATUS_QUERY: &str = concat!(
+    "SELECT ",
+    effective_subject_status_sql!(),
+    " FROM identity_subjects i WHERE i.subject_id = $1 FOR UPDATE OF i"
+);
+const LOAD_SESSION_QUERY: &str = concat!(
+    "SELECT s.subject_id, ",
+    effective_subject_status_sql!(),
+    " AS status, s.actor_kind, s.assurance, s.audience, s.claims, s.expires_at, s.revoked_at IS NOT NULL AS revoked FROM auth_sessions s JOIN identity_subjects i ON i.subject_id = s.subject_id WHERE s.token_digest = $1"
+);
+
 #[derive(Clone, Debug)]
 pub(crate) struct StoredSession {
     pub subject: String,
@@ -19,6 +51,25 @@ pub(crate) struct StoredSession {
     pub claims: BTreeMap<String, Value>,
     pub expires_at: OffsetDateTime,
     pub revoked: bool,
+}
+
+#[derive(Debug)]
+pub(crate) struct NewSession {
+    pub session_id: String,
+    pub digest: Vec<u8>,
+    pub subject: String,
+    pub actor_kind: String,
+    pub assurance: String,
+    pub audience: Vec<String>,
+    pub claims: BTreeMap<String, Value>,
+    pub expires_at: OffsetDateTime,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum IssueSessionOutcome {
+    Inserted,
+    Disabled,
+    InvalidSubject,
 }
 
 pub(crate) async fn ensure_identity(
@@ -32,11 +83,12 @@ pub(crate) async fn ensure_identity(
         .begin()
         .await
         .map_err(db("begin identity"))?;
-    let existing = sqlx::query(
-        "SELECT b.subject_id, CASE WHEN s.status = 'disabled' AND (s.disabled_until IS NULL OR s.disabled_until > transaction_timestamp()) THEN 'disabled' ELSE 'active' END AS status FROM identity_bindings b JOIN identity_subjects s ON s.subject_id = b.subject_id WHERE b.provider = $1 AND b.external_subject = $2 FOR UPDATE",
-    )
-    .bind(provider).bind(external_subject).fetch_optional(&mut *transaction).await
-    .map_err(db("read identity binding"))?;
+    let existing = sqlx::query(ENSURE_IDENTITY_QUERY)
+        .bind(provider)
+        .bind(external_subject)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(db("read identity binding"))?;
     if let Some(row) = existing {
         transaction
             .commit()
@@ -60,8 +112,12 @@ pub(crate) async fn ensure_identity(
             .rollback()
             .await
             .map_err(db("rollback identity race"))?;
-        let row = sqlx::query("SELECT b.subject_id, s.status FROM identity_bindings b JOIN identity_subjects s ON s.subject_id = b.subject_id WHERE b.provider = $1 AND b.external_subject = $2")
-            .bind(provider).bind(external_subject).fetch_one(postgres.pool()).await.map_err(db("read raced identity"))?;
+        let row = sqlx::query(READ_RACED_IDENTITY_QUERY)
+            .bind(provider)
+            .bind(external_subject)
+            .fetch_one(postgres.pool())
+            .await
+            .map_err(db("read raced identity"))?;
         return Ok((
             row.try_get("subject_id").map_err(db("decode subject"))?,
             row.try_get("status").map_err(db("decode status"))?,
@@ -76,29 +132,56 @@ pub(crate) async fn subject_status(
     postgres: &OwnedPostgres,
     subject: &str,
 ) -> Result<Option<String>, AccountError> {
-    sqlx::query_scalar("SELECT CASE WHEN status = 'disabled' AND (disabled_until IS NULL OR disabled_until > transaction_timestamp()) THEN 'disabled' ELSE 'active' END FROM identity_subjects WHERE subject_id = $1")
+    sqlx::query_scalar(SUBJECT_STATUS_QUERY)
         .bind(subject)
         .fetch_optional(postgres.pool())
         .await
         .map_err(db("read subject status"))
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn insert_session(
+pub(crate) async fn issue_session(
     postgres: &OwnedPostgres,
-    session_id: &str,
-    digest: &[u8],
-    subject: &str,
-    actor_kind: &str,
-    assurance: &str,
-    audience: &[String],
-    claims: &BTreeMap<String, Value>,
-    expires_at: OffsetDateTime,
-) -> Result<(), AccountError> {
+    session: &NewSession,
+) -> Result<IssueSessionOutcome, AccountError> {
+    let mut transaction = postgres
+        .pool()
+        .begin()
+        .await
+        .map_err(db("begin session issue"))?;
+    let status: Option<String> = sqlx::query_scalar(LOCK_SUBJECT_STATUS_QUERY)
+        .bind(&session.subject)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(db("lock subject for session issue"))?;
+    let outcome = match status.as_deref() {
+        Some("active") => None,
+        Some(_) => Some(IssueSessionOutcome::Disabled),
+        None => Some(IssueSessionOutcome::InvalidSubject),
+    };
+    if let Some(outcome) = outcome {
+        transaction
+            .commit()
+            .await
+            .map_err(db("commit rejected session issue"))?;
+        return Ok(outcome);
+    }
     sqlx::query("INSERT INTO auth_sessions (session_id, token_digest, subject_id, actor_kind, assurance, audience, claims, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
-        .bind(session_id).bind(digest).bind(subject).bind(actor_kind).bind(assurance).bind(audience).bind(sqlx::types::Json(claims)).bind(expires_at)
-        .execute(postgres.pool()).await.map_err(db("issue session"))?;
-    Ok(())
+        .bind(&session.session_id)
+        .bind(&session.digest)
+        .bind(&session.subject)
+        .bind(&session.actor_kind)
+        .bind(&session.assurance)
+        .bind(&session.audience)
+        .bind(sqlx::types::Json(&session.claims))
+        .bind(session.expires_at)
+        .execute(&mut *transaction)
+        .await
+        .map_err(db("issue session"))?;
+    transaction
+        .commit()
+        .await
+        .map_err(db("commit session issue"))?;
+    Ok(IssueSessionOutcome::Inserted)
 }
 
 pub(crate) async fn revoke_session(
@@ -139,8 +222,11 @@ pub(crate) async fn load_session(
     postgres: &OwnedPostgres,
     digest: &[u8],
 ) -> Result<Option<StoredSession>, AccountError> {
-    let row = sqlx::query("SELECT s.subject_id, i.status, s.actor_kind, s.assurance, s.audience, s.claims, s.expires_at, s.revoked_at IS NOT NULL AS revoked FROM auth_sessions s JOIN identity_subjects i ON i.subject_id = s.subject_id WHERE s.token_digest = $1")
-        .bind(digest).fetch_optional(postgres.pool()).await.map_err(db("load session"))?;
+    let row = sqlx::query(LOAD_SESSION_QUERY)
+        .bind(digest)
+        .fetch_optional(postgres.pool())
+        .await
+        .map_err(db("load session"))?;
     let Some(row) = row else {
         return Ok(None);
     };

@@ -315,30 +315,29 @@ impl AccountAuthPlugin {
             if expires_at <= OffsetDateTime::now_utc() {
                 return Ok(Err(IssueError::Expired));
             }
-            match storage::subject_status(&prepared.postgres, &request.subject)
-                .await
-                .map_err(runtime)?
-            {
-                Some(status) if status == "active" => {}
-                Some(_) => return Ok(Err(IssueError::Disabled)),
-                None => return Ok(Err(IssueError::InvalidSubject)),
-            }
             let token = random_token().map_err(runtime)?;
             let digest = storage::token_digest(&prepared.pepper, &token).map_err(runtime)?;
             let session_id = random_id("ses_").map_err(runtime)?;
-            storage::insert_session(
-                &prepared.postgres,
-                &session_id,
-                &digest,
-                &request.subject,
-                &request.actor_kind,
-                &request.assurance,
-                &request.audience,
-                &request.claims,
+            let session = storage::NewSession {
+                session_id: session_id.clone(),
+                digest,
+                subject: request.subject,
+                actor_kind: request.actor_kind,
+                assurance: request.assurance,
+                audience: request.audience,
+                claims: request.claims,
                 expires_at,
-            )
-            .await
-            .map_err(runtime)?;
+            };
+            match storage::issue_session(&prepared.postgres, &session)
+                .await
+                .map_err(runtime)?
+            {
+                storage::IssueSessionOutcome::Inserted => {}
+                storage::IssueSessionOutcome::Disabled => return Ok(Err(IssueError::Disabled)),
+                storage::IssueSessionOutcome::InvalidSubject => {
+                    return Ok(Err(IssueError::InvalidSubject));
+                }
+            }
             Ok(Ok(IssueResponse {
                 credential: token,
                 expires_at: request.expires_at,
@@ -869,7 +868,51 @@ async fn resolve(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
+
+    async fn test_postgres(label: &str) -> (String, String, OwnedPostgres) {
+        let database_url =
+            std::env::var("LENSO_POSTGRES_TEST_URL").expect("LENSO_POSTGRES_TEST_URL is required");
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let schema = format!("auth_{label}_test_{}_{suffix}", std::process::id());
+        AccountAuthOperator::setup(&database_url, &schema)
+            .await
+            .unwrap();
+        let postgres = OwnedPostgres::prepare(&database_url, schema_plan(schema.clone()).unwrap())
+            .await
+            .unwrap();
+        (database_url, schema, postgres)
+    }
+
+    async fn cleanup_test_postgres(database_url: &str, schema: &str, postgres: OwnedPostgres) {
+        use sqlx::{AssertSqlSafe, Executor};
+
+        postgres.pool().close().await;
+        let cleanup_pool = sqlx::PgPool::connect(database_url).await.unwrap();
+        cleanup_pool
+            .execute(AssertSqlSafe(format!("DROP SCHEMA \"{schema}\" CASCADE")))
+            .await
+            .unwrap();
+        cleanup_pool.close().await;
+    }
+
+    fn test_session(session_id: &str, digest: &[u8], subject: &str) -> storage::NewSession {
+        storage::NewSession {
+            session_id: session_id.to_owned(),
+            digest: digest.to_vec(),
+            subject: subject.to_owned(),
+            actor_kind: "user".to_owned(),
+            assurance: "test".to_owned(),
+            audience: vec!["test.app@1".to_owned()],
+            claims: BTreeMap::new(),
+            expires_at: OffsetDateTime::now_utc() + Duration::hours(1),
+        }
+    }
 
     #[test]
     fn session_secrets_are_random_and_redaction_safe() {
@@ -902,23 +945,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
     async fn credential_digest_revocation_is_atomic_and_idempotent() {
-        use std::collections::BTreeMap;
-
-        use sqlx::{AssertSqlSafe, Executor};
-
-        let database_url =
-            std::env::var("LENSO_POSTGRES_TEST_URL").expect("LENSO_POSTGRES_TEST_URL is required");
-        let suffix = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let schema = format!("auth_revoke_test_{}_{suffix}", std::process::id());
-        AccountAuthOperator::setup(&database_url, &schema)
-            .await
-            .unwrap();
-        let postgres = OwnedPostgres::prepare(&database_url, schema_plan(schema.clone()).unwrap())
-            .await
-            .unwrap();
+        let (database_url, schema, postgres) = test_postgres("revoke").await;
         let subject = "usr_revoke_test";
         storage::ensure_identity(&postgres, "test-provider", "external-revoke-test", subject)
             .await
@@ -926,19 +953,11 @@ mod tests {
         let pepper = b"test-only-pepper";
         let token = "lenso_st_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         let digest = storage::token_digest(pepper, token).unwrap();
-        storage::insert_session(
-            &postgres,
-            "ses_revoke_test",
-            &digest,
-            subject,
-            "user",
-            "oidc",
-            &["test.app@1".to_owned()],
-            &BTreeMap::new(),
-            OffsetDateTime::now_utc() + Duration::hours(1),
-        )
-        .await
-        .unwrap();
+        let session = test_session("ses_revoke_test", &digest, subject);
+        assert_eq!(
+            storage::issue_session(&postgres, &session).await.unwrap(),
+            storage::IssueSessionOutcome::Inserted
+        );
 
         assert_eq!(
             storage::revoke_credential(&postgres, &digest)
@@ -964,12 +983,106 @@ mod tests {
             None
         );
 
-        postgres.pool().close().await;
-        let cleanup_pool = sqlx::PgPool::connect(&database_url).await.unwrap();
-        cleanup_pool
-            .execute(AssertSqlSafe(format!("DROP SCHEMA \"{schema}\" CASCADE")))
+        cleanup_test_postgres(&database_url, &schema, postgres).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn expired_temporary_disable_allows_usable_session() {
+        let (database_url, schema, postgres) = test_postgres("expired_disable").await;
+        let subject = "usr_expired_disable";
+        storage::ensure_identity(&postgres, "test-provider", "expired-disable", subject)
             .await
             .unwrap();
-        cleanup_pool.close().await;
+        sqlx::query("UPDATE identity_subjects SET status='disabled', disabled_until=transaction_timestamp() - interval '1 second' WHERE subject_id=$1")
+            .bind(subject)
+            .execute(postgres.pool())
+            .await
+            .unwrap();
+        let digest = storage::token_digest(b"test-only-pepper", "expired-disable-token").unwrap();
+        let session = test_session("ses_expired_disable", &digest, subject);
+
+        assert_eq!(
+            storage::issue_session(&postgres, &session).await.unwrap(),
+            storage::IssueSessionOutcome::Inserted
+        );
+        assert_eq!(
+            storage::load_session(&postgres, &digest)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            "active"
+        );
+
+        cleanup_test_postgres(&database_url, &schema, postgres).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn disable_serializes_with_concurrent_session_issue() {
+        let (database_url, schema, postgres) = test_postgres("issue_disable").await;
+        let subject = "usr_issue_disable";
+        storage::ensure_identity(&postgres, "test-provider", "issue-disable", subject)
+            .await
+            .unwrap();
+        let mut disable = postgres.pool().begin().await.unwrap();
+        sqlx::query("UPDATE identity_subjects SET status='disabled' WHERE subject_id=$1")
+            .bind(subject)
+            .execute(&mut *disable)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE auth_sessions SET revoked_at=transaction_timestamp() WHERE subject_id=$1 AND revoked_at IS NULL")
+            .bind(subject)
+            .execute(&mut *disable)
+            .await
+            .unwrap();
+        let digest = storage::token_digest(b"test-only-pepper", "concurrent-token").unwrap();
+        let session = test_session("ses_concurrent", &digest, subject);
+
+        let (issue, commit) = tokio::join!(
+            storage::issue_session(&postgres, &session),
+            disable.commit()
+        );
+        commit.unwrap();
+        assert_eq!(issue.unwrap(), storage::IssueSessionOutcome::Disabled);
+        let session_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM auth_sessions WHERE subject_id=$1")
+                .bind(subject)
+                .fetch_one(postgres.pool())
+                .await
+                .unwrap();
+        assert_eq!(session_count, 0);
+
+        cleanup_test_postgres(&database_url, &schema, postgres).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires LENSO_POSTGRES_TEST_URL"]
+    async fn reactivated_subject_can_receive_new_session() {
+        let (database_url, schema, postgres) = test_postgres("reactivate").await;
+        let subject = "usr_reactivate";
+        storage::ensure_identity(&postgres, "test-provider", "reactivate", subject)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE identity_subjects SET status='disabled' WHERE subject_id=$1")
+            .bind(subject)
+            .execute(postgres.pool())
+            .await
+            .unwrap();
+        sqlx::query("UPDATE identity_subjects SET status='active', disabled_reason=NULL, disabled_until=NULL WHERE subject_id=$1")
+            .bind(subject)
+            .execute(postgres.pool())
+            .await
+            .unwrap();
+        let digest = storage::token_digest(b"test-only-pepper", "reactivated-token").unwrap();
+        let session = test_session("ses_reactivated", &digest, subject);
+
+        assert_eq!(
+            storage::issue_session(&postgres, &session).await.unwrap(),
+            storage::IssueSessionOutcome::Inserted
+        );
+
+        cleanup_test_postgres(&database_url, &schema, postgres).await;
     }
 }
