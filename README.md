@@ -103,16 +103,16 @@ release.
 Run Cargo through the shared workspace wrapper when available:
 
 ```sh
-/Users/leosouthey/Projects/framework/.lenso-tools/bin/lenso-cargo fmt --all -- --check
-/Users/leosouthey/Projects/framework/.lenso-tools/bin/lenso-cargo check --locked --workspace --all-targets
-/Users/leosouthey/Projects/framework/.lenso-tools/bin/lenso-cargo test --locked --workspace
+cargo fmt --all -- --check
+cargo check --locked --workspace --all-targets
+cargo test --locked --workspace
 ```
 
 Database acceptance additionally uses a disposable PostgreSQL instance:
 
 ```sh
 LENSO_POSTGRES_TEST_URL=postgres://... \
-  /Users/leosouthey/Projects/framework/.lenso-tools/bin/lenso-cargo \
+  cargo \
   test --locked --workspace -- --include-ignored --test-threads=1
 ```
 
