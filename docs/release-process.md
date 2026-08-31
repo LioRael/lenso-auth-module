@@ -95,7 +95,6 @@ cargo package --locked -p lenso-auth-sdk --allow-dirty
 cargo package --locked -p lenso-capability-credential-issuer --allow-dirty
 cargo package --locked -p lenso-capability-identity-directory --allow-dirty
 cargo package --locked -p lenso-capability-password-auth --allow-dirty
-./scripts/check-repository-boundary.sh
 ```
 
 Generated bindings must be fresh before packaging. Use the owning
