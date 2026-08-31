@@ -48,8 +48,8 @@ jobs:
           cargo check --locked -p lenso-capability-auth -p lenso-auth-sdk --target wasm32-wasip2
       - name: Package public crates
         run: |
-          cargo package --locked -p lenso-capability-auth
-          cargo package --locked -p lenso-auth-sdk
+          # Package this same-release edge together; live publishing keeps the dependency order.
+          cargo package --locked -p lenso-capability-auth -p lenso-auth-sdk
           cargo package --locked -p lenso-capability-credential-issuer
           cargo package --locked -p lenso-capability-identity-directory
           cargo package --locked -p lenso-capability-password-auth
