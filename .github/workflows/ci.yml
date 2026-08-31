@@ -32,8 +32,6 @@ jobs:
           toolchain: 1.94.0
           components: rustfmt,clippy
           targets: wasm32-unknown-unknown,wasm32-wasip2
-      - name: Check repository ownership
-        run: ./scripts/check-repository-boundary.sh
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Check workspace

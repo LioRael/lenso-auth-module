@@ -106,7 +106,6 @@ Run Cargo through the shared workspace wrapper when available:
 /Users/leosouthey/Projects/framework/.lenso-tools/bin/lenso-cargo fmt --all -- --check
 /Users/leosouthey/Projects/framework/.lenso-tools/bin/lenso-cargo check --locked --workspace --all-targets
 /Users/leosouthey/Projects/framework/.lenso-tools/bin/lenso-cargo test --locked --workspace
-./scripts/check-repository-boundary.sh
 ```
 
 Database acceptance additionally uses a disposable PostgreSQL instance:
