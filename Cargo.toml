@@ -43,19 +43,19 @@ futures = "0.3"
 getrandom = "0.4"
 hmac = "0.12"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
-lenso = { version = "0.5.0", git = "https://github.com/LioRael/lenso-runtime-rust", rev = "89815107385475c8b5be378bdcf5e21aa74e02f0" }
-lenso-app-plan = { version = "0.3.0", git = "https://github.com/LioRael/lenso", rev = "8599db7e4a214ed92f32089f81d14c833d4becf6" }
-lenso-capability-http-client = { version = "0.2.3", git = "https://github.com/LioRael/lenso-web", rev = "5c20e13278c49d6ddcd7bf3cfd2a1dc83c69b320" }
-lenso-capability-http-endpoint = { version = "0.2.7", git = "https://github.com/LioRael/lenso-web", rev = "5c20e13278c49d6ddcd7bf3cfd2a1dc83c69b320" }
-lenso-capability-secrets = { version = "0.1.2", git = "https://github.com/LioRael/lenso-secrets-plugin", rev = "967fa0d2908b58c24a4b1ad26103a3d9173bbac0" }
-lenso-contract-authoring = { version = "0.1.1", git = "https://github.com/LioRael/lenso-protocols", rev = "9d2774c767fd64a6cc63a5ac04360e9cb92816da" }
-lenso-contract-codegen = { version = "0.6.4", git = "https://github.com/LioRael/lenso-protocols", rev = "9d2774c767fd64a6cc63a5ac04360e9cb92816da" }
-lenso-contract-runtime = { version = "0.1.3", git = "https://github.com/LioRael/lenso-protocols", rev = "9d2774c767fd64a6cc63a5ac04360e9cb92816da" }
-lenso-kernel = { version = "0.2.0", git = "https://github.com/LioRael/lenso", rev = "8599db7e4a214ed92f32089f81d14c833d4becf6" }
-lenso-native-adapter = { version = "0.3.0", git = "https://github.com/LioRael/lenso-runtime-rust", rev = "89815107385475c8b5be378bdcf5e21aa74e02f0" }
-lenso-plugin-authoring = { version = "0.1.1", git = "https://github.com/LioRael/lenso-protocols", rev = "9d2774c767fd64a6cc63a5ac04360e9cb92816da" }
-lenso-postgres-kit = { version = "0.1.0", git = "https://github.com/LioRael/lenso-postgres-kit", rev = "97ff73638d1fca098034c443539d44d95062eea4" }
-lenso-runner = { version = "0.2.0", git = "https://github.com/LioRael/lenso-runtime-rust", rev = "89815107385475c8b5be378bdcf5e21aa74e02f0" }
+lenso = "0.5.0"
+lenso-app-plan = "0.3.0"
+lenso-capability-http-client = "0.2.3"
+lenso-capability-http-endpoint = "0.2.9"
+lenso-capability-secrets = "0.1.2"
+lenso-contract-authoring = "0.1.1"
+lenso-contract-codegen = "=0.6.4"
+lenso-contract-runtime = "0.1.3"
+lenso-kernel = "0.2.0"
+lenso-native-adapter = "0.3.0"
+lenso-plugin-authoring = "0.1.1"
+lenso-postgres-kit = "0.1.0"
+lenso-runner = "0.2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
