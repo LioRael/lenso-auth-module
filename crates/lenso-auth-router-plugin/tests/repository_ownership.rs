@@ -13,6 +13,7 @@ fn repository_owns_the_expected_auth_crates() {
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .collect::<BTreeSet<_>>();
     let expected = [
+        "lenso-auth-account-admin-agent-tools-plugin",
         "lenso-auth-account-plugin",
         "lenso-auth-anonymous-plugin",
         "lenso-auth-api-token-plugin",

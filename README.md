@@ -39,6 +39,13 @@ part of these Plugins. Apart from the explicitly named Web Session Adapter,
 Auth Plugins remain wire-neutral and behind explicit Capabilities; they must
 not restore removed v0.3 platform types.
 
+The private linked `lenso.auth.account-admin.agent-tools` adapter projects the
+three operations of `lenso.auth.account-admin@1` into
+`lenso.agent.tool-provider@2`: list subjects, list sessions, and set subject
+status. It owns no Auth facts and exposes no login, credential issuance, token,
+password, phone, federated, or OIDC operation. Removing the adapter removes the
+Agent catalog without changing Auth state or authentication behavior.
+
 `lenso-auth-oidc-client-plugin` is an external OpenID Connect relying party. It
 adds a nonce to the single-use OAuth Flow record, performs authorization-code
 exchange with PKCE, validates an RS256 ID token against the configured issuer,
